@@ -344,7 +344,7 @@ function openMsg(key) {
     (m.button ? '<input type="text" id="mText" maxlength="64" value="' + esc(m.text) + '">' : '<textarea id="mText"' + (m.limit ? ' maxlength="' + m.limit + '"' : '') + '>' + esc(m.text) + '</textarea>') +
     (m.limit && !m.button ? '<p class="small muted" style="margin:6px 2px 0" id="mCount"></p>' : '') +
     (m.canMedia ? '<label class="f">Картинка над текстом</label>' + (m.media
-      ? (m.media === 'photo' ? '<img id="mImg" alt="" style="width:100%;max-height:260px;object-fit:cover;border-radius:14px;background:rgba(44,13,2,.06);min-height:80px">' : '<div class="preview">' + (m.media === 'video' ? '🎬 видео прикреплено' : '🎞 гифка прикреплена') + '</div>') +
+      ? (m.media === 'photo' ? '<div style="background:rgba(44,13,2,.05);border-radius:14px;padding:6px;text-align:center"><img id="mImg" alt="" style="display:block;max-width:100%;max-height:60vh;width:auto;height:auto;margin:0 auto;border-radius:10px;min-height:60px"></div><p class="small muted" id="mImgInfo" style="margin:6px 2px 0">загружаю превью…</p>' : '<div class="preview">' + (m.media === 'video' ? '🎬 видео прикреплено' : '🎞 гифка прикреплена') + '</div>') +
         '<div class="btns two" style="margin-top:8px"><button class="btn ghost" id="mAdd" type="button">Заменить</button><button class="btn ghost" id="mDelImg" type="button">Убрать</button></div>'
       : '<button class="btn ghost" id="mAdd" type="button">＋ Добавить картинку, гифку или видео</button>') +
       '<input type="file" id="mFile" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4" hidden><p class="small muted" style="margin:6px 2px 0">Текст станет подписью под картинкой (до 1024 знаков — длиннее уйдёт следующим сообщением).</p>' : '') +
@@ -354,11 +354,25 @@ function openMsg(key) {
     (m.changed ? '<p class="small muted" style="margin-top:12px">По умолчанию было:</p><div class="preview">' + esc(m.def) + '</div>' : '');
   sheet(h);
   const ta = $('mText');
-  if ($('mImg')) fetch('/api/panel/msg/' + key + '/img', { headers: { 'x-init-data': INIT } }).then((r) => r.ok ? r.blob() : null).then((b) => { if (b) $('mImg').src = URL.createObjectURL(b); }).catch(() => {});
+  if ($('mImg')) fetch('/api/panel/msg/' + key + '/img', { headers: { 'x-init-data': INIT } }).then((r) => r.ok ? r.blob() : null).then((b) => {
+    if (!b) { $('mImgInfo').textContent = 'превью не загрузилось — в боте картинка есть'; return; }
+    const img = $('mImg');
+    img.onload = () => {
+      const w = img.naturalWidth, h = img.naturalHeight;
+      const g = (a, c) => (c ? g(c, a % c) : a), d = g(w, h);
+      const known = { '1:1': 'квадрат', '16:9': 'горизонтальная 16:9', '9:16': 'вертикальная 9:16', '4:3': '4:3', '3:4': '3:4', '3:2': '3:2', '2:3': '2:3', '4:5': '4:5', '5:4': '5:4' };
+      const r = (w / h);
+      const name = known[w / d + ':' + h / d] || (Math.abs(r - 1) < 0.03 ? 'почти квадрат' : r > 1 ? 'горизонтальная' : 'вертикальная');
+      const kb = b.size / 1024;
+      $('mImgInfo').textContent = 'В Telegram: ' + w + ' × ' + h + ' px · ' + name + ' · ' + (kb > 1024 ? (kb / 1024).toFixed(1) + ' МБ' : Math.round(kb) + ' КБ') + '. Показана целиком, как увидит ученик.';
+    };
+    img.src = URL.createObjectURL(b);
+  }).catch(() => {});
   if ($('mAdd')) {
     $('mAdd').onclick = () => $('mFile').click();
     $('mFile').onchange = async () => {
       const f = $('mFile').files[0]; if (!f) return;
+      toast('Загружаю ' + f.name + ' · ' + (f.size > 1048576 ? (f.size / 1048576).toFixed(1) + ' МБ' : Math.round(f.size / 1024) + ' КБ'));
       const fd = new FormData(); fd.append('file', f);
       $('mAdd').textContent = 'Загружаю…'; $('mAdd').disabled = true;
       try {

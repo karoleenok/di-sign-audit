@@ -112,6 +112,8 @@ let hm = JSON.parse((await db.first(`SELECT value FROM settings WHERE key = 'msg
 assert.deepEqual(hm.media, { type: 'photo', file_id: 'UPLOADED' }, 'картинка сохранена');
 assert.match(hm.text, /Привет, \{имя\}/, 'текст приветствия остался');
 assert.ok(await page.$eval('#mImg', (i) => i.naturalWidth > 0), 'превью картинки показалось');
+await page.waitForFunction(() => /px/.test(document.getElementById('mImgInfo').textContent));
+assert.match(await page.textContent('#mImgInfo'), /1 × 1 px · квадрат/, 'видно размер картинки');
 assert.ok(sent.some((c) => c.method === 'deleteMessage' && c.body.message_id === 77), 'служебная загрузка в чате админа убрана');
 await page.screenshot({ path: OUT + '/panel-9-picture.png' });
 await page.click('#mDelImg'); await page.waitForTimeout(400);
