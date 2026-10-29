@@ -77,11 +77,61 @@ export const msgInfo = (key) => {
 // Все правки из базы — одним запросом на обновление
 export async function loadMsgs(ctx) {
   if (ctx._msgs) return ctx._msgs;
-  const rows = await ctx.db.all(`SELECT key, value FROM settings WHERE key LIKE 'msg:%'`);
-  const o = {};
-  for (const r of rows) { try { o[r.key.slice(4)] = JSON.parse(r.value); } catch {} }
-  ctx._msgs = o;
+  const rows = await ctx.db.all(`SELECT key, value FROM settings WHERE key LIKE 'msg:%' OR key LIKE 'msgx:%'`);
+  const o = {}, x = {};
+  for (const r of rows) {
+    try {
+      if (r.key.startsWith('msgx:')) x[r.key.slice(5)] = JSON.parse(r.value);
+      else o[r.key.slice(4)] = JSON.parse(r.value);
+    } catch {}
+  }
+  ctx._msgs = o; ctx._msgx = x;
   return o;
+}
+
+// ---------- пауза перед сообщением и кнопки-ссылки (отдельно от текста) ----------
+// Сколько секунд бот «печатает» перед служебным сообщением
+export const DEFAULT_DELAY = { hello: 0.6, helloTest: 0.6, consentPd: 0.9, askLevel: 0.7, testOffer: 0.8, noGift: 0.8, consentAds: 1.2, adsYes: 0.5, adsNo: 0.5, levelChanged: 0.5 };
+async function extraOf(ctx, key) { await loadMsgs(ctx); return (ctx._msgx && ctx._msgx[key]) || {}; }
+export async function delayOf(ctx, key) {
+  const x = await extraOf(ctx, key);
+  return typeof x.delay === 'number' ? x.delay : (DEFAULT_DELAY[key] ?? 0.7);
+}
+export async function linksOf(ctx, key) { return (await extraOf(ctx, key)).links || []; }
+// кнопки-ссылки: [[{text, url}]], до 4 в ряд; ошибки — понятным текстом
+export function cleanRows(rows) {
+  if (!Array.isArray(rows) || rows.length > 10) throw new Error('Слишком много рядов (до 10)');
+  const out = [];
+  for (const row of rows) {
+    if (!Array.isArray(row)) throw new Error('Неверные кнопки');
+    const r = [];
+    for (const b of row) {
+      const text = String((b && b.text) || '').trim().slice(0, 60);
+      let link = String((b && b.url) || '').trim();
+      if (!text && !link) continue;
+      if (!text) throw new Error('У кнопки нет текста');
+      if (/^t\.me\//i.test(link)) link = 'https://' + link;
+      if (!/^https?:\/\/\S+$/i.test(link)) throw new Error(`Ссылка у кнопки «${text}» должна начинаться с https://`);
+      r.push({ text, url: link });
+    }
+    if (r.length > 4) throw new Error('В одном ряду не больше 4 кнопок');
+    if (r.length) out.push(r);
+  }
+  return out;
+}
+export async function saveMsgExtra(ctx, key, { delay, links } = {}) {
+  const i = msgInfo(key);
+  if (!i || i.button || i.plain) throw new Error('Для этого сообщения пауза и кнопки не настраиваются');
+  const x = { ...(await extraOf(ctx, key)) };
+  if (delay !== undefined) {
+    const d = Number(delay);
+    if (!(d >= 0 && d <= 30)) throw new Error('Пауза — от 0 до 30 секунд');
+    x.delay = Math.round(d * 10) / 10;
+  }
+  if (links !== undefined) x.links = cleanRows(links);
+  await ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, ['msgx:' + key, JSON.stringify(x)]);
+  if (ctx._msgx) ctx._msgx[key] = x;
+  return x;
 }
 
 // Подставить {переменные}; сдвинуть оформление (жирный, премиум-эмодзи) после подстановки
@@ -131,6 +181,9 @@ async function withEmojiFallback(send, ents) {
 }
 export async function say(ctx, chatId, key, vars, extra = {}) {
   const m = await msg(ctx, key, vars);
+  // свои кнопки-ссылки — под встроенными
+  const links = await linksOf(ctx, key);
+  if (links.length) extra = { ...extra, reply_markup: { inline_keyboard: [...((extra.reply_markup && extra.reply_markup.inline_keyboard) || []), ...links] } };
   const ents = m.entities.length ? m.entities : undefined;
   if (m.media) {
     // с картинкой: текст становится подписью; если он длиннее 1024 знаков — отдельным сообщением следом
@@ -236,6 +289,7 @@ export async function listMsgs(ctx) {
   return Promise.all(Object.keys(MSG).map((k) => {
     const i = msgInfo(k);
     const o = all[k];
-    return { ...i, text: o ? o.text : i.def, changed: !!o, media: o && o.media ? o.media.type : null, canMedia: !i.button && !i.plain, emoji: !!(o && (o.entities || []).some((e) => e.type === 'custom_emoji')) };
+    const x = (ctx._msgx && ctx._msgx[k]) || {};
+    return { ...i, delay: typeof x.delay === 'number' ? x.delay : (DEFAULT_DELAY[k] ?? 0.7), defDelay: DEFAULT_DELAY[k] ?? 0.7, links: x.links || [], text: o ? o.text : i.def, changed: !!o, media: o && o.media ? o.media.type : null, canMedia: !i.button && !i.plain, emoji: !!(o && (o.entities || []).some((e) => e.type === 'custom_emoji')) };
   }).map(async (m) => (m.group === 'profile' && !m.changed && (m.key === 'botDesc' || m.key === 'botShort') ? { ...m, text: await liveProfile(ctx, m.key), def: '(как задано в BotFather)' } : m)));
 }

@@ -380,16 +380,64 @@ var msgInfo = (key) => {
 };
 async function loadMsgs(ctx) {
   if (ctx._msgs) return ctx._msgs;
-  const rows = await ctx.db.all(`SELECT key, value FROM settings WHERE key LIKE 'msg:%'`);
-  const o = {};
+  const rows = await ctx.db.all(`SELECT key, value FROM settings WHERE key LIKE 'msg:%' OR key LIKE 'msgx:%'`);
+  const o = {}, x = {};
   for (const r of rows) {
     try {
-      o[r.key.slice(4)] = JSON.parse(r.value);
+      if (r.key.startsWith("msgx:")) x[r.key.slice(5)] = JSON.parse(r.value);
+      else o[r.key.slice(4)] = JSON.parse(r.value);
     } catch {
     }
   }
   ctx._msgs = o;
+  ctx._msgx = x;
   return o;
+}
+var DEFAULT_DELAY = { hello: 0.6, helloTest: 0.6, consentPd: 0.9, askLevel: 0.7, testOffer: 0.8, noGift: 0.8, consentAds: 1.2, adsYes: 0.5, adsNo: 0.5, levelChanged: 0.5 };
+async function extraOf(ctx, key) {
+  await loadMsgs(ctx);
+  return ctx._msgx && ctx._msgx[key] || {};
+}
+async function delayOf(ctx, key) {
+  const x = await extraOf(ctx, key);
+  return typeof x.delay === "number" ? x.delay : DEFAULT_DELAY[key] ?? 0.7;
+}
+async function linksOf(ctx, key) {
+  return (await extraOf(ctx, key)).links || [];
+}
+function cleanRows(rows) {
+  if (!Array.isArray(rows) || rows.length > 10) throw new Error("Слишком много рядов (до 10)");
+  const out = [];
+  for (const row of rows) {
+    if (!Array.isArray(row)) throw new Error("Неверные кнопки");
+    const r = [];
+    for (const b of row) {
+      const text = String(b && b.text || "").trim().slice(0, 60);
+      let link = String(b && b.url || "").trim();
+      if (!text && !link) continue;
+      if (!text) throw new Error("У кнопки нет текста");
+      if (/^t\.me\//i.test(link)) link = "https://" + link;
+      if (!/^https?:\/\/\S+$/i.test(link)) throw new Error(`Ссылка у кнопки «${text}» должна начинаться с https://`);
+      r.push({ text, url: link });
+    }
+    if (r.length > 4) throw new Error("В одном ряду не больше 4 кнопок");
+    if (r.length) out.push(r);
+  }
+  return out;
+}
+async function saveMsgExtra(ctx, key, { delay, links } = {}) {
+  const i = msgInfo(key);
+  if (!i || i.button || i.plain) throw new Error("Для этого сообщения пауза и кнопки не настраиваются");
+  const x = { ...await extraOf(ctx, key) };
+  if (delay !== void 0) {
+    const d = Number(delay);
+    if (!(d >= 0 && d <= 30)) throw new Error("Пауза — от 0 до 30 секунд");
+    x.delay = Math.round(d * 10) / 10;
+  }
+  if (links !== void 0) x.links = cleanRows(links);
+  await ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, ["msgx:" + key, JSON.stringify(x)]);
+  if (ctx._msgx) ctx._msgx[key] = x;
+  return x;
 }
 function fill(text, entities, vars) {
   let t = text;
@@ -434,6 +482,8 @@ async function withEmojiFallback(send, ents) {
 }
 async function say(ctx, chatId, key, vars, extra = {}) {
   const m = await msg(ctx, key, vars);
+  const links = await linksOf(ctx, key);
+  if (links.length) extra = { ...extra, reply_markup: { inline_keyboard: [...extra.reply_markup && extra.reply_markup.inline_keyboard || [], ...links] } };
   const ents = m.entities.length ? m.entities : void 0;
   if (m.media) {
     const { link_preview_options, reply_markup, ...rest } = extra;
@@ -538,7 +588,8 @@ async function listMsgs(ctx) {
   return Promise.all(Object.keys(MSG).map((k) => {
     const i = msgInfo(k);
     const o = all[k];
-    return { ...i, text: o ? o.text : i.def, changed: !!o, media: o && o.media ? o.media.type : null, canMedia: !i.button && !i.plain, emoji: !!(o && (o.entities || []).some((e) => e.type === "custom_emoji")) };
+    const x = ctx._msgx && ctx._msgx[k] || {};
+    return { ...i, delay: typeof x.delay === "number" ? x.delay : DEFAULT_DELAY[k] ?? 0.7, defDelay: DEFAULT_DELAY[k] ?? 0.7, links: x.links || [], text: o ? o.text : i.def, changed: !!o, media: o && o.media ? o.media.type : null, canMedia: !i.button && !i.plain, emoji: !!(o && (o.entities || []).some((e) => e.type === "custom_emoji")) };
   }).map(async (m) => m.group === "profile" && !m.changed && (m.key === "botDesc" || m.key === "botShort") ? { ...m, text: await liveProfile(ctx, m.key), def: "(как задано в BotFather)" } : m));
 }
 
@@ -724,9 +775,12 @@ async function askLevel(ctx, id) {
   }));
 }
 var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function pauseFor(ctx, id, key) {
+  return pause(ctx, id, await delayOf(ctx, key) * 1e3);
+}
 async function pause(ctx, id, ms) {
   const k = ctx.env.DELAY_FACTOR === void 0 ? 1 : Number(ctx.env.DELAY_FACTOR);
-  if (!(k > 0)) return;
+  if (!(k > 0) || !(ms > 0)) return;
   const t = Math.max(450, ms * k);
   await ctx.tg.call("sendChatAction", { chat_id: id, action: "typing" }).catch(() => {
   });
@@ -815,32 +869,32 @@ async function onStart(ctx, msg2, payload) {
   await cleanAll(ctx, from.id);
   u = await getUser(ctx, from.id);
   const name = from.first_name || "друг";
-  await pause(ctx, from.id, 600);
+  await pauseFor(ctx, from.id, st.zone ? "helloTest" : "hello");
   await tech(ctx, from.id, say(ctx, from.id, st.zone ? "helloTest" : "hello", { имя: name }));
   return nextStep(ctx, u);
 }
 async function nextStep(ctx, u) {
   const id = u.tg_id;
   if (!u.consent_pd_at) {
-    await pause(ctx, id, 900);
+    await pauseFor(ctx, id, "consentPd");
     return tech(ctx, id, say(ctx, id, "consentPd", docVars(ctx), {
       link_preview_options: { is_disabled: true },
       reply_markup: kb([[{ text: await btn(ctx, "consentPdBtn"), callback_data: "c:pd" }]])
     }));
   }
   if (!u.level) {
-    await pause(ctx, id, 700);
+    await pauseFor(ctx, id, "askLevel");
     return askLevel(ctx, id);
   }
   if (!u.zone) {
     const url = ctx.env.TEST_URL;
-    await pause(ctx, id, 800);
+    await pauseFor(ctx, id, "testOffer");
     await tech(ctx, id, say(ctx, id, "testOffer", {}, url ? { reply_markup: kb([[{ text: await btn(ctx, "testBtn"), url }]]) } : {}));
   } else {
-    await sendGift(ctx, u, 800);
+    await sendGift(ctx, u, await delayOf(ctx, "noGift") * 1e3);
   }
   if (!u.consent_ads_at && u.status !== "stopped") {
-    await pause(ctx, id, 1200);
+    await pauseFor(ctx, id, "consentAds");
     return tech(ctx, id, say(ctx, id, "consentAds", {}, {
       reply_markup: kb([[{ text: await btn(ctx, "consentAdsYes"), callback_data: "c:ads:1" }, { text: await btn(ctx, "consentAdsNo"), callback_data: "c:ads:0" }]])
     }));
@@ -887,7 +941,7 @@ async function onUserCallback(ctx, cq) {
   const done = async (key, vars) => {
     await untech(ctx, id, mid);
     if (key) {
-      await pause(ctx, id, 500);
+      await pauseFor(ctx, id, key);
       await say(ctx, id, key, vars);
     }
   };
@@ -1085,7 +1139,8 @@ var GUIDE = {
 3. «✏️ Изменить» — бот пришлёт текущий текст, скопируй и поправь
 4. Пришли новый вариант одним сообщением. Жирный, курсив, ссылки и премиум-эмодзи сохранятся
 
-<b>Способ 2 — в панели</b>, вкладка «Тексты». Удобно для обычного текста. Премиум-эмодзи так не вставить, а если они уже были — после сохранения из панели станут обычными (панель предупредит).
+<b>Способ 2 — в панели</b>, вкладка «Тексты» → «Путь ученика»: шаги по порядку (приветствие → согласие → уровень → тест или подарок → рассылка → ответ). У каждого шага — текст, картинка, <b>пауза перед ним</b> (сколько бот «печатает») и <b>свои кнопки-ссылки</b>; подписи встроенных кнопок — по нажатию на них. Кнопка «▶️ Пройти путь заново» сбрасывает твою анкету и проводит по всем шагам как нового ученика (без теста или как из теста). Порядок шагов фиксирован: согласие на данные — всегда первым.
+Обычный текст тоже правится там. Удобно для обычного текста. Премиум-эмодзи так не вставить, а если они уже были — после сохранения из панели станут обычными (панель предупредит).
 
 <b>Подстановки</b> — бот заменит сам:
 • <code>{имя}</code> — имя ученика из Telegram, можно в любом сообщении
@@ -2326,6 +2381,18 @@ async function handlePanelApi(ctx, request, url) {
     else await job;
     return json({ ok: true, run: await activeRun(ctx.db, user.id) });
   }
+  if (path === "/run/onboarding" && request.method === "POST") {
+    const id = user.id;
+    for (const t of ["users", "consents", "states"]) await ctx.db.run(`DELETE FROM ${t} WHERE tg_id = ?`, [id]);
+    await ctx.db.run(`DELETE FROM deliveries WHERE tg_id = ? AND post_id IN (SELECT id FROM posts WHERE kind = 'gift')`, [id]);
+    await ctx.db.run(`DELETE FROM settings WHERE key = ? OR key LIKE ?`, ["nogift:" + id, "start:" + id + ":%"]);
+    await ctx.tg.call("sendMessage", { chat_id: id, text: "🧪 Проходим путь ученика заново" + (body.fromTest ? " — как будто ты пришла из теста." : " — как будто ты пришла без теста.") + " Твоя анкета сброшена, ответь на вопросы бота.", disable_notification: true }).catch(() => {
+    });
+    const job = onStart(ctx, { from: { id, first_name: user.first_name }, message_id: 0 }, body.fromTest ? "audit_P_" + (body.level === "pro" ? "pro" : "start") : "").catch((e) => console.log("onboarding", e && e.stack));
+    if (ctx.waitUntil) ctx.waitUntil(job);
+    else await job;
+    return json({ ok: true });
+  }
   if (path === "/run/stop" && request.method === "POST") {
     await stopRuns(ctx, user.id);
     await ctx.tg.call("sendMessage", { chat_id: user.id, text: "⏹ Ускоренный тест остановлен" }).catch(() => {
@@ -2349,6 +2416,8 @@ async function handlePanelApi(ctx, request, url) {
       if (body.reset) await resetMsg(ctx, m[1]);
       else if (body.removeMedia) await setMsgMedia(ctx, m[1], null);
       else {
+        if (body.delay !== void 0 || body.links !== void 0) await saveMsgExtra(ctx, m[1], { delay: body.delay, links: body.links });
+        if (body.text === void 0) return json({ ok: true, msgs: await listMsgs(ctx) });
         const t = String(body.text || "");
         if (!t.trim()) return json({ error: "Пустой текст" }, 400);
         if (t.length > 4e3) return json({ error: "Слишком длинно для Telegram" }, 400);
@@ -2680,20 +2749,70 @@ function renderGifts() {
   $('body').innerHTML = h; bindCards();
 }
 
+// путь ученика: служебные сообщения по порядку (порядок фиксирован — согласие на данные по закону первое)
+const FLOW = [
+  { key: 'hello', alt: ['helloTest'], title: 'Приветствие', note: 'Сразу после «Старт». Если человек пришёл из теста — вариант «после теста».' },
+  { key: 'consentPd', btns: ['consentPdBtn'], alt: ['consentThanks'], title: 'Согласие на обработку данных', note: 'Всегда первым вопросом: без согласия бот не имеет права ничего присылать.' },
+  { key: 'askLevel', btns: ['levelBtnStart', 'levelBtnPro'], alt: ['levelChanged'], title: 'Уровень' },
+  { key: 'testOffer', btns: ['testBtn'], alt: ['noGift'], title: 'Предложение пройти тест', note: 'Если человек пришёл из теста — вместо этого сообщения сразу подарок (вкладка «Подарки»).' },
+  { key: 'consentAds', btns: ['consentAdsYes', 'consentAdsNo'], title: 'Согласие на рассылку' },
+  { key: 'adsYes', alt: ['adsNo'], title: 'Ответ на «да» / «нет»', note: 'После «да» начинается лента (вкладка «Лента»).' },
+];
+const mOf = (k) => S.msgs.find((x) => x.key === k);
+const mediaTag = (m) => m && m.media ? '<span class="tag">' + ({ photo: '🖼 картинка', video: '🎬 видео', animation: '🎞 гифка' }[m.media] || '🖼') + '</span>' : '';
 function renderTexts() {
+  let h = '<div class="box" style="margin-top:16px"><h3>Путь ученика</h3><p class="small muted" style="margin:0 0 10px">Так бот встречает нового человека — шаг за шагом. Нажми на шаг или на кнопку, чтобы поменять текст, картинку, паузу и кнопки-ссылки.</p>' +
+    '<div class="btns" style="margin-top:0"><button class="btn" type="button" id="obNo">▶️ Пройти путь заново — без теста</button><button class="btn ghost" type="button" id="obTest">▶️ Пройти путь заново — как из теста</button></div>' +
+    '<p class="small muted" style="margin:8px 2px 0">Твоя анкета в боте сбросится, и бот проведёт тебя по всем шагам с настоящими кнопками.</p></div>';
+  const used = new Set();
+  FLOW.forEach((st, i) => {
+    const m = mOf(st.key); if (!m) return;
+    [st.key, ...(st.btns || []), ...(st.alt || [])].forEach((k) => used.add(k));
+    h += '<div class="day"><div class="dayh"><b>' + (i + 1) + '</b><span>' + esc(st.title) + '</span></div>' +
+      '<div class="msg" data-k="' + m.key + '" style="margin-bottom:0"><div class="t"><span class="time">⏱ ' + String(m.delay).replace('.', ',') + ' с</span>' + (m.changed ? '<span class="tag">✎ изменено</span>' : '') + mediaTag(m) + '</div><div class="p" style="-webkit-line-clamp:3">' + esc(m.text) + '</div>' +
+      (((st.btns || []).length || m.links.length) ? '<div class="meta" style="margin-top:8px">' + (st.btns || []).map((b) => { const bm = mOf(b); return bm ? '<button type="button" class="chip" data-open="' + b + '">🔘 ' + esc(bm.text) + '</button>' : ''; }).join('') + m.links.flat().map((l) => '<span class="chip" style="cursor:default">🔗 ' + esc(l.text) + '</span>').join('') + '</div>' : '') +
+      '</div>' + (st.alt || []).map((a) => { const am = mOf(a); return am ? '<div class="msg" data-k="' + a + '" style="margin:6px 0 0 18px;padding:10px 12px"><div class="t small">↳ ' + esc(am.title) + (am.changed ? ' ✎' : '') + mediaTag(am) + '</div><div class="p">' + esc(am.text) + '</div></div>' : ''; }).join('') +
+      (st.note ? '<p class="small muted" style="margin:6px 2px 0">' + esc(st.note) + '</p>' : '') + '</div>';
+  });
   const groups = {};
-  S.msgs.forEach((m) => { (groups[m.group] = groups[m.group] || []).push(m); });
-  const names = { hello: '👋 Приветствие', consent: '✅ Согласие на данные', level: '🎚 Уровень', test: '🧪 Аудит-тест и подарок', ads: '📬 Согласие на рассылку', cmd: '⚙️ Команды ученика', profile: '🤖 Профиль бота и меню команд' };
-  let h = '<p class="muted" style="margin-top:16px">Все сообщения, которые бот пишет ученикам. Нажми, чтобы поменять. ✎ — уже изменено. Премиум-эмодзи вставляются только в самом боте: <b>/texts</b>. В самом низу — описание бота до «Старт» и подписи команд в меню.</p>';
+  S.msgs.filter((m) => !used.has(m.key)).forEach((m) => { const g = m.group === 'cmd' || m.group === 'profile' ? m.group : 'other'; (groups[g] = groups[g] || []).push(m); });
+  const names = { other: '🧩 Прочее', cmd: '⚙️ Команды ученика', profile: '🤖 Профиль бота и меню команд' };
   Object.keys(names).forEach((g) => {
     if (!groups[g]) return;
     h += '<div class="grp">' + names[g] + '</div>';
     groups[g].forEach((m) => {
-      h += '<div class="msg" data-k="' + m.key + '"><div class="t">' + (m.changed ? '✎ ' : '') + esc(m.title) + (m.button ? '<span class="tag">кнопка</span>' : '') + (m.media ? '<span class="tag">' + ({ photo: '🖼 картинка', video: '🎬 видео', animation: '🎞 гифка' }[m.media] || '🖼') + '</span>' : '') + '</div><div class="p">' + esc(m.text) + '</div></div>';
+      h += '<div class="msg" data-k="' + m.key + '"><div class="t">' + (m.changed ? '✎ ' : '') + esc(m.title) + (m.button ? '<span class="tag">кнопка</span>' : '') + mediaTag(m) + '</div><div class="p">' + esc(m.text) + '</div></div>';
     });
   });
+  h += '<p class="small muted" style="margin-top:16px">Премиум-эмодзи вставляются только в самом боте: <b>/texts</b>.</p>';
   $('body').innerHTML = h;
-  document.querySelectorAll('.msg').forEach((el) => el.onclick = () => openMsg(el.dataset.k));
+  document.querySelectorAll('.msg').forEach((el) => el.onclick = (e) => { const b = e.target.closest('[data-open]'); openMsg(b ? b.dataset.open : el.dataset.k); });
+  const ob = async (fromTest) => { try { await api('/run/onboarding', { fromTest, level: view.level }); haptic('medium'); toast('Открой бот — путь начался 👀'); try { tg && tg.close && setTimeout(() => {}, 0); } catch (e) {} } catch (e) { toast(e.message); } };
+  $('obNo').onclick = () => ob(false); $('obTest').onclick = () => ob(true);
+}
+
+// редактор кнопок-ссылок (общий)
+function rowsEditor(el, rows) {
+  const sync = () => { el.querySelectorAll('[data-r]').forEach((i) => { const r = +i.dataset.r, k = +i.dataset.i; if (rows[r] && rows[r][k]) rows[r][k][i.dataset.f] = i.value; }); };
+  const draw = () => {
+    el.innerHTML = (rows.length ? rows.map((row, r) => '<div class="box" style="margin:8px 0;padding:10px"><div class="row" style="justify-content:space-between;margin-bottom:6px"><span class="small muted">Ряд ' + (r + 1) + '</span><span>' +
+      (r > 0 ? '<button type="button" class="chip" data-up="' + r + '">↑</button> ' : '') + (r < rows.length - 1 ? '<button type="button" class="chip" data-down="' + r + '">↓</button>' : '') + '</span></div>' +
+      row.map((b, i) => '<div style="display:grid;grid-template-columns:1fr auto;gap:6px;margin-bottom:6px"><input type="text" placeholder="Текст кнопки" maxlength="60" data-r="' + r + '" data-i="' + i + '" data-f="text" value="' + esc(b.text) + '"><button type="button" class="chip" data-del="' + r + ':' + i + '">✕</button><input type="text" placeholder="https://ссылка" inputmode="url" data-r="' + r + '" data-i="' + i + '" data-f="url" value="' + esc(b.url) + '" style="grid-column:1/-1"></div>').join('') +
+      (row.length < 4 ? '<button type="button" class="chip" data-add="' + r + '">＋ Кнопка в этот ряд</button>' : '') + '</div>').join('') : '<p class="small muted" style="margin:2px">Своих кнопок нет.</p>') +
+      '<button type="button" class="btn ghost" data-newrow="1" style="margin-top:6px">＋ Кнопка-ссылка</button>';
+  };
+  el.addEventListener('input', sync);
+  el.addEventListener('click', (e) => {
+    const t = e.target.closest('button'); if (!t) return; sync();
+    if (t.dataset.newrow) rows.push([{ text: '', url: '' }]);
+    if (t.dataset.add !== undefined) rows[+t.dataset.add].push({ text: '', url: '' });
+    if (t.dataset.del) { const [r, i] = t.dataset.del.split(':').map(Number); rows[r].splice(i, 1); if (!rows[r].length) rows.splice(r, 1); }
+    if (t.dataset.up) { const r = +t.dataset.up; [rows[r - 1], rows[r]] = [rows[r], rows[r - 1]]; }
+    if (t.dataset.down) { const r = +t.dataset.down; [rows[r + 1], rows[r]] = [rows[r], rows[r + 1]]; }
+    haptic(); draw();
+  });
+  draw();
+  return () => { sync(); return rows; };
 }
 
 function bindCards() {
@@ -2805,12 +2924,15 @@ function openMsg(key) {
         '<div class="btns two" style="margin-top:8px"><button class="btn ghost" id="mAdd" type="button">Заменить</button><button class="btn ghost" id="mDelImg" type="button">Убрать</button></div>'
       : '<button class="btn ghost" id="mAdd" type="button">＋ Добавить картинку, гифку или видео</button>') +
       '<input type="file" id="mFile" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4" hidden><p class="small muted" style="margin:6px 2px 0">Текст станет подписью под картинкой (до 1024 знаков — длиннее уйдёт следующим сообщением).</p>' : '') +
+    (m.canMedia ? '<label class="f">Пауза перед сообщением</label><div class="row"><input type="text" inputmode="decimal" id="mDelay" style="width:90px" value="' + String(m.delay).replace('.', ',') + '"><span class="muted">сек — столько бот «печатает» (• • •) перед ним' + (m.delay !== m.defDelay ? ' · было ' + String(m.defDelay).replace('.', ',') : '') + '</span></div>' +
+      '<label class="f">Свои кнопки-ссылки под сообщением</label><div id="mLinks"></div><p class="small muted" style="margin:6px 2px 0">Например «Наш канал» или «Сайт школы». Встают под встроенными кнопками.</p>' : '') +
     (m.vars.length ? '<p class="small muted" style="margin:10px 2px 0">Нажми, чтобы вставить — бот подставит сам:</p><div class="vars" id="mVars">' + m.vars.map((v) => '<button type="button" data-v="{' + v + '}">{' + v + '}</button>').join('') + '</div>' : '') +
     '<div class="btns"><button class="btn" id="mSave">Сохранить</button><div class="btns two" style="margin:0"><button class="btn ghost" id="mPrev">👁 Прислать мне</button><button class="btn ghost" id="mClose">Закрыть</button></div>' +
     (m.changed ? '<button class="btn danger" id="mReset">↩️ Вернуть текст по умолчанию</button>' : '') + '</div>' +
     (m.changed ? '<p class="small muted" style="margin-top:12px">По умолчанию было:</p><div class="preview">' + esc(m.def) + '</div>' : '');
   sheet(h);
   const ta = $('mText');
+  const getLinks = $('mLinks') ? rowsEditor($('mLinks'), JSON.parse(JSON.stringify(m.links || []))) : null;
   if ($('mImg')) fetch('/api/panel/msg/' + key + '/img', { headers: { 'x-init-data': INIT } }).then((r) => r.ok ? r.blob() : null).then((b) => {
     if (!b) { $('mImgInfo').textContent = 'превью не загрузилось — в боте картинка есть'; return; }
     const img = $('mImg');
@@ -2845,7 +2967,12 @@ function openMsg(key) {
   if ($('mVars')) $('mVars').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; const s = ta.selectionStart ?? ta.value.length, en = ta.selectionEnd ?? s; ta.value = ta.value.slice(0, s) + b.dataset.v + ta.value.slice(en); ta.focus(); ta.selectionStart = ta.selectionEnd = s + b.dataset.v.length; };
   $('mClose').onclick = closeSheet;
   $('mPrev').onclick = async () => { try { await api('/msg/' + key + '/preview', {}); toast('Отправила тебе в бот — так видит ученик (сохранённая версия)'); } catch (e) { toast(e.message); } };
-  $('mSave').onclick = async () => { try { const r = await api('/msg/' + key, { text: ta.value }); S.msgs = r.msgs; closeSheet(); haptic('medium'); toast('Сохранено ✓'); render(); } catch (e) { toast(e.message); } };
+  $('mSave').onclick = async () => {
+    const body = {};
+    if (ta.value !== m.text) body.text = ta.value;
+    if ($('mDelay')) { body.delay = parseFloat(String($('mDelay').value).replace(',', '.')) || 0; body.links = getLinks(); }
+    try { const r = await api('/msg/' + key, body); S.msgs = r.msgs; closeSheet(); haptic('medium'); toast('Сохранено ✓'); render(); } catch (e) { toast(e.message); }
+  };
   if ($('mReset')) $('mReset').onclick = async () => { try { const r = await api('/msg/' + key, { reset: true }); S.msgs = r.msgs; closeSheet(); toast('Вернули как было ↩️'); render(); } catch (e) { toast(e.message); } };
 }
 

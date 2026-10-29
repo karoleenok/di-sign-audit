@@ -1,5 +1,5 @@
 import { ZONES, LEVELS } from './texts.js';
-import { say, btn, msg as msgText } from './msgs.js';
+import { say, btn, msg as msgText, delayOf } from './msgs.js';
 import { sendPost, recordDeliveries } from './posts.js';
 
 const CONSENT_VERSION = 'v1';
@@ -39,9 +39,11 @@ async function askLevel(ctx, id) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // «Печатает…» и в шапке, и прямо в чате: пузырёк «•» → «• •» → «• • •», который исчезает перед сообщением.
 // Вызывать только когда следом точно будет сообщение.
+// пауза перед служебным сообщением — сколько задано в панели для этого сообщения
+async function pauseFor(ctx, id, key) { return pause(ctx, id, (await delayOf(ctx, key)) * 1000); }
 async function pause(ctx, id, ms) {
   const k = ctx.env.DELAY_FACTOR === undefined ? 1 : Number(ctx.env.DELAY_FACTOR);
-  if (!(k > 0)) return;
+  if (!(k > 0) || !(ms > 0)) return;
   const t = Math.max(450, ms * k);
   await ctx.tg.call('sendChatAction', { chat_id: id, action: 'typing' }).catch(() => {});
   if (ctx.env.TYPING_BUBBLE === '0') { await sleep(t); return; }
@@ -114,7 +116,7 @@ export async function onStart(ctx, msg, payload) {
   u = await getUser(ctx, from.id);
   const name = from.first_name || 'друг';
   // зона из теста запоминается только как отметка «прошёл тест» — посты и подарки по зонам не делим
-  await pause(ctx, from.id, 600);
+  await pauseFor(ctx, from.id, st.zone ? 'helloTest' : 'hello');
   await tech(ctx, from.id, say(ctx, from.id, st.zone ? 'helloTest' : 'hello', { имя: name }));
   return nextStep(ctx, u);
 }
@@ -123,24 +125,24 @@ export async function onStart(ctx, msg, payload) {
 export async function nextStep(ctx, u) {
   const id = u.tg_id;
   if (!u.consent_pd_at) {
-    await pause(ctx, id, 900);
+    await pauseFor(ctx, id, 'consentPd');
     return tech(ctx, id, say(ctx, id, 'consentPd', docVars(ctx), {
       link_preview_options: { is_disabled: true },
       reply_markup: kb([[{ text: await btn(ctx, 'consentPdBtn'), callback_data: 'c:pd' }]]),
     }));
   }
-  if (!u.level) { await pause(ctx, id, 700); return askLevel(ctx, id); }
+  if (!u.level) { await pauseFor(ctx, id, 'askLevel'); return askLevel(ctx, id); }
   if (!u.zone) {
     // ещё не проходил тест: предлагаем пройти, по кнопке в конце теста он вернётся в бот (тогда это сообщение уберём)
     const url = ctx.env.TEST_URL;
-    await pause(ctx, id, 800);
+    await pauseFor(ctx, id, 'testOffer');
     await tech(ctx, id, say(ctx, id, 'testOffer', {}, url ? { reply_markup: kb([[{ text: await btn(ctx, 'testBtn'), url }]]) } : {}));
   } else {
     // прошёл тест — подарок (один раз): общий и/или под его уровень; пауза — только если есть что прислать
-    await sendGift(ctx, u, 800);
+    await sendGift(ctx, u, (await delayOf(ctx, 'noGift')) * 1000);
   }
   if (!u.consent_ads_at && u.status !== 'stopped') {
-    await pause(ctx, id, 1200);
+    await pauseFor(ctx, id, 'consentAds');
     return tech(ctx, id, say(ctx, id, 'consentAds', {}, {
       reply_markup: kb([[{ text: await btn(ctx, 'consentAdsYes'), callback_data: 'c:ads:1' }, { text: await btn(ctx, 'consentAdsNo'), callback_data: 'c:ads:0' }]]),
     }));
@@ -187,7 +189,7 @@ export async function onUserCallback(ctx, cq) {
   // кнопка нажата — служебное сообщение больше не нужно: убираем его (Telegram растворяет с анимацией)
   const done = async (key, vars) => {
     await untech(ctx, id, mid);
-    if (key) { await pause(ctx, id, 500); await say(ctx, id, key, vars); }
+    if (key) { await pauseFor(ctx, id, key); await say(ctx, id, key, vars); }
   };
 
   if (d === 'c:pd') {

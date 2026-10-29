@@ -153,7 +153,7 @@ step('вкладки «Даты» и «Подарки»');
 // 8. тексты
 await page.click('#tabs button[data-t="texts"]'); await page.waitForTimeout(200);
 await page.screenshot({ path: OUT + '/panel-7-texts.png' });
-await page.click('.msg[data-k="askLevel"]'); await page.waitForSelector('.sheet.on');
+await page.click('.msg[data-k="askLevel"] .p'); await page.waitForSelector('.sheet.on');
 await page.fill('#mText', 'Где ты сейчас, ');
 await page.click('#mVars button[data-v="{имя}"]');
 await page.locator('#mText').press('End'); await page.locator('#mText').type('?');
@@ -161,13 +161,40 @@ await page.screenshot({ path: OUT + '/panel-8-text-edit.png' });
 await page.click('#mSave'); await page.waitForTimeout(400);
 let m = await db.first(`SELECT value FROM settings WHERE key = 'msg:askLevel'`);
 assert.equal(JSON.parse(m.value).text, 'Где ты сейчас, {имя}?');
-await page.click('.msg[data-k="askLevel"]'); await page.waitForSelector('#mReset'); await page.click('#mReset'); await page.waitForTimeout(400);
+await page.click('.msg[data-k="askLevel"] .p'); await page.waitForSelector('#mReset'); await page.click('#mReset'); await page.waitForTimeout(400);
 m = await db.first(`SELECT value FROM settings WHERE key = 'msg:askLevel'`);
 assert.equal(m, null);
 step('тексты: правка с подстановкой {имя} и возврат по умолчанию');
 
+// 8а. путь ученика: пауза, кнопки-ссылки, пройти заново
+assert.match(await page.textContent('#body'), /Путь ученика/);
+const stepsTxt = await page.$$eval('#body .day .dayh span', (e) => e.map((x) => x.textContent));
+assert.deepEqual(stepsTxt.slice(0, 3), ['Приветствие', 'Согласие на обработку данных', 'Уровень']);
+await page.click('.msg[data-k="consentPd"] .p'); await page.waitForSelector('#mDelay');
+await page.fill('#mDelay', '2,5');
+await page.click('#mLinks [data-newrow]');
+await page.fill('#mLinks input[data-r="0"][data-i="0"][data-f="text"]', 'Наш канал');
+await page.fill('#mLinks input[data-r="0"][data-i="0"][data-f="url"]', 't.me/diuuupin');
+await page.screenshot({ path: OUT + '/panel-13-step.png' });
+await page.click('#mSave'); await page.waitForTimeout(400);
+const mx = JSON.parse((await db.first(`SELECT value FROM settings WHERE key = 'msgx:consentPd'`)).value);
+assert.deepEqual(mx, { delay: 2.5, links: [[{ text: 'Наш канал', url: 'https://t.me/diuuupin' }]] });
+assert.equal(await db.first(`SELECT 1 FROM settings WHERE key = 'msg:consentPd'`), null, 'текст не трогали — не помечен как изменённый');
+assert.match(await page.textContent('.msg[data-k="consentPd"]'), /⏱ 2,5 с[\s\S]*🔘 Даю согласие[\s\S]*🔗 Наш канал/);
+await page.click('.msg[data-k="consentPd"] [data-open="consentPdBtn"]'); await page.waitForSelector('.sheet.on'); await page.waitForTimeout(200);
+assert.match(await page.textContent('.sheet h2'), /Кнопка согласия/, 'по нажатию на кнопку открывается её подпись');
+await page.click('#mClose');
+await page.screenshot({ path: OUT + '/panel-14-journey.png', fullPage: true });
+const ob0 = sent.length;
+await page.click('#obNo'); await page.waitForTimeout(600);
+const obm = sent.slice(ob0).filter((c) => c.body.chat_id === 100).map((c) => c.method + ':' + (c.body.text || '').slice(0, 20));
+assert.ok(obm.some((x) => /Проходим путь/.test(x)) && obm.some((x) => /Привет/.test(x)) && obm.some((x) => /Чтобы присылать/.test(x)), 'путь заново начался: ' + obm.join(' | '));
+const cpd = sent.slice(ob0).find((c) => /Чтобы присылать/.test(c.body.text || ''));
+assert.equal(cpd.body.reply_markup.inline_keyboard.at(-1)[0].url, 'https://t.me/diuuupin', 'своя кнопка-ссылка под встроенной');
+step('путь ученика: шаги по порядку, пауза и кнопки-ссылки шага, подписи кнопок, «пройти заново»');
+
 // 8б. картинка к приветствию: загрузить, превью, убрать
-await page.click('.msg[data-k="hello"]'); await page.waitForSelector('#mAdd');
+await page.click('.msg[data-k="hello"] .p'); await page.waitForSelector('#mAdd');
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 await page.setInputFiles('#mFile', { name: 'hello.png', mimeType: 'image/png', buffer: PNG });
 await page.waitForSelector('#mImg'); await page.waitForTimeout(500);

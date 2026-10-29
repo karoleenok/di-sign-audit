@@ -5,6 +5,8 @@ import { isAdmin } from './admin.js';
 import { AUD, LEVELS } from './texts.js';
 import { sendPost, audienceCount } from './posts.js';
 import { runPreview, startFastRun, stopRuns, stepRuns, activeRun } from './testrun.js';
+import { onStart } from './users.js';
+import { saveMsgExtra } from './msgs.js';
 import { listMsgs, saveMsg, resetMsg, btn, say, setMsgMedia, canMedia, msgInfo, loadMsgs } from './msgs.js';
 
 const enc = new TextEncoder();
@@ -204,6 +206,17 @@ export async function handlePanelApi(ctx, request, url) {
     if (ctx.waitUntil) ctx.waitUntil(job); else await job;
     return json({ ok: true, run: await activeRun(ctx.db, user.id) });
   }
+  // пройти путь ученика заново: анкета админа сбрасывается, бот ведёт по входу как нового человека
+  if (path === '/run/onboarding' && request.method === 'POST') {
+    const id = user.id;
+    for (const t of ['users', 'consents', 'states']) await ctx.db.run(`DELETE FROM ${t} WHERE tg_id = ?`, [id]);
+    await ctx.db.run(`DELETE FROM deliveries WHERE tg_id = ? AND post_id IN (SELECT id FROM posts WHERE kind = 'gift')`, [id]);
+    await ctx.db.run(`DELETE FROM settings WHERE key = ? OR key LIKE ?`, ['nogift:' + id, 'start:' + id + ':%']);
+    await ctx.tg.call('sendMessage', { chat_id: id, text: '🧪 Проходим путь ученика заново' + (body.fromTest ? ' — как будто ты пришла из теста.' : ' — как будто ты пришла без теста.') + ' Твоя анкета сброшена, ответь на вопросы бота.', disable_notification: true }).catch(() => {});
+    const job = onStart(ctx, { from: { id, first_name: user.first_name }, message_id: 0 }, body.fromTest ? 'audit_P_' + (body.level === 'pro' ? 'pro' : 'start') : '').catch((e) => console.log('onboarding', e && e.stack));
+    if (ctx.waitUntil) ctx.waitUntil(job); else await job;
+    return json({ ok: true });
+  }
   if (path === '/run/stop' && request.method === 'POST') {
     await stopRuns(ctx, user.id);
     await ctx.tg.call('sendMessage', { chat_id: user.id, text: '⏹ Ускоренный тест остановлен' }).catch(() => {});
@@ -226,6 +239,9 @@ export async function handlePanelApi(ctx, request, url) {
       if (body.reset) await resetMsg(ctx, m[1]);
       else if (body.removeMedia) await setMsgMedia(ctx, m[1], null);
       else {
+        // пауза перед сообщением и свои кнопки-ссылки
+        if (body.delay !== undefined || body.links !== undefined) await saveMsgExtra(ctx, m[1], { delay: body.delay, links: body.links });
+        if (body.text === undefined) return json({ ok: true, msgs: await listMsgs(ctx) });
         const t = String(body.text || '');
         if (!t.trim()) return json({ error: 'Пустой текст' }, 400);
         if (t.length > 4000) return json({ error: 'Слишком длинно для Telegram' }, 400);

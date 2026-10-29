@@ -309,20 +309,70 @@ function renderGifts() {
   $('body').innerHTML = h; bindCards();
 }
 
+// путь ученика: служебные сообщения по порядку (порядок фиксирован — согласие на данные по закону первое)
+const FLOW = [
+  { key: 'hello', alt: ['helloTest'], title: 'Приветствие', note: 'Сразу после «Старт». Если человек пришёл из теста — вариант «после теста».' },
+  { key: 'consentPd', btns: ['consentPdBtn'], alt: ['consentThanks'], title: 'Согласие на обработку данных', note: 'Всегда первым вопросом: без согласия бот не имеет права ничего присылать.' },
+  { key: 'askLevel', btns: ['levelBtnStart', 'levelBtnPro'], alt: ['levelChanged'], title: 'Уровень' },
+  { key: 'testOffer', btns: ['testBtn'], alt: ['noGift'], title: 'Предложение пройти тест', note: 'Если человек пришёл из теста — вместо этого сообщения сразу подарок (вкладка «Подарки»).' },
+  { key: 'consentAds', btns: ['consentAdsYes', 'consentAdsNo'], title: 'Согласие на рассылку' },
+  { key: 'adsYes', alt: ['adsNo'], title: 'Ответ на «да» / «нет»', note: 'После «да» начинается лента (вкладка «Лента»).' },
+];
+const mOf = (k) => S.msgs.find((x) => x.key === k);
+const mediaTag = (m) => m && m.media ? '<span class="tag">' + ({ photo: '🖼 картинка', video: '🎬 видео', animation: '🎞 гифка' }[m.media] || '🖼') + '</span>' : '';
 function renderTexts() {
+  let h = '<div class="box" style="margin-top:16px"><h3>Путь ученика</h3><p class="small muted" style="margin:0 0 10px">Так бот встречает нового человека — шаг за шагом. Нажми на шаг или на кнопку, чтобы поменять текст, картинку, паузу и кнопки-ссылки.</p>' +
+    '<div class="btns" style="margin-top:0"><button class="btn" type="button" id="obNo">▶️ Пройти путь заново — без теста</button><button class="btn ghost" type="button" id="obTest">▶️ Пройти путь заново — как из теста</button></div>' +
+    '<p class="small muted" style="margin:8px 2px 0">Твоя анкета в боте сбросится, и бот проведёт тебя по всем шагам с настоящими кнопками.</p></div>';
+  const used = new Set();
+  FLOW.forEach((st, i) => {
+    const m = mOf(st.key); if (!m) return;
+    [st.key, ...(st.btns || []), ...(st.alt || [])].forEach((k) => used.add(k));
+    h += '<div class="day"><div class="dayh"><b>' + (i + 1) + '</b><span>' + esc(st.title) + '</span></div>' +
+      '<div class="msg" data-k="' + m.key + '" style="margin-bottom:0"><div class="t"><span class="time">⏱ ' + String(m.delay).replace('.', ',') + ' с</span>' + (m.changed ? '<span class="tag">✎ изменено</span>' : '') + mediaTag(m) + '</div><div class="p" style="-webkit-line-clamp:3">' + esc(m.text) + '</div>' +
+      (((st.btns || []).length || m.links.length) ? '<div class="meta" style="margin-top:8px">' + (st.btns || []).map((b) => { const bm = mOf(b); return bm ? '<button type="button" class="chip" data-open="' + b + '">🔘 ' + esc(bm.text) + '</button>' : ''; }).join('') + m.links.flat().map((l) => '<span class="chip" style="cursor:default">🔗 ' + esc(l.text) + '</span>').join('') + '</div>' : '') +
+      '</div>' + (st.alt || []).map((a) => { const am = mOf(a); return am ? '<div class="msg" data-k="' + a + '" style="margin:6px 0 0 18px;padding:10px 12px"><div class="t small">↳ ' + esc(am.title) + (am.changed ? ' ✎' : '') + mediaTag(am) + '</div><div class="p">' + esc(am.text) + '</div></div>' : ''; }).join('') +
+      (st.note ? '<p class="small muted" style="margin:6px 2px 0">' + esc(st.note) + '</p>' : '') + '</div>';
+  });
   const groups = {};
-  S.msgs.forEach((m) => { (groups[m.group] = groups[m.group] || []).push(m); });
-  const names = { hello: '👋 Приветствие', consent: '✅ Согласие на данные', level: '🎚 Уровень', test: '🧪 Аудит-тест и подарок', ads: '📬 Согласие на рассылку', cmd: '⚙️ Команды ученика', profile: '🤖 Профиль бота и меню команд' };
-  let h = '<p class="muted" style="margin-top:16px">Все сообщения, которые бот пишет ученикам. Нажми, чтобы поменять. ✎ — уже изменено. Премиум-эмодзи вставляются только в самом боте: <b>/texts</b>. В самом низу — описание бота до «Старт» и подписи команд в меню.</p>';
+  S.msgs.filter((m) => !used.has(m.key)).forEach((m) => { const g = m.group === 'cmd' || m.group === 'profile' ? m.group : 'other'; (groups[g] = groups[g] || []).push(m); });
+  const names = { other: '🧩 Прочее', cmd: '⚙️ Команды ученика', profile: '🤖 Профиль бота и меню команд' };
   Object.keys(names).forEach((g) => {
     if (!groups[g]) return;
     h += '<div class="grp">' + names[g] + '</div>';
     groups[g].forEach((m) => {
-      h += '<div class="msg" data-k="' + m.key + '"><div class="t">' + (m.changed ? '✎ ' : '') + esc(m.title) + (m.button ? '<span class="tag">кнопка</span>' : '') + (m.media ? '<span class="tag">' + ({ photo: '🖼 картинка', video: '🎬 видео', animation: '🎞 гифка' }[m.media] || '🖼') + '</span>' : '') + '</div><div class="p">' + esc(m.text) + '</div></div>';
+      h += '<div class="msg" data-k="' + m.key + '"><div class="t">' + (m.changed ? '✎ ' : '') + esc(m.title) + (m.button ? '<span class="tag">кнопка</span>' : '') + mediaTag(m) + '</div><div class="p">' + esc(m.text) + '</div></div>';
     });
   });
+  h += '<p class="small muted" style="margin-top:16px">Премиум-эмодзи вставляются только в самом боте: <b>/texts</b>.</p>';
   $('body').innerHTML = h;
-  document.querySelectorAll('.msg').forEach((el) => el.onclick = () => openMsg(el.dataset.k));
+  document.querySelectorAll('.msg').forEach((el) => el.onclick = (e) => { const b = e.target.closest('[data-open]'); openMsg(b ? b.dataset.open : el.dataset.k); });
+  const ob = async (fromTest) => { try { await api('/run/onboarding', { fromTest, level: view.level }); haptic('medium'); toast('Открой бот — путь начался 👀'); try { tg && tg.close && setTimeout(() => {}, 0); } catch (e) {} } catch (e) { toast(e.message); } };
+  $('obNo').onclick = () => ob(false); $('obTest').onclick = () => ob(true);
+}
+
+// редактор кнопок-ссылок (общий)
+function rowsEditor(el, rows) {
+  const sync = () => { el.querySelectorAll('[data-r]').forEach((i) => { const r = +i.dataset.r, k = +i.dataset.i; if (rows[r] && rows[r][k]) rows[r][k][i.dataset.f] = i.value; }); };
+  const draw = () => {
+    el.innerHTML = (rows.length ? rows.map((row, r) => '<div class="box" style="margin:8px 0;padding:10px"><div class="row" style="justify-content:space-between;margin-bottom:6px"><span class="small muted">Ряд ' + (r + 1) + '</span><span>' +
+      (r > 0 ? '<button type="button" class="chip" data-up="' + r + '">↑</button> ' : '') + (r < rows.length - 1 ? '<button type="button" class="chip" data-down="' + r + '">↓</button>' : '') + '</span></div>' +
+      row.map((b, i) => '<div style="display:grid;grid-template-columns:1fr auto;gap:6px;margin-bottom:6px"><input type="text" placeholder="Текст кнопки" maxlength="60" data-r="' + r + '" data-i="' + i + '" data-f="text" value="' + esc(b.text) + '"><button type="button" class="chip" data-del="' + r + ':' + i + '">✕</button><input type="text" placeholder="https://ссылка" inputmode="url" data-r="' + r + '" data-i="' + i + '" data-f="url" value="' + esc(b.url) + '" style="grid-column:1/-1"></div>').join('') +
+      (row.length < 4 ? '<button type="button" class="chip" data-add="' + r + '">＋ Кнопка в этот ряд</button>' : '') + '</div>').join('') : '<p class="small muted" style="margin:2px">Своих кнопок нет.</p>') +
+      '<button type="button" class="btn ghost" data-newrow="1" style="margin-top:6px">＋ Кнопка-ссылка</button>';
+  };
+  el.addEventListener('input', sync);
+  el.addEventListener('click', (e) => {
+    const t = e.target.closest('button'); if (!t) return; sync();
+    if (t.dataset.newrow) rows.push([{ text: '', url: '' }]);
+    if (t.dataset.add !== undefined) rows[+t.dataset.add].push({ text: '', url: '' });
+    if (t.dataset.del) { const [r, i] = t.dataset.del.split(':').map(Number); rows[r].splice(i, 1); if (!rows[r].length) rows.splice(r, 1); }
+    if (t.dataset.up) { const r = +t.dataset.up; [rows[r - 1], rows[r]] = [rows[r], rows[r - 1]]; }
+    if (t.dataset.down) { const r = +t.dataset.down; [rows[r + 1], rows[r]] = [rows[r], rows[r + 1]]; }
+    haptic(); draw();
+  });
+  draw();
+  return () => { sync(); return rows; };
 }
 
 function bindCards() {
@@ -434,12 +484,15 @@ function openMsg(key) {
         '<div class="btns two" style="margin-top:8px"><button class="btn ghost" id="mAdd" type="button">Заменить</button><button class="btn ghost" id="mDelImg" type="button">Убрать</button></div>'
       : '<button class="btn ghost" id="mAdd" type="button">＋ Добавить картинку, гифку или видео</button>') +
       '<input type="file" id="mFile" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4" hidden><p class="small muted" style="margin:6px 2px 0">Текст станет подписью под картинкой (до 1024 знаков — длиннее уйдёт следующим сообщением).</p>' : '') +
+    (m.canMedia ? '<label class="f">Пауза перед сообщением</label><div class="row"><input type="text" inputmode="decimal" id="mDelay" style="width:90px" value="' + String(m.delay).replace('.', ',') + '"><span class="muted">сек — столько бот «печатает» (• • •) перед ним' + (m.delay !== m.defDelay ? ' · было ' + String(m.defDelay).replace('.', ',') : '') + '</span></div>' +
+      '<label class="f">Свои кнопки-ссылки под сообщением</label><div id="mLinks"></div><p class="small muted" style="margin:6px 2px 0">Например «Наш канал» или «Сайт школы». Встают под встроенными кнопками.</p>' : '') +
     (m.vars.length ? '<p class="small muted" style="margin:10px 2px 0">Нажми, чтобы вставить — бот подставит сам:</p><div class="vars" id="mVars">' + m.vars.map((v) => '<button type="button" data-v="{' + v + '}">{' + v + '}</button>').join('') + '</div>' : '') +
     '<div class="btns"><button class="btn" id="mSave">Сохранить</button><div class="btns two" style="margin:0"><button class="btn ghost" id="mPrev">👁 Прислать мне</button><button class="btn ghost" id="mClose">Закрыть</button></div>' +
     (m.changed ? '<button class="btn danger" id="mReset">↩️ Вернуть текст по умолчанию</button>' : '') + '</div>' +
     (m.changed ? '<p class="small muted" style="margin-top:12px">По умолчанию было:</p><div class="preview">' + esc(m.def) + '</div>' : '');
   sheet(h);
   const ta = $('mText');
+  const getLinks = $('mLinks') ? rowsEditor($('mLinks'), JSON.parse(JSON.stringify(m.links || []))) : null;
   if ($('mImg')) fetch('/api/panel/msg/' + key + '/img', { headers: { 'x-init-data': INIT } }).then((r) => r.ok ? r.blob() : null).then((b) => {
     if (!b) { $('mImgInfo').textContent = 'превью не загрузилось — в боте картинка есть'; return; }
     const img = $('mImg');
@@ -474,7 +527,12 @@ function openMsg(key) {
   if ($('mVars')) $('mVars').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; const s = ta.selectionStart ?? ta.value.length, en = ta.selectionEnd ?? s; ta.value = ta.value.slice(0, s) + b.dataset.v + ta.value.slice(en); ta.focus(); ta.selectionStart = ta.selectionEnd = s + b.dataset.v.length; };
   $('mClose').onclick = closeSheet;
   $('mPrev').onclick = async () => { try { await api('/msg/' + key + '/preview', {}); toast('Отправила тебе в бот — так видит ученик (сохранённая версия)'); } catch (e) { toast(e.message); } };
-  $('mSave').onclick = async () => { try { const r = await api('/msg/' + key, { text: ta.value }); S.msgs = r.msgs; closeSheet(); haptic('medium'); toast('Сохранено ✓'); render(); } catch (e) { toast(e.message); } };
+  $('mSave').onclick = async () => {
+    const body = {};
+    if (ta.value !== m.text) body.text = ta.value;
+    if ($('mDelay')) { body.delay = parseFloat(String($('mDelay').value).replace(',', '.')) || 0; body.links = getLinks(); }
+    try { const r = await api('/msg/' + key, body); S.msgs = r.msgs; closeSheet(); haptic('medium'); toast('Сохранено ✓'); render(); } catch (e) { toast(e.message); }
+  };
   if ($('mReset')) $('mReset').onclick = async () => { try { const r = await api('/msg/' + key, { reset: true }); S.msgs = r.msgs; closeSheet(); toast('Вернули как было ↩️'); render(); } catch (e) { toast(e.message); } };
 }
 

@@ -434,4 +434,23 @@ step('«печатает…» в чате: пузырёк • → • • → �
 }
 step('когда отправлять: по таймеру после входа и «после поста»; проверка на себе — предпросмотр и ускоренный тест');
 
+// ---------- пауза шага и кнопки-ссылки ----------
+{
+  const { saveMsgExtra } = await import('../src/msgs.js');
+  await saveMsgExtra(C(), 'consentPd', { links: [[{ text: 'Наш канал', url: 't.me/diuuupin' }]] });
+  await saveMsgExtra(C(), 'hello', { delay: 0 });
+  const slowEnv = { ...env, DELAY_FACTOR: '0.001' };
+  const c0 = calls.length;
+  await handleUpdate(makeCtx({ db, env: slowEnv, fetchFn: fakeFetch, publicUrl: 'https://bot.test', now: (NOW += 10) }), { message: { message_id: 6001, from: { id: 1200, first_name: 'Оля' }, chat: { id: 1200, type: 'private' }, text: '/start' } });
+  const seq = calls.slice(c0).filter((c) => c.body.chat_id === 1200 && c.method.startsWith('send'));
+  assert.match(seq[0].body.text, /^Привет, Оля/, 'пауза 0 — приветствие сразу, без «печатает»');
+  const cp = seq.find((c) => /Чтобы присылать/.test(c.body.text || ''));
+  assert.deepEqual(cp.body.reply_markup.inline_keyboard.map((r) => r.map((b) => b.text)), [['Даю согласие'], ['Наш канал']], 'своя кнопка-ссылка под встроенной');
+  await saveMsgExtra(C(), 'hello', { delay: 0.6 });
+  await saveMsgExtra(C(), 'consentPd', { links: [] });
+  await assert.rejects(() => saveMsgExtra(C(), 'consentPdBtn', { delay: 1 }), /не настраиваются/);
+  await assert.rejects(() => saveMsgExtra(C(), 'hello', { delay: 99 }), /до 30/);
+}
+step('путь ученика: пауза перед шагом и свои кнопки-ссылки');
+
 console.log('\nВсе сценарии прошли. Запросов к фейковому Telegram:', calls.length);
