@@ -324,6 +324,7 @@ step('профиль бота: описание до «Старт», корот�
   assert.match(hp.body.caption, /Привет, U900!/, 'текст стал подписью с подстановкой имени');
   // повторный /start убирает и картинку-приветствие
   const c1 = calls.length;
+  NOW += 10;
   await msg(900, '/start');
   assert.ok(calls.slice(c1).filter((c) => c.method === 'deleteMessage').some((c) => c.body.message_id === hp.res.message_id), 'старое приветствие-картинка исчезло');
   // картинку с подписью в режиме «Изменить» — и текст, и картинка
@@ -339,5 +340,18 @@ step('профиль бота: описание до «Старт», корот�
   await cb(100, 't:r:askLevel');
 }
 step('картинка в служебных сообщениях: добавить, с подписью, убрать; исчезает вместе с сообщением');
+
+// ---------- без дублей ----------
+{
+  const c0 = calls.length;
+  await msg(950, '/start audit_P_start'); await cb(950, 'c:pd');
+  await msg(950, '/start'); await msg(950, '/start');
+  const hellos = calls.slice(c0).filter((c) => c.method === 'sendMessage' && c.body.chat_id === 950 && /Привет/.test(c.body.text || ''));
+  assert.equal(hellos.length, 2, 'второе быстрое нажатие «Старт» не дублирует приветствие');
+  NOW += 60; await msg(950, '/start');
+  const nog = calls.slice(c0).filter((c) => c.method === 'sendMessage' && c.body.chat_id === 950 && /Подарок скоро/.test(c.body.text || ''));
+  assert.ok(nog.length <= 1, '«подарок скоро» — не больше одного раза: ' + nog.length);
+}
+step('без дублей: двойной «Старт» игнорируется, «подарок скоро» — один раз и исчезает');
 
 console.log('\nВсе сценарии прошли. Запросов к фейковому Telegram:', calls.length);

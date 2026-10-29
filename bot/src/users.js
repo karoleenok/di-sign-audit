@@ -77,6 +77,12 @@ async function logConsent(ctx, id, kind, granted) {
 export async function onStart(ctx, msg, payload) {
   const from = msg.from;
   const st = parseStart(payload);
+  // двойное нажатие «Старт» (или повтор от Telegram) за пару секунд — не дублируем
+  const k = 'start:' + from.id + ':' + (payload || '');
+  const fresh = await ctx.db.run(
+    `INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value WHERE CAST(settings.value AS INTEGER) <= ?`,
+    [k, String(ctx.now), ctx.now - 4]);
+  if (!fresh.changes) { await delMsg(ctx, from.id, msg.message_id); return; }
   let u = await getUser(ctx, from.id);
   if (!u) {
     await ctx.db.run(
@@ -142,8 +148,13 @@ async function sendGift(ctx, u) {
     [u.level || 'all', u.tg_id],
   );
   if (!gifts.length) {
+    // подарков ещё нет — говорим об этом один раз, и это служебное сообщение (уберётся при следующем /start)
     const any = await ctx.db.first(`SELECT 1 FROM deliveries d JOIN posts p ON p.id = d.post_id WHERE p.kind = 'gift' AND d.tg_id = ?`, [u.tg_id]);
-    if (!any) await say(ctx, u.tg_id, 'noGift');
+    const told = await ctx.db.first(`SELECT 1 FROM settings WHERE key = ?`, ['nogift:' + u.tg_id]);
+    if (!any && !told) {
+      await ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING`, ['nogift:' + u.tg_id, String(ctx.now)]);
+      await tech(ctx, u.tg_id, say(ctx, u.tg_id, 'noGift'));
+    }
     return;
   }
   for (const g of gifts) {
@@ -195,6 +206,7 @@ export async function onUserCallback(ctx, cq) {
     await answer();
     await cleanAll(ctx, id); await delMsg(ctx, id, mid);
     for (const t of ['users', 'consents', 'deliveries', 'clicks', 'states']) await ctx.db.run(`DELETE FROM ${t} WHERE tg_id = ?`, [id]);
+    await ctx.db.run(`DELETE FROM settings WHERE key = ? OR key LIKE ?`, ['nogift:' + id, 'start:' + id + ':%']);
     return say(ctx, id, 'deleted');
   }
   if (d === 'del:no') { await answer('deleteCancel'); return done(); }
