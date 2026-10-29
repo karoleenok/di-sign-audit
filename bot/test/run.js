@@ -215,7 +215,7 @@ step('ученик: смена уровня, отписка, удаление д
 await msg(100, '/help');
 let h = last(100)[0];
 assert.equal(h.body.parse_mode, 'HTML');
-assert.equal(h.body.reply_markup.inline_keyboard.filter((r) => r[0].callback_data).length, 9);
+assert.equal(h.body.reply_markup.inline_keyboard.filter((r) => r[0].callback_data).length, 11);
 assert.ok(h.body.reply_markup.inline_keyboard[0][0].web_app, 'кнопка панели в памятке');
 for (const [k] of (await import('../src/guide.js')).GUIDE_MENU) {
   await cb(100, 'h:' + k);
@@ -225,7 +225,7 @@ for (const [k] of (await import('../src/guide.js')).GUIDE_MENU) {
 }
 await cb(500, 'h:plan');
 assert.doesNotMatch(lastText(500) || '', /план прогрева/, 'обычным людям памятка не открывается');
-step('памятка админа: меню из 9 разделов, все в пределах лимита, только для админов');
+step('памятка админа: меню из 11 разделов, все в пределах лимита, только для админов');
 
 // ---------- тексты бота ----------
 {
