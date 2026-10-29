@@ -47,7 +47,6 @@ await msg(100, undefined, { photo: [{ file_id: 'ph3' }], media_group_id: 'g1' })
 assert.equal(calls.filter((c) => c.body.chat_id === 100 && /Принято/.test(c.body.text || '')).length, 1, 'на альбом один ответ');
 await cb(100, 'w:done');
 await cb(100, 'w:kind:gift');
-await cb(100, 'w:gz:P');
 await cb(100, 'w:aud:all');
 await msg(100, 'Открыть в Figma | https://figma.com/x');
 // предпросмотр: альбом + сообщение с кнопкой
@@ -64,15 +63,15 @@ step('админ: подарок-альбом из 3 фото с премиум-
 await msg(100, '/new');
 await msg(100, 'Материал дня 1 для начинающих', { entities: [{ type: 'bold', offset: 0, length: 8 }] });
 await cb(100, 'w:done'); await cb(100, 'w:kind:drip');
-await msg(100, '1'); await cb(100, 'w:tm:11:00'); await cb(100, 'w:aud:start'); await cb(100, 'w:zn:*');
+await msg(100, '1'); await cb(100, 'w:tm:11:00'); await cb(100, 'w:aud:start');
 await msg(100, 'Сайт | https://disign.ru; Чат | t.me/disign');
 await cb(100, 'w:save:1');
 // пост по дням: день 2, продолжающим
 await msg(100, '/new'); await msg(100, 'Материал дня 2 для продолжающих');
-await cb(100, 'w:done'); await cb(100, 'w:kind:drip'); await msg(100, '2'); await msg(100, '19:30'); await cb(100, 'w:aud:pro'); await cb(100, 'w:zn:*'); await cb(100, 'w:nobtn'); await cb(100, 'w:save:1');
+await cb(100, 'w:done'); await cb(100, 'w:kind:drip'); await msg(100, '2'); await msg(100, '19:30'); await cb(100, 'w:aud:pro'); await cb(100, 'w:nobtn'); await cb(100, 'w:save:1');
 // пост в дату: всем
 await msg(100, '/new'); await msg(100, 'Эфир в четверг!');
-await cb(100, 'w:done'); await cb(100, 'w:kind:date'); await msg(100, '03.11 19:00'); await cb(100, 'w:aud:all'); await cb(100, 'w:zn:*'); await cb(100, 'w:nobtn'); await cb(100, 'w:save:1');
+await cb(100, 'w:done'); await cb(100, 'w:kind:date'); await msg(100, '03.11 19:00'); await cb(100, 'w:aud:all'); await cb(100, 'w:nobtn'); await cb(100, 'w:save:1');
 const posts = await db.all('SELECT id, kind, audience, zone, day, send_time, run_at, status FROM posts');
 assert.equal(posts.length, 4);
 assert.deepEqual(posts.map((p) => p.kind), ['gift', 'drip', 'drip', 'date']);
@@ -92,7 +91,7 @@ assert.match(lastText(200), /рекламная рассылка/);
 await cb(200, 'c:ads:1');
 let u = await db.first('SELECT * FROM users WHERE tg_id = 200');
 assert.equal(u.status, 'active'); assert.equal(u.level, 'start'); assert.equal(u.zone, 'P');
-step('ученик из теста: согласие → подарок по зоне → согласие на рассылку');
+step('ученик из теста: согласие → подарок после теста → согласие на рассылку');
 
 // 300: обычная ссылка, выбирает «продолжающий» и зону
 await msg(300, '/start');
@@ -105,15 +104,17 @@ assert.equal(off.body.reply_markup.inline_keyboard[0][0].text, 'Пройти т�
 assert.match(lastText(300), /рекламная рассылка/, 'зону в боте не спрашиваем');
 await cb(300, 'c:ads:1');
 // прошёл тест и вернулся по ссылке из теста
-await msg(300, '/start audit_S_pro');
-assert.match(lastText(300), /Подарок скоро/, 'для зоны S подарка нет');
+{ const c0 = calls.length;
+  await msg(300, '/start audit_S_pro');
+  assert.ok(sentTo(300, c0).some((c) => c.method === 'sendMediaGroup'), 'после теста пришёл общий подарок (зона не важна)');
+  assert.match(sentTo(300, c0)[0].body.text, /аудит пройден/); }
 u = await db.first('SELECT * FROM users WHERE tg_id = 300');
 assert.equal(u.zone, 'S'); assert.equal(u.status, 'active');
 // 400: отказался от рекламы
 await msg(400, '/start audit_V_free'); await cb(400, 'c:pd'); await cb(400, 'c:ads:0');
 u = await db.first('SELECT * FROM users WHERE tg_id = 400');
 assert.equal(u.status, 'stopped'); assert.equal(u.level, 'pro');
-step('обычный вход: уровень → кнопка «Пройти тест» → рассылка; возврат из теста с зоной; отказ от рассылки');
+step('обычный вход: уровень → кнопка «Пройти тест» → рассылка; после теста — подарок; отказ от рассылки');
 
 // ---------- расписание ----------
 const tickAt = async (when) => { NOW = parseWhen(when, NOW); const c0 = calls.length; const r = await tick(C(), 40); return { r, c: calls.slice(c0) }; };
@@ -146,7 +147,7 @@ assert.equal((await db.first('SELECT COUNT(*) AS n FROM clicks')).n, 1);
 step('нажатие кнопки считается и ведёт на ссылку');
 
 // ---------- ошибки отправки ----------
-await msg(100, '/new'); await msg(100, 'Срочно всем'); await cb(100, 'w:done'); await cb(100, 'w:kind:date'); await msg(100, 'завтра 12:00'); await cb(100, 'w:aud:all'); await cb(100, 'w:zn:*'); await cb(100, 'w:nobtn'); await cb(100, 'w:save:1');
+await msg(100, '/new'); await msg(100, 'Срочно всем'); await cb(100, 'w:done'); await cb(100, 'w:kind:date'); await msg(100, 'завтра 12:00'); await cb(100, 'w:aud:all'); await cb(100, 'w:nobtn'); await cb(100, 'w:save:1');
 const urgent = await db.first(`SELECT * FROM posts ORDER BY id DESC LIMIT 1`);
 fail403.add(300);
 fail429 = false;
@@ -154,7 +155,7 @@ t = await tickAt('04.11.2026 12:00');
 assert.equal((await db.first('SELECT status FROM users WHERE tg_id = 300')).status, 'blocked');
 step('кто заблокировал бота — помечается и больше не получает');
 
-await msg(100, '/new'); await msg(100, 'Ещё один'); await cb(100, 'w:done'); await cb(100, 'w:kind:date'); await msg(100, 'завтра 12:00'); await cb(100, 'w:aud:all'); await cb(100, 'w:zn:*'); await cb(100, 'w:nobtn'); await cb(100, 'w:save:1');
+await msg(100, '/new'); await msg(100, 'Ещё один'); await cb(100, 'w:done'); await cb(100, 'w:kind:date'); await msg(100, 'завтра 12:00'); await cb(100, 'w:aud:all'); await cb(100, 'w:nobtn'); await cb(100, 'w:save:1');
 fail429 = true;
 t = await tickAt('05.11.2026 12:00');
 assert.ok(+(await db.first(`SELECT value FROM settings WHERE key='pause_until'`)).value > NOW);
@@ -215,7 +216,7 @@ step('ученик: смена уровня, отписка, удаление д
 await msg(100, '/help');
 let h = last(100)[0];
 assert.equal(h.body.parse_mode, 'HTML');
-assert.equal(h.body.reply_markup.inline_keyboard.filter((r) => r[0].callback_data).length, 11);
+assert.equal(h.body.reply_markup.inline_keyboard.filter((r) => r[0].callback_data).length, 10);
 assert.ok(h.body.reply_markup.inline_keyboard[0][0].web_app, 'кнопка панели в памятке');
 for (const [k] of (await import('../src/guide.js')).GUIDE_MENU) {
   await cb(100, 'h:' + k);
@@ -225,7 +226,7 @@ for (const [k] of (await import('../src/guide.js')).GUIDE_MENU) {
 }
 await cb(500, 'h:plan');
 assert.doesNotMatch(lastText(500) || '', /план прогрева/, 'обычным людям памятка не открывается');
-step('памятка админа: меню из 11 разделов, все в пределах лимита, только для админов');
+step('памятка админа: меню из 10 разделов, все в пределах лимита, только для админов');
 
 // ---------- тексты бота ----------
 {

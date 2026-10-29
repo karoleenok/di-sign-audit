@@ -60,13 +60,12 @@ export async function onStart(ctx, msg, payload) {
   }
   u = await getUser(ctx, from.id);
   const name = from.first_name || 'друг';
-  if (!st.zone) await say(ctx, from.id, 'hello', { имя: name });
-  else if (st.zone === 'top') await say(ctx, from.id, 'helloTestTop', { имя: name });
-  else await say(ctx, from.id, 'helloTest', { имя: name, зона: ZONES[st.zone] });
+  // зона из теста запоминается только как отметка «прошёл тест» — посты и подарки по зонам не делим
+  await say(ctx, from.id, st.zone ? 'helloTest' : 'hello', { имя: name });
   return nextStep(ctx, u);
 }
 
-// Пошаговый вход: согласие -> уровень -> зона -> подарок -> согласие на рассылку
+// Пошаговый вход: согласие -> уровень -> (тест) -> подарок -> согласие на рассылку
 export async function nextStep(ctx, u) {
   const id = u.tg_id;
   if (!u.consent_pd_at) {
@@ -77,11 +76,11 @@ export async function nextStep(ctx, u) {
   }
   if (!u.level) return askLevel(ctx, id);
   if (!u.zone) {
-    // зону в боте не спрашиваем: предлагаем пройти аудит-тест, он вернёт человека в бот уже с зоной
+    // ещё не проходил тест: предлагаем пройти, по кнопке в конце теста он вернётся в бот
     const url = ctx.env.TEST_URL;
     await say(ctx, id, 'testOffer', {}, url ? { reply_markup: kb([[{ text: await btn(ctx, 'testBtn'), url }]]) } : {});
   } else {
-    // подарок по зоне из теста (один раз)
+    // прошёл тест — подарок (один раз): общий и/или под его уровень
     await sendGift(ctx, u);
   }
   if (!u.consent_ads_at && u.status !== 'stopped') {
@@ -96,11 +95,11 @@ export async function nextStep(ctx, u) {
 
 async function sendGift(ctx, u) {
   const gifts = await ctx.db.all(
-    `SELECT * FROM posts WHERE kind = 'gift' AND status = 'active' AND zone = ?
+    `SELECT * FROM posts WHERE kind = 'gift' AND status = 'active'
        AND (audience = 'all' OR audience = ?)
        AND NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.post_id = posts.id AND d.tg_id = ?)
      ORDER BY id`,
-    [u.zone, u.level || 'all', u.tg_id],
+    [u.level || 'all', u.tg_id],
   );
   if (!gifts.length) {
     const any = await ctx.db.first(`SELECT 1 FROM deliveries d JOIN posts p ON p.id = d.post_id WHERE p.kind = 'gift' AND d.tg_id = ?`, [u.tg_id]);
@@ -133,12 +132,6 @@ export async function onUserCallback(ctx, cq) {
     const lv = d.slice(3) === 'start' ? 'start' : 'pro';
     await ctx.db.run(`UPDATE users SET level = ?, level_raw = COALESCE(level_raw, ?) WHERE tg_id = ?`, [lv, lv === 'start' ? 'start' : 'free', id]);
     if (u.consent_pd_at && u.consent_ads_at) { await done('levelChanged', { уровень: LEVELS[lv] }); return; }
-    await done();
-    return nextStep(ctx, await getUser(ctx, id));
-  }
-  if (d.startsWith('zn:')) {
-    const z = d.slice(3);
-    await ctx.db.run(`UPDATE users SET zone = ? WHERE tg_id = ?`, [ZONES[z] ? z : 'top', id]);
     await done();
     return nextStep(ctx, await getUser(ctx, id));
   }

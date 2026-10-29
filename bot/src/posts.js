@@ -1,4 +1,4 @@
-import { AUD, ZONES, T } from './texts.js';
+import { AUD, T } from './texts.js';
 import { fmtTime, fmtWhen, MSK, DAY } from './time.js';
 
 const CAPTION_MAX = 1024;
@@ -71,7 +71,6 @@ function audienceSql(post) {
   const p = [];
   if (post.audience === 'start') c += ` AND u.level = 'start'`;
   else if (post.audience === 'pro') c += ` AND u.level = 'pro'`;
-  if (post.zone) { c += ` AND u.zone = ?`; p.push(post.zone); }
   return { c, p };
 }
 const BASE = `u.status = 'active' AND u.consent_ads_at IS NOT NULL AND u.joined_at IS NOT NULL AND u.paid_at IS NULL`;
@@ -134,7 +133,7 @@ export function postLabel(p) {
   return `${ic}${t}`;
 }
 export function postWhen(p) {
-  if (p.kind === 'gift') return `подарок · зона «${ZONES[p.zone] || p.zone}»`;
+  if (p.kind === 'gift') return 'подарок после теста';
   if (p.kind === 'date') return p.run_at ? `дата ${fmtWhen(p.run_at)}` : 'дата не задана';
   return Number(p.day) === 0 ? 'день 0 · сразу' : `день ${p.day} · ${p.send_time}`;
 }
@@ -144,7 +143,7 @@ export function postSummary(p) {
   return [
     `#${p.id} · ${st}`,
     `Когда: ${postWhen(p)}`,
-    `Кому: ${AUD[p.audience] || p.audience}${p.zone && p.kind !== 'gift' ? ` · зона «${ZONES[p.zone] || p.zone}»` : ''}`,
+    `Кому: ${AUD[p.audience] || p.audience}`,
     `Кнопок: ${btns}${p.kind === 'drip' ? ` · догонять опоздавших: ${p.catchup ? 'да' : 'нет'}` : ''}`,
   ].join('\n');
 }

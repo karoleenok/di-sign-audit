@@ -279,13 +279,7 @@ var MSG = {
   helloTest: [
     "hello",
     "Приветствие (пришёл из теста)",
-    "Привет, {имя}! Вижу, аудит пройден 🐾\nГлавная зона роста — «{зона}». Подарок под неё уже готов.",
-    ["имя", "зона"]
-  ],
-  helloTestTop: [
-    "hello",
-    "Приветствие (тест: явных утечек нет)",
-    "Привет, {имя}! Вижу, аудит пройден 🐾\nЯвных утечек нет, и подарок для тебя уже готов.",
+    "Привет, {имя}! Вижу, аудит пройден 🐾\nПодарок по итогам теста уже готов.",
     ["имя"]
   ],
   consentPd: [
@@ -307,7 +301,7 @@ var MSG = {
     []
   ],
   testBtn: ["test", "Кнопка «Пройти тест»", "Пройти тест", [], true],
-  noGift: ["test", "Если подарка для зоны ещё нет", "Подарок скоро появится здесь 🎁", []],
+  noGift: ["test", "Если подарок ещё не загружен", "Подарок скоро появится здесь 🎁", []],
   consentAds: [
     "ads",
     "Вопрос про рассылку",
@@ -488,10 +482,6 @@ function audienceSql(post) {
   const p = [];
   if (post.audience === "start") c += ` AND u.level = 'start'`;
   else if (post.audience === "pro") c += ` AND u.level = 'pro'`;
-  if (post.zone) {
-    c += ` AND u.zone = ?`;
-    p.push(post.zone);
-  }
   return { c, p };
 }
 var BASE = `u.status = 'active' AND u.consent_ads_at IS NOT NULL AND u.joined_at IS NOT NULL AND u.paid_at IS NULL`;
@@ -540,7 +530,7 @@ function postLabel(p) {
   return `${ic}${t}`;
 }
 function postWhen(p) {
-  if (p.kind === "gift") return `подарок · зона «${ZONES[p.zone] || p.zone}»`;
+  if (p.kind === "gift") return "подарок после теста";
   if (p.kind === "date") return p.run_at ? `дата ${fmtWhen(p.run_at)}` : "дата не задана";
   return Number(p.day) === 0 ? "день 0 · сразу" : `день ${p.day} · ${p.send_time}`;
 }
@@ -550,7 +540,7 @@ function postSummary(p) {
   return [
     `#${p.id} · ${st}`,
     `Когда: ${postWhen(p)}`,
-    `Кому: ${AUD[p.audience] || p.audience}${p.zone && p.kind !== "gift" ? ` · зона «${ZONES[p.zone] || p.zone}»` : ""}`,
+    `Кому: ${AUD[p.audience] || p.audience}`,
     `Кнопок: ${btns}${p.kind === "drip" ? ` · догонять опоздавших: ${p.catchup ? "да" : "нет"}` : ""}`
   ].join("\n");
 }
@@ -606,9 +596,7 @@ async function onStart(ctx, msg2, payload) {
   }
   u = await getUser(ctx, from.id);
   const name = from.first_name || "друг";
-  if (!st.zone) await say(ctx, from.id, "hello", { имя: name });
-  else if (st.zone === "top") await say(ctx, from.id, "helloTestTop", { имя: name });
-  else await say(ctx, from.id, "helloTest", { имя: name, зона: ZONES[st.zone] });
+  await say(ctx, from.id, st.zone ? "helloTest" : "hello", { имя: name });
   return nextStep(ctx, u);
 }
 async function nextStep(ctx, u) {
@@ -637,11 +625,11 @@ async function nextStep(ctx, u) {
 }
 async function sendGift(ctx, u) {
   const gifts = await ctx.db.all(
-    `SELECT * FROM posts WHERE kind = 'gift' AND status = 'active' AND zone = ?
+    `SELECT * FROM posts WHERE kind = 'gift' AND status = 'active'
        AND (audience = 'all' OR audience = ?)
        AND NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.post_id = posts.id AND d.tg_id = ?)
      ORDER BY id`,
-    [u.zone, u.level || "all", u.tg_id]
+    [u.level || "all", u.tg_id]
   );
   if (!gifts.length) {
     const any = await ctx.db.first(`SELECT 1 FROM deliveries d JOIN posts p ON p.id = d.post_id WHERE p.kind = 'gift' AND d.tg_id = ?`, [u.tg_id]);
@@ -678,12 +666,6 @@ async function onUserCallback(ctx, cq) {
       await done("levelChanged", { уровень: LEVELS[lv] });
       return;
     }
-    await done();
-    return nextStep(ctx, await getUser(ctx, id));
-  }
-  if (d.startsWith("zn:")) {
-    const z = d.slice(3);
-    await ctx.db.run(`UPDATE users SET zone = ? WHERE tg_id = ?`, [ZONES[z] ? z : "top", id]);
     await done();
     return nextStep(ctx, await getUser(ctx, id));
   }
@@ -731,7 +713,6 @@ var GUIDE_MENU = [
   ["panel", "🧩 Панель: как двигать посты"],
   ["msgs", "✏️ Тексты бота: как поменять"],
   ["plan", "📅 Что выкладывать: план прогрева"],
-  ["zones", "🎯 Зоны теста → какие главы показывать"],
   ["texts", "💬 Примеры постов"],
   ["stats", "📊 Статистика и проверка"],
   ["rules", "⚖️ Важно: правила и безопасность"]
@@ -748,7 +729,7 @@ var GUIDE = {
 2. Пришли пост как обычное сообщение: текст, картинку или альбом. Премиум-эмодзи и жирный шрифт сохранятся.
 3. Нажми <b>Готово ➜</b>
 4. Выбери, когда: <i>через N дней после входа</i>, <i>в дату и время</i> или <i>подарок после теста</i>
-5. Кому: всем / начинающим / продолжающим, и при желании — одной зоне теста
+5. Кому: всем / начинающим / продолжающим
 6. Кнопки: <code>Текст | https://ссылка</code> или «Без кнопок»
 7. Посмотри предпросмотр — так увидят ученики — и нажми <b>Сохранить и включить</b>
 
@@ -757,12 +738,14 @@ var GUIDE = {
   how: `<b>🧭 Как устроен бот</b>
 
 <b>Путь ученика</b>
-1. Проходит тест на сайте и жмёт «Забрать материал» — бот получает его зону и уровень из ссылки.
+1. Проходит тест на сайте и жмёт «Забрать материал» — бот узнаёт из ссылки, что тест пройден, и уровень.
 2. Даёт согласие на обработку данных — без него бот ничего не присылает.
-3. Сразу получает <b>подарок</b> под свою зону.
+3. Сразу получает <b>подарок</b> после теста.
 4. Отдельно соглашается на рассылку — с этой минуты для него идёт <b>лента</b>.
 
-<b>Если пришёл без теста</b>: бот спросит только уровень и предложит пройти аудит-тест (кнопка «Пройти тест»). Слабые места в боте не спрашиваем — их определяет тест. Пока человек не прошёл тест, у него нет зоны: подарок не придёт, посты «для одной зоны» тоже, а общие посты ленты — придут.
+<b>Если пришёл без теста</b>: бот спросит только уровень и предложит пройти аудит-тест (кнопка «Пройти тест»). Слабые места в боте не спрашиваем — их показывает сам тест. Подарок придёт, когда человек пройдёт тест и вернётся по кнопке; лента идёт в любом случае.
+
+В боте делим людей только на <b>начинающих</b> и <b>продолжающих</b> — отдельных постов под слабые места из теста нет.
 
 <b>Уровни</b>
 • начинающие — в тесте «учусь, хочу к первым клиентам»
@@ -771,7 +754,7 @@ var GUIDE = {
 <b>Три вида постов</b>
 • <b>через N дней</b> — у каждого свой отсчёт от входа. День 0 — сразу, день 1 — на следующий день в выбранное время по Москве.
 • <b>в дату</b> — один раз всем подходящим, кто уже в боте. Тем, кто придёт позже, не уйдёт.
-• <b>подарок</b> — сразу после согласия, под зону из теста.
+• <b>подарок</b> — сразу после теста (всем, начинающим или продолжающим).
 
 <b>Кто не получает рассылку</b>: кто отписался (/stop), заблокировал бота, не дал согласие, уже оплатил курс.
 
@@ -795,7 +778,7 @@ var GUIDE = {
 <b>Совет:</b> первая строка поста — главная мысль, она видна в уведомлении. Одна кнопка с понятным действием работает лучше трёх.`,
   manage: `<b>🗂 Управление постами — /posts и /admin</b>
 
-<b>Панель /admin</b> — самое удобное: лента по дням, посты перетаскиваются за ⋮⋮ на другой день и в другом порядке, по нажатию меняются день, время, кому, зона и пауза. Сверху фильтр «Как увидит человек»: выбери начинающего или продолжающего и зону — увидишь, что именно он получит. Там же даты, подарки по зонам и все тексты бота.
+<b>Панель /admin</b> — самое удобное: лента по дням, посты перетаскиваются за ⋮⋮ на другой день и в другом порядке, по нажатию меняются день, время, кому и пауза. Сверху фильтр «Как увидит человек»: выбери начинающего или продолжающего — увидишь, что именно он получит. Там же даты, подарки и все тексты бота.
 
 <b>В боте /posts</b>:
 Значки: ✅ включён · 📝 черновик · ⏸ пауза. Нажми на пост — откроется карточка:
@@ -803,7 +786,7 @@ var GUIDE = {
 • <b>👁 Показать мне</b> — пост придёт тебе, как ученику
 • <b>⏸ Пауза / ▶️ Включить</b>
 • <b>✏️ Текст и картинки</b> — прислать новое содержимое
-• <b>🔘 Кнопки</b>, <b>🕒 Когда</b>, <b>👥 Кому</b>, <b>🎯 Зона</b>
+• <b>🔘 Кнопки</b>, <b>🕒 Когда</b>, <b>👥 Кому</b>
 • <b>↩️ Догонять</b> (для постов по дням): «нет» — пост получат только новые люди; «да» — его получат и те, у кого этот день уже прошёл
 • <b>🚀 Отправить сейчас</b> (для постов в дату)
 • <b>🗄 В архив</b> — убрать из списка, ничего не удаляется
@@ -817,7 +800,7 @@ var GUIDE = {
 <b>Вкладки</b>
 • <b>Лента</b> — посты «через N дней», по дням: День 0, День 1…
 • <b>Даты</b> — посты на конкретную дату (эфиры, анонсы)
-• <b>Подарки</b> — что приходит после теста, по зонам. Пустые зоны видно сразу
+• <b>Подарки</b> — что приходит после теста: всем, начинающим, продолжающим
 • <b>Тексты</b> — все сообщения бота
 
 <b>Перенести пост на другой день</b>
@@ -827,9 +810,9 @@ var GUIDE = {
 
 <b>Поменять порядок в одном дне</b>: так же тяни выше или ниже. Если поставишь пост между постами в 11:00 и 19:00, а у него время 21:00 — время подстроится само, бот напишет об этом.
 
-<b>Поменять день, время, кому, зону, паузу</b>: нажми на карточку → в окне кнопки − и + для дня, поле времени, «Всем / Начинающим / Продолжающим», зона, статус → «Сохранить». Внизу покажет, скольким людям пост подходит сейчас.
+<b>Поменять день, время, кому, паузу</b>: нажми на карточку → в окне кнопки − и + для дня, поле времени, «Всем / Начинающим / Продолжающим», статус → «Сохранить». Внизу покажет, скольким людям пост подходит сейчас.
 
-<b>Проверить, что получит человек</b>: наверху «Как увидит человек» — выбери уровень и зону. Посты, которые он не получит, станут бледными с пометкой «не получит». Переключатель прячет их совсем.
+<b>Проверить, что получит человек</b>: наверху «Как увидит человек» — выбери начинающего или продолжающего. Посты, которые он не получит, станут бледными с пометкой «не получит». Переключатель прячет их совсем.
 
 <b>👁 Прислать мне</b> — пост придёт тебе в бот, как ученику.
 
@@ -848,7 +831,6 @@ var GUIDE = {
 
 <b>Подстановки</b> — бот заменит сам:
 • <code>{имя}</code> — имя ученика из Telegram, можно в любом сообщении
-• <code>{зона}</code> — главная зона из теста (в приветствии после теста)
 • <code>{уровень}</code> — начинающий / продолжающий (после /level)
 • <code>{политика}</code>, <code>{согласие}</code>, <code>{оферта}</code> — ссылки на документы
 
@@ -862,7 +844,7 @@ var GUIDE = {
 Правило: <b>2 пользы на 1 пост про обучение</b> и не больше одного поста в день. Материалы — утром (11:00), посты про курс — вечером (19:00).
 
 <b>Неделя из теста</b> (её обещает страница теста — держим слово):
-• день 0 — 🎁 подарок по зоне (вид «подарок»)
+• день 0 — 🎁 подарок после теста (вид «подарок»)
 • день 1 — материал + короткое «как пользоваться»
 • день 2 — материал · вечером: как устроен курс, карта глав
 • день 3 — материал
@@ -884,20 +866,6 @@ var GUIDE = {
 Тест обещает каждому 6 материалов за неделю. Если в какой-то день материал только для одного уровня — поставь в тот же день замену для другого уровня.
 
 <b>После недели</b>: 2–3 поста в неделю — польза, истории, ответы на вопросы, «что внутри главы», сроки записи.`,
-  zones: `<b>🎯 Зоны теста → какие главы показывать</b>
-
-В постах «про обучение» выбери <b>🎯 Зону</b> — и пост уйдёт тем, у кого именно эта проблема. Это сильнее общего «у нас классный курс».
-
-• <b>Визуальная база</b> → глава 01: композиция, сетка, шрифты
-• <b>Портфолио</b> → главы 03–04: упаковка кейсов
-• <b>Видимость</b> → глава 05: свой сайт-портфолио
-• <b>Цена и продажа</b> → глава 05: КП, цена, договор
-• <b>Работа с клиентом</b> → главы 03 и 05: бриф, презентация, договор
-• <b>Внутренние блоки</b> → главы 00 и 03: сквозной проект и разборы
-• <b>Скорость: Figma и ИИ</b> → главы 02 и 05: Figma и нейросети
-• <b>Явных утечек нет</b> → дорогие проекты, свои инструменты, сайт-портфолио
-
-Идея: один и тот же день ленты (например, день 2, 19:00) — 7 коротких вариантов поста, по одному на зону.`,
   texts: `<b>💬 Примеры постов</b>
 
 <b>Материал (утро)</b>
@@ -905,7 +873,7 @@ var GUIDE = {
 Проверяй по нему каждую работу перед сдачей — половина правок исчезнет.
 Кнопка: Открыть чек-лист</i>
 
-<b>Про обучение (вечер, зона «Портфолио»)</b>
+<b>Про обучение (вечер)</b>
 <i>Почему красивые картинки не продают? Клиент смотрит портфолио 30 секунд и ищет не красоту, а то, как ты решаешь задачи.
 В главах 03–04 мы упаковываем работы в кейсы: задача → процесс → результат. Выходишь с 4 кейсами.
 Кнопка: Посмотреть программу</i>
@@ -920,7 +888,7 @@ var GUIDE = {
 Тон: на «ты», просто и тепло, без давления. Один пост — одна мысль — одно действие.`,
   stats: `<b>📊 Статистика и проверка</b>
 
-/stats — сколько людей, кто получает рассылку, кто отписался, уровни, зоны, откуда пришли, нажатия по постам.
+/stats — сколько людей, кто получает рассылку, кто отписался, уровни, сколько прошли тест, откуда пришли, нажатия по постам.
 
 В карточке поста (/posts) — отправлено, нажатия, сколько людей подходит сейчас.
 
@@ -1181,11 +1149,6 @@ async function assemble(ctx, id) {
 async function askAudience(ctx, id) {
   return say2(ctx, id, "Кому отправлять?", { reply_markup: kb2([[{ text: "Всем", callback_data: "w:aud:all" }], [{ text: "Начинающим", callback_data: "w:aud:start" }, { text: "Продолжающим", callback_data: "w:aud:pro" }]]) });
 }
-function zoneRows(prefix, withAll) {
-  const rows = Object.entries(ZONES).map(([k, v]) => [{ text: v, callback_data: prefix + k }]);
-  if (withAll) rows.unshift([{ text: "Всем зонам", callback_data: prefix + "*" }]);
-  return rows;
-}
 async function preview(ctx, id, d) {
   const p = { ...d.post, id: 0 };
   try {
@@ -1230,14 +1193,14 @@ async function onAdminCallback(ctx, cq) {
       await clearState(ctx, id);
       return showPost(ctx, id, pid, "Содержимое обновлено ✓");
     }
-    d.post = { text: c.text, entities: c.entities, media: c.media, audience: "all", zone: null, catchup: 0, send_time: "11:00", buttons: null };
+    d.post = { text: c.text, entities: c.entities, media: c.media, audience: "all", catchup: 0, send_time: "11:00", buttons: null };
     await setState(ctx, id, "w:kind", d);
     await ctx.db.run(`DELETE FROM draft_parts WHERE admin_id = ?`, [id]);
     await ctx.db.run(`DELETE FROM draft_groups WHERE admin_id = ?`, [id]);
     return say2(ctx, id, "Когда отправлять?", { reply_markup: kb2([
       [{ text: "📅 Через N дней после входа", callback_data: "w:kind:drip" }],
       [{ text: "🕒 В конкретные дату и время", callback_data: "w:kind:date" }],
-      [{ text: "🎁 Подарок после теста (под зону)", callback_data: "w:kind:gift" }]
+      [{ text: "🎁 Подарок после теста", callback_data: "w:kind:gift" }]
     ]) });
   }
   if (data.startsWith("w:kind:") && d.post) {
@@ -1250,28 +1213,16 @@ async function onAdminCallback(ctx, cq) {
       await setState(ctx, id, "w:when", d);
       return say2(ctx, id, "Когда отправить? Например: 05.11 19:00 или завтра 11:00 (время московское)");
     }
-    await setState(ctx, id, "w:gz", d);
-    return say2(ctx, id, "Для какой зоны теста этот подарок?", { reply_markup: kb2(zoneRows("w:gz:", false)) });
+    await setState(ctx, id, "w:aud", d);
+    return askAudience(ctx, id);
   }
   if (data.startsWith("w:tm:") && d.post) {
     d.post.send_time = data.slice(5);
     await setState(ctx, id, "w:aud", d);
     return askAudience(ctx, id);
   }
-  if (data.startsWith("w:gz:") && d.post) {
-    d.post.zone = data.slice(5);
-    await setState(ctx, id, "w:aud", d);
-    return askAudience(ctx, id);
-  }
   if (data.startsWith("w:aud:") && d.post) {
     d.post.audience = data.slice(6);
-    if (d.post.kind === "gift") return askButtons(ctx, id, d);
-    await setState(ctx, id, "w:zone", d);
-    return say2(ctx, id, "Только для людей с определённой зоной из теста?", { reply_markup: kb2(zoneRows("w:zn:", true)) });
-  }
-  if (data.startsWith("w:zn:") && d.post) {
-    const z = data.slice(5);
-    d.post.zone = z === "*" ? null : z;
     return askButtons(ctx, id, d);
   }
   if (data === "w:nobtn" && d.post) {
@@ -1288,7 +1239,7 @@ async function onAdminCallback(ctx, cq) {
     const p = d.post;
     await ctx.db.run(
       `INSERT INTO posts (title, kind, audience, zone, day, send_time, run_at, catchup, status, text, entities, media, buttons, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [p.title || null, p.kind, p.audience, p.zone || null, p.day ?? null, p.send_time || "11:00", p.run_at || null, p.catchup ? 1 : 0, on ? "active" : "draft", p.text, p.entities, p.media, p.buttons, id, ctx.now]
+      [p.title || null, p.kind, p.audience, null, p.day ?? null, p.send_time || "11:00", p.run_at || null, p.catchup ? 1 : 0, on ? "active" : "draft", p.text, p.entities, p.media, p.buttons, id, ctx.now]
     );
     const row = await ctx.db.first(`SELECT MAX(id) AS id FROM posts WHERE created_by = ?`, [id]);
     await clearState(ctx, id);
@@ -1361,8 +1312,7 @@ async function showPost(ctx, id, pid, note) {
     [{ text: "✏️ Текст и картинки", callback_data: `p:${pid}:ec` }, { text: "🔘 Кнопки", callback_data: `p:${pid}:eb` }],
     [{ text: "🕒 Когда", callback_data: `p:${pid}:ew` }, { text: "👥 Кому", callback_data: `p:${pid}:ea` }]
   ];
-  if (p.kind === "drip") rows.push([{ text: "🎯 Зона", callback_data: `p:${pid}:ez` }, { text: `↩️ Догонять: ${p.catchup ? "да" : "нет"}`, callback_data: `p:${pid}:cu` }]);
-  if (p.kind === "date") rows.push([{ text: "🎯 Зона", callback_data: `p:${pid}:ez` }]);
+  if (p.kind === "drip") rows.push([{ text: `↩️ Догонять: ${p.catchup ? "да" : "нет"}`, callback_data: `p:${pid}:cu` }]);
   if (p.kind === "date") rows.push([{ text: "🚀 Отправить сейчас", callback_data: `p:${pid}:sn` }]);
   rows.push([{ text: p.status === "archived" ? "↩️ Из архива" : "🗄 В архив", callback_data: `p:${pid}:${p.status === "archived" ? "un" : "ar"}` }, { text: "← Список", callback_data: "pl" }]);
   return say2(ctx, id, text, { reply_markup: kb2(rows) });
@@ -1414,16 +1364,10 @@ async function postAction(ctx, id, pid, act) {
       await setState(ctx, id, "e:when:" + pid, {});
       return say2(ctx, id, `Сейчас: ${postWhen(p)}. Новая дата и время, например 05.11 19:00`);
     }
-    return say2(ctx, id, "Зона подарка:", { reply_markup: kb2(zoneRows(`p:${pid}:gz:`, false)) });
+    return say2(ctx, id, "Подарок уходит сразу после теста — время для него не задаётся. Кому он уходит — кнопка «👥 Кому».");
   }
-  if (act.startsWith("gz:")) return upd(`UPDATE posts SET zone = ? WHERE id = ?`, [act.slice(3)], "Зона подарка обновлена ✓");
   if (act === "ea") return say2(ctx, id, "Кому отправлять?", { reply_markup: kb2([[{ text: "Всем", callback_data: `p:${pid}:a:all` }], [{ text: "Начинающим", callback_data: `p:${pid}:a:start` }, { text: "Продолжающим", callback_data: `p:${pid}:a:pro` }]]) });
   if (act.startsWith("a:")) return upd(`UPDATE posts SET audience = ? WHERE id = ?`, [act.slice(2)], "Аудитория обновлена ✓");
-  if (act === "ez") return say2(ctx, id, "Для какой зоны теста?", { reply_markup: kb2(zoneRows(`p:${pid}:z:`, true)) });
-  if (act.startsWith("z:")) {
-    const z = act.slice(2);
-    return upd(`UPDATE posts SET zone = ? WHERE id = ?`, [z === "*" ? null : z], "Зона обновлена ✓");
-  }
   if (act === "sn") {
     const n = await audienceCount(ctx.db, p);
     return say2(ctx, id, `Отправить пост #${pid} сейчас? Подходит людей: ${n}.`, { reply_markup: kb2([[{ text: "🚀 Да, отправить", callback_data: `p:${pid}:sy` }, { text: "Нет", callback_data: `p:${pid}` }]]) });
@@ -1440,7 +1384,6 @@ async function stats(ctx, id) {
   const paid = await q(`SELECT COUNT(*) AS n FROM users WHERE paid_at IS NOT NULL`);
   const wk = await q(`SELECT COUNT(*) AS n FROM users WHERE created_at >= ?`, [ctx.now - 7 * 86400]);
   const lv = await ctx.db.all(`SELECT level, COUNT(*) AS n FROM users WHERE status = 'active' GROUP BY level`);
-  const zn = await ctx.db.all(`SELECT zone, COUNT(*) AS n FROM users GROUP BY zone ORDER BY n DESC`);
   const src = await ctx.db.all(`SELECT CASE WHEN source LIKE 'audit_%' THEN 'тест' WHEN source IS NULL OR source = '' THEN 'без метки' ELSE source END AS s, COUNT(*) AS n FROM users GROUP BY s ORDER BY n DESC LIMIT 8`);
   const day = await q(`SELECT COUNT(*) AS n FROM deliveries WHERE sent_at >= ?`, [ctx.now - 86400]);
   const top = await ctx.db.all(`SELECT p.id, p.title, p.text, COUNT(c.id) AS n FROM clicks c JOIN posts p ON p.id = c.post_id GROUP BY p.id ORDER BY n DESC LIMIT 5`);
@@ -1451,7 +1394,7 @@ async function stats(ctx, id) {
     `💳 Оплатили: ${paid.n}`,
     "",
     "Уровни (активные): " + (lv.map((r) => `${L[r.level] || L.null} ${r.n}`).join(" · ") || "—"),
-    "Зоны: " + (zn.map((r) => `${r.zone ? ZONES[r.zone] || r.zone : "нет"} ${r.n}`).join(" · ") || "—"),
+    "Прошли тест: " + (await ctx.db.first(`SELECT COUNT(*) AS n FROM users WHERE zone IS NOT NULL`)).n,
     "Откуда: " + (src.map((r) => `${r.s} ${r.n}`).join(" · ") || "—"),
     "",
     `📨 Отправлено за сутки: ${day.n}`,
@@ -1527,7 +1470,6 @@ async function showGuide(ctx, id, key) {
 }
 var sampleVars = (ctx, id) => ({
   имя: "Каролина",
-  зона: ZONES.P,
   уровень: LEVELS.start,
   политика: ctx.env.POLICY_URL || "— ссылка появится перед запуском —",
   согласие: ctx.env.CONSENT_URL || "— ссылка появится перед запуском —",
@@ -1785,7 +1727,6 @@ function postOut(p, sent, clicks) {
     time: p.send_time,
     run_at: p.run_at,
     audience: p.audience,
-    zone: p.zone,
     catchup: !!p.catchup,
     pos: p.pos || 0,
     media: media.map((m) => m.type),
@@ -1810,7 +1751,6 @@ async function handlePanelApi(ctx, request, url) {
     const people = await ctx.db.first(`SELECT COUNT(*) AS n, SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active FROM users`);
     return json({
       me: { id: user.id, name: user.first_name },
-      zones: ZONES,
       audiences: AUD,
       levels: LEVELS,
       posts: posts.map((p) => postOut(p, sent[p.id], clicks[p.id])),
@@ -1841,12 +1781,6 @@ async function handlePanelApi(ctx, request, url) {
     if (body.audience !== void 0) {
       if (!AUD[body.audience]) return json({ error: "Неизвестная аудитория" }, 400);
       put("audience", body.audience);
-    }
-    if (body.zone !== void 0) {
-      const z = body.zone || null;
-      if (z && !ZONES[z]) return json({ error: "Неизвестная зона" }, 400);
-      if (p.kind === "gift" && !z) return json({ error: "У подарка должна быть зона" }, 400);
-      put("zone", z);
     }
     if (body.status !== void 0) {
       if (!["active", "paused", "draft", "archived"].includes(body.status)) return json({ error: "Неизвестный статус" }, 400);
@@ -1903,7 +1837,7 @@ async function handlePanelApi(ctx, request, url) {
   }
   m = /^\/msg\/([A-Za-z]+)\/preview$/.exec(path);
   if (m && request.method === "POST") {
-    await say(ctx, user.id, m[1], { зона: ZONES.P, уровень: LEVELS.start, политика: ctx.env.POLICY_URL || "— ссылка появится перед запуском —", согласие: ctx.env.CONSENT_URL || "— ссылка появится перед запуском —", оферта: ctx.env.OFFER_URL || "— скоро —", владелец: ctx.env.OWNER_INFO || "" });
+    await say(ctx, user.id, m[1], { уровень: LEVELS.start, политика: ctx.env.POLICY_URL || "— ссылка появится перед запуском —", согласие: ctx.env.CONSENT_URL || "— ссылка появится перед запуском —", оферта: ctx.env.OFFER_URL || "— скоро —", владелец: ctx.env.OWNER_INFO || "" });
     return json({ ok: true });
   }
   return json({ error: "Нет такого действия" }, 404);
@@ -2032,7 +1966,7 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let S = null;                // всё, что пришло с сервера
 let tab = 'feed';
-let view = { level: 'all', zone: '', hide: false };
+let view = { level: 'all', hide: false };
 try { const v = JSON.parse(localStorage.getItem('panelView') || 'null'); if (v) view = Object.assign(view, v); } catch (e) {}
 const saveView = () => { try { localStorage.setItem('panelView', JSON.stringify(view)); } catch (e) {} };
 
@@ -2052,7 +1986,6 @@ async function load() {
 }
 
 // ---------- помощники ----------
-const Z = () => S.zones;
 const postName = (p) => p.title || (p.text || '').split('\\n')[0] || (p.media.length ? 'Картинки без текста' : 'Без текста');
 const fmtRun = (t) => { if (!t) return 'дата не задана'; const d = new Date((t + 10800) * 1000); const wd = ['вс','пн','вт','ср','чт','пт','сб'][d.getUTCDay()]; const mon = ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'][d.getUTCMonth()]; return wd + ', ' + d.getUTCDate() + ' ' + mon + ' · ' + String(d.getUTCHours()).padStart(2,'0') + ':' + String(d.getUTCMinutes()).padStart(2,'0'); };
 const toLocal = (t) => t ? new Date((t + 10800) * 1000).toISOString().slice(0, 16) : '';
@@ -2060,25 +1993,22 @@ const fromLocal = (s) => { const m = /^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{
 const dayLabel = (d) => d === 0 ? 'сразу после согласия на рассылку' : d === 1 ? 'на следующий день' : 'через ' + d + ' ' + (d % 10 === 1 && d % 100 !== 11 ? 'день' : (d % 10 >= 2 && d % 10 <= 4 && (d % 100 < 10 || d % 100 >= 20)) ? 'дня' : 'дней') + ' после входа';
 // получит ли этот пост выбранный человек
 function gets(p) {
-  if (view.level !== 'all' && p.audience !== 'all' && p.audience !== view.level) return false;
-  if (p.zone && view.zone && p.zone !== view.zone) return false;
-  return true;
+  return view.level === 'all' || p.audience === 'all' || p.audience === view.level;
 }
 function tags(p) {
   let h = '';
   if (p.audience !== 'all') h += '<span class="tag">' + esc(S.audiences[p.audience]) + '</span>';
-  if (p.zone && p.kind !== 'gift') h += '<span class="tag zone">зона: ' + esc(Z()[p.zone]) + '</span>';
   if (p.status === 'paused') h += '<span class="tag paused">⏸ пауза</span>';
   if (p.status === 'draft') h += '<span class="tag draft">📝 черновик</span>';
   if (p.media.length) h += '<span class="tag">🖼 ' + (p.media.length > 1 ? '×' + p.media.length : '') + '</span>';
   if (p.buttons.length) h += '<span class="tag">🔘 ' + p.buttons.length + '</span>';
   if (p.emoji) h += '<span class="tag">✨ премиум</span>';
-  if (view.level !== 'all' || view.zone) if (!gets(p)) h += '<span class="tag no">не получит</span>';
+  if (view.level !== 'all' && !gets(p)) h += '<span class="tag no">не получит</span>';
   return h;
 }
 function cardHtml(p, opts) {
   opts = opts || {};
-  const off = (view.level !== 'all' || view.zone) && !gets(p);
+  const off = view.level !== 'all' && !gets(p);
   const time = opts.time != null ? opts.time : (p.kind === 'drip' ? (p.day === 0 ? 'сразу' : p.time) : '');
   return '<div class="card' + (off ? ' off' : '') + '" data-id="' + p.id + '">' +
     (opts.drag ? '<div class="handle" aria-label="перетащить">⋮⋮</div>' : '<div style="width:6px"></div>') +
@@ -2093,7 +2023,7 @@ function render() {
   const counts = { feed: S.posts.filter((p) => p.kind === 'drip').length, dates: S.posts.filter((p) => p.kind === 'date').length, gifts: S.posts.filter((p) => p.kind === 'gift').length };
   app.innerHTML =
     '<div class="top"><span class="pill">Di Sign University · панель</span><span class="small muted">людей: ' + S.people.all + ' · в рассылке: ' + S.people.active + '</span></div>' +
-    '<h1>Лента <i>бота</i></h1><p class="lead">Перетаскивай посты за ⋮⋮, нажми на пост — чтобы поменять день, время и кому он уходит.</p>' +
+    '<h1>Лента <i>бота</i></h1><p class="lead">Перетаскивай посты за ⋮⋮, нажми на пост — чтобы поменять день, время и кому он уходит: всем, начинающим или продолжающим.</p>' +
     '<div class="tabs"><div class="seg" id="tabs">' +
     [['feed','Лента · ' + counts.feed],['dates','Даты · ' + counts.dates],['gifts','Подарки · ' + counts.gifts],['texts','Тексты']].map(([k,t]) => '<button data-t="' + k + '" class="' + (tab === k ? 'on' : '') + '">' + t + '</button>').join('') +
     '</div></div><div id="body"></div>';
@@ -2104,14 +2034,11 @@ function render() {
 function viewBox() {
   return '<div class="box"><h3>Как увидит человек</h3>' +
     '<div class="seg sm" id="lvl">' + [['all','Все посты'],['start','Начинающий'],['pro','Продолжающий']].map(([k,t]) => '<button data-v="' + k + '" class="' + (view.level === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>' +
-    '<div class="chips" id="zn" style="margin-top:8px"><button class="chip ' + (!view.zone ? 'on' : '') + '" data-z="">Любая зона</button>' +
-    Object.keys(Z()).map((k) => '<button class="chip ' + (view.zone === k ? 'on' : '') + '" data-z="' + k + '">' + esc(Z()[k]) + '</button>').join('') + '</div>' +
-    ((view.level !== 'all' || view.zone) ? '<div class="toggle"><span class="small">Прятать посты, которые этот человек не получит</span><label class="sw"><input type="checkbox" id="hide" ' + (view.hide ? 'checked' : '') + '><span></span></label></div>' : '') +
+    ((view.level !== 'all') ? '<div class="toggle"><span class="small">Прятать посты, которые этот человек не получит</span><label class="sw"><input type="checkbox" id="hide" ' + (view.hide ? 'checked' : '') + '><span></span></label></div>' : '') +
     '</div>';
 }
 function bindView() {
   $('lvl').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; view.level = b.dataset.v; saveView(); haptic(); render(); };
-  $('zn').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; view.zone = b.dataset.z; saveView(); haptic(); render(); };
   if ($('hide')) $('hide').onchange = (e) => { view.hide = e.target.checked; saveView(); render(); };
 }
 
@@ -2119,7 +2046,7 @@ function renderFeed() {
   const drip = S.posts.filter((p) => p.kind === 'drip');
   const maxDay = drip.reduce((m, p) => Math.max(m, p.day), 0);
   const last = Math.max(7, maxDay + 1);
-  const filtered = (view.hide && (view.level !== 'all' || view.zone)) ? drip.filter(gets) : drip;
+  const filtered = (view.hide && view.level !== 'all') ? drip.filter(gets) : drip;
   let h = viewBox();
   if (!drip.length) h += '<div class="empty">Постов по дням пока нет.<br>Создай первый в боте: <b>/new</b> → «Через N дней после входа».</div>';
   for (let d = 0; d <= last; d++) {
@@ -2181,11 +2108,12 @@ function renderDates() {
 
 function renderGifts() {
   const gs = S.posts.filter((p) => p.kind === 'gift');
-  let h = '<p class="muted" style="margin-top:16px">Подарок уходит сразу после теста — под главную зону человека. Если у зоны два подарка, придут оба по порядку.</p>';
-  Object.keys(Z()).forEach((z) => {
-    const list = gs.filter((p) => p.zone === z);
-    h += '<div class="grp">' + esc(Z()[z]) + '</div>' + (list.length ? list.map((p) => cardHtml(p)).join('<div style="height:8px"></div>') : '<p class="small muted" style="margin:6px 2px;border:1.5px dashed var(--line);border-radius:16px;padding:12px">Подарка нет — люди с этой зоной получат «Подарок скоро появится». Создай в боте: <b>/new</b> → «Подарок после теста».</p>');
+  let h = '<p class="muted" style="margin-top:16px">Подарок уходит сразу после теста. Начинающий получит подарки «всем» и «начинающим», продолжающий — «всем» и «продолжающим», по порядку.</p>';
+  [['all','Всем'],['start','Начинающим'],['pro','Продолжающим']].forEach(([a, t]) => {
+    const list = gs.filter((p) => p.audience === a);
+    h += '<div class="grp">' + t + '</div>' + (list.length ? list.map((p) => cardHtml(p)).join('<div style="height:8px"></div>') : '<p class="small muted" style="margin:6px 2px;border:1.5px dashed var(--line);border-radius:16px;padding:12px">Пока нет. Создай в боте: <b>/new</b> → «Подарок после теста».</p>');
   });
+  if (!gs.length) h += '<div class="note warn" style="margin-top:16px">Подарков нет — после теста люди получат «Подарок скоро появится здесь 🎁».</div>';
   $('body').innerHTML = h; bindCards();
 }
 
@@ -2219,7 +2147,7 @@ function segBind(id, on) { $(id).onclick = (e) => { const b = e.target.closest('
 
 function openPost(id) {
   const p = S.posts.find((x) => x.id === id); if (!p) return;
-  const st = { day: p.day, time: p.time, audience: p.audience, zone: p.zone || '', status: p.status, catchup: p.catchup, run_at: p.run_at };
+  const st = { day: p.day, time: p.time, audience: p.audience, status: p.status, catchup: p.catchup, run_at: p.run_at };
   const kindName = { drip: 'Пост ленты', date: 'Пост на дату', gift: 'Подарок после теста' }[p.kind];
   let h = '<span class="pill">' + kindName + ' · #' + p.id + '</span><h2>' + esc(postName(p)) + '</h2>' +
     '<div class="preview">' + esc(p.text || '(без текста)') + '</div>' +
@@ -2232,8 +2160,6 @@ function openPost(id) {
   }
   if (p.kind === 'date') h += '<label class="f">Дата и время (по Москве)</label><input type="datetime-local" id="fRun" value="' + toLocal(st.run_at) + '">';
   h += '<label class="f">Кому</label>' + segHtml('fAud', [['all','Всем'],['start','Начинающим'],['pro','Продолжающим']], st.audience);
-  h += '<label class="f">' + (p.kind === 'gift' ? 'Зона теста' : 'Только для зоны теста') + '</label><select id="fZone">' + (p.kind === 'gift' ? '' : '<option value="">Всем зонам</option>') +
-    Object.keys(Z()).map((k) => '<option value="' + k + '"' + (st.zone === k ? ' selected' : '') + '>' + esc(Z()[k]) + '</option>').join('') + '</select>';
   h += '<label class="f">Статус</label>' + segHtml('fSt', [['active','✅ Включён'],['paused','⏸ Пауза'],['draft','📝 Черновик']], st.status);
   h += '<div class="btns"><button class="btn" id="bSave">Сохранить</button><div class="btns two" style="margin:0"><button class="btn ghost" id="bPrev">👁 Прислать мне</button><button class="btn ghost" id="bClose">Закрыть</button></div><button class="btn danger" id="bArch">🗄 Убрать в архив</button></div>' +
     '<div class="note">Текст и картинки меняются в боте: <b>/posts</b> → этот пост → ✏️ «Текст и картинки».</div>';
@@ -2245,7 +2171,7 @@ function openPost(id) {
   $('bPrev').onclick = async () => { try { const r = await api('/post/' + p.id + '/preview', {}); toast(r.warn ? '⚠️ ' + r.warn : 'Отправила тебе в бот 👀'); } catch (e) { toast(e.message); } };
   $('bArch').onclick = async () => { try { await api('/post/' + p.id, { status: 'archived' }); S.posts = S.posts.filter((x) => x.id !== p.id); closeSheet(); toast('В архиве. Вернуть можно в боте: /posts → 🗄 Архив'); render(); } catch (e) { toast(e.message); } };
   $('bSave').onclick = async () => {
-    const body = { title: $('fTitle').value.trim(), audience: st.audience, zone: $('fZone').value, status: st.status };
+    const body = { title: $('fTitle').value.trim(), audience: st.audience, status: st.status };
     if (p.kind === 'drip') { body.day = st.day; if (st.day > 0) body.time = $('fTime').value || st.time; body.catchup = $('fCatch').checked; }
     if (p.kind === 'date') { const t = fromLocal($('fRun').value); if (!t) return toast('Выбери дату и время'); body.run_at = t; }
     try {

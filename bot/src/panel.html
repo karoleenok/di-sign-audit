@@ -120,7 +120,7 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let S = null;                // всё, что пришло с сервера
 let tab = 'feed';
-let view = { level: 'all', zone: '', hide: false };
+let view = { level: 'all', hide: false };
 try { const v = JSON.parse(localStorage.getItem('panelView') || 'null'); if (v) view = Object.assign(view, v); } catch (e) {}
 const saveView = () => { try { localStorage.setItem('panelView', JSON.stringify(view)); } catch (e) {} };
 
@@ -140,7 +140,6 @@ async function load() {
 }
 
 // ---------- помощники ----------
-const Z = () => S.zones;
 const postName = (p) => p.title || (p.text || '').split('\n')[0] || (p.media.length ? 'Картинки без текста' : 'Без текста');
 const fmtRun = (t) => { if (!t) return 'дата не задана'; const d = new Date((t + 10800) * 1000); const wd = ['вс','пн','вт','ср','чт','пт','сб'][d.getUTCDay()]; const mon = ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'][d.getUTCMonth()]; return wd + ', ' + d.getUTCDate() + ' ' + mon + ' · ' + String(d.getUTCHours()).padStart(2,'0') + ':' + String(d.getUTCMinutes()).padStart(2,'0'); };
 const toLocal = (t) => t ? new Date((t + 10800) * 1000).toISOString().slice(0, 16) : '';
@@ -148,25 +147,22 @@ const fromLocal = (s) => { const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/
 const dayLabel = (d) => d === 0 ? 'сразу после согласия на рассылку' : d === 1 ? 'на следующий день' : 'через ' + d + ' ' + (d % 10 === 1 && d % 100 !== 11 ? 'день' : (d % 10 >= 2 && d % 10 <= 4 && (d % 100 < 10 || d % 100 >= 20)) ? 'дня' : 'дней') + ' после входа';
 // получит ли этот пост выбранный человек
 function gets(p) {
-  if (view.level !== 'all' && p.audience !== 'all' && p.audience !== view.level) return false;
-  if (p.zone && view.zone && p.zone !== view.zone) return false;
-  return true;
+  return view.level === 'all' || p.audience === 'all' || p.audience === view.level;
 }
 function tags(p) {
   let h = '';
   if (p.audience !== 'all') h += '<span class="tag">' + esc(S.audiences[p.audience]) + '</span>';
-  if (p.zone && p.kind !== 'gift') h += '<span class="tag zone">зона: ' + esc(Z()[p.zone]) + '</span>';
   if (p.status === 'paused') h += '<span class="tag paused">⏸ пауза</span>';
   if (p.status === 'draft') h += '<span class="tag draft">📝 черновик</span>';
   if (p.media.length) h += '<span class="tag">🖼 ' + (p.media.length > 1 ? '×' + p.media.length : '') + '</span>';
   if (p.buttons.length) h += '<span class="tag">🔘 ' + p.buttons.length + '</span>';
   if (p.emoji) h += '<span class="tag">✨ премиум</span>';
-  if (view.level !== 'all' || view.zone) if (!gets(p)) h += '<span class="tag no">не получит</span>';
+  if (view.level !== 'all' && !gets(p)) h += '<span class="tag no">не получит</span>';
   return h;
 }
 function cardHtml(p, opts) {
   opts = opts || {};
-  const off = (view.level !== 'all' || view.zone) && !gets(p);
+  const off = view.level !== 'all' && !gets(p);
   const time = opts.time != null ? opts.time : (p.kind === 'drip' ? (p.day === 0 ? 'сразу' : p.time) : '');
   return '<div class="card' + (off ? ' off' : '') + '" data-id="' + p.id + '">' +
     (opts.drag ? '<div class="handle" aria-label="перетащить">⋮⋮</div>' : '<div style="width:6px"></div>') +
@@ -181,7 +177,7 @@ function render() {
   const counts = { feed: S.posts.filter((p) => p.kind === 'drip').length, dates: S.posts.filter((p) => p.kind === 'date').length, gifts: S.posts.filter((p) => p.kind === 'gift').length };
   app.innerHTML =
     '<div class="top"><span class="pill">Di Sign University · панель</span><span class="small muted">людей: ' + S.people.all + ' · в рассылке: ' + S.people.active + '</span></div>' +
-    '<h1>Лента <i>бота</i></h1><p class="lead">Перетаскивай посты за ⋮⋮, нажми на пост — чтобы поменять день, время и кому он уходит.</p>' +
+    '<h1>Лента <i>бота</i></h1><p class="lead">Перетаскивай посты за ⋮⋮, нажми на пост — чтобы поменять день, время и кому он уходит: всем, начинающим или продолжающим.</p>' +
     '<div class="tabs"><div class="seg" id="tabs">' +
     [['feed','Лента · ' + counts.feed],['dates','Даты · ' + counts.dates],['gifts','Подарки · ' + counts.gifts],['texts','Тексты']].map(([k,t]) => '<button data-t="' + k + '" class="' + (tab === k ? 'on' : '') + '">' + t + '</button>').join('') +
     '</div></div><div id="body"></div>';
@@ -192,14 +188,11 @@ function render() {
 function viewBox() {
   return '<div class="box"><h3>Как увидит человек</h3>' +
     '<div class="seg sm" id="lvl">' + [['all','Все посты'],['start','Начинающий'],['pro','Продолжающий']].map(([k,t]) => '<button data-v="' + k + '" class="' + (view.level === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>' +
-    '<div class="chips" id="zn" style="margin-top:8px"><button class="chip ' + (!view.zone ? 'on' : '') + '" data-z="">Любая зона</button>' +
-    Object.keys(Z()).map((k) => '<button class="chip ' + (view.zone === k ? 'on' : '') + '" data-z="' + k + '">' + esc(Z()[k]) + '</button>').join('') + '</div>' +
-    ((view.level !== 'all' || view.zone) ? '<div class="toggle"><span class="small">Прятать посты, которые этот человек не получит</span><label class="sw"><input type="checkbox" id="hide" ' + (view.hide ? 'checked' : '') + '><span></span></label></div>' : '') +
+    ((view.level !== 'all') ? '<div class="toggle"><span class="small">Прятать посты, которые этот человек не получит</span><label class="sw"><input type="checkbox" id="hide" ' + (view.hide ? 'checked' : '') + '><span></span></label></div>' : '') +
     '</div>';
 }
 function bindView() {
   $('lvl').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; view.level = b.dataset.v; saveView(); haptic(); render(); };
-  $('zn').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; view.zone = b.dataset.z; saveView(); haptic(); render(); };
   if ($('hide')) $('hide').onchange = (e) => { view.hide = e.target.checked; saveView(); render(); };
 }
 
@@ -207,7 +200,7 @@ function renderFeed() {
   const drip = S.posts.filter((p) => p.kind === 'drip');
   const maxDay = drip.reduce((m, p) => Math.max(m, p.day), 0);
   const last = Math.max(7, maxDay + 1);
-  const filtered = (view.hide && (view.level !== 'all' || view.zone)) ? drip.filter(gets) : drip;
+  const filtered = (view.hide && view.level !== 'all') ? drip.filter(gets) : drip;
   let h = viewBox();
   if (!drip.length) h += '<div class="empty">Постов по дням пока нет.<br>Создай первый в боте: <b>/new</b> → «Через N дней после входа».</div>';
   for (let d = 0; d <= last; d++) {
@@ -269,11 +262,12 @@ function renderDates() {
 
 function renderGifts() {
   const gs = S.posts.filter((p) => p.kind === 'gift');
-  let h = '<p class="muted" style="margin-top:16px">Подарок уходит сразу после теста — под главную зону человека. Если у зоны два подарка, придут оба по порядку.</p>';
-  Object.keys(Z()).forEach((z) => {
-    const list = gs.filter((p) => p.zone === z);
-    h += '<div class="grp">' + esc(Z()[z]) + '</div>' + (list.length ? list.map((p) => cardHtml(p)).join('<div style="height:8px"></div>') : '<p class="small muted" style="margin:6px 2px;border:1.5px dashed var(--line);border-radius:16px;padding:12px">Подарка нет — люди с этой зоной получат «Подарок скоро появится». Создай в боте: <b>/new</b> → «Подарок после теста».</p>');
+  let h = '<p class="muted" style="margin-top:16px">Подарок уходит сразу после теста. Начинающий получит подарки «всем» и «начинающим», продолжающий — «всем» и «продолжающим», по порядку.</p>';
+  [['all','Всем'],['start','Начинающим'],['pro','Продолжающим']].forEach(([a, t]) => {
+    const list = gs.filter((p) => p.audience === a);
+    h += '<div class="grp">' + t + '</div>' + (list.length ? list.map((p) => cardHtml(p)).join('<div style="height:8px"></div>') : '<p class="small muted" style="margin:6px 2px;border:1.5px dashed var(--line);border-radius:16px;padding:12px">Пока нет. Создай в боте: <b>/new</b> → «Подарок после теста».</p>');
   });
+  if (!gs.length) h += '<div class="note warn" style="margin-top:16px">Подарков нет — после теста люди получат «Подарок скоро появится здесь 🎁».</div>';
   $('body').innerHTML = h; bindCards();
 }
 
@@ -307,7 +301,7 @@ function segBind(id, on) { $(id).onclick = (e) => { const b = e.target.closest('
 
 function openPost(id) {
   const p = S.posts.find((x) => x.id === id); if (!p) return;
-  const st = { day: p.day, time: p.time, audience: p.audience, zone: p.zone || '', status: p.status, catchup: p.catchup, run_at: p.run_at };
+  const st = { day: p.day, time: p.time, audience: p.audience, status: p.status, catchup: p.catchup, run_at: p.run_at };
   const kindName = { drip: 'Пост ленты', date: 'Пост на дату', gift: 'Подарок после теста' }[p.kind];
   let h = '<span class="pill">' + kindName + ' · #' + p.id + '</span><h2>' + esc(postName(p)) + '</h2>' +
     '<div class="preview">' + esc(p.text || '(без текста)') + '</div>' +
@@ -320,8 +314,6 @@ function openPost(id) {
   }
   if (p.kind === 'date') h += '<label class="f">Дата и время (по Москве)</label><input type="datetime-local" id="fRun" value="' + toLocal(st.run_at) + '">';
   h += '<label class="f">Кому</label>' + segHtml('fAud', [['all','Всем'],['start','Начинающим'],['pro','Продолжающим']], st.audience);
-  h += '<label class="f">' + (p.kind === 'gift' ? 'Зона теста' : 'Только для зоны теста') + '</label><select id="fZone">' + (p.kind === 'gift' ? '' : '<option value="">Всем зонам</option>') +
-    Object.keys(Z()).map((k) => '<option value="' + k + '"' + (st.zone === k ? ' selected' : '') + '>' + esc(Z()[k]) + '</option>').join('') + '</select>';
   h += '<label class="f">Статус</label>' + segHtml('fSt', [['active','✅ Включён'],['paused','⏸ Пауза'],['draft','📝 Черновик']], st.status);
   h += '<div class="btns"><button class="btn" id="bSave">Сохранить</button><div class="btns two" style="margin:0"><button class="btn ghost" id="bPrev">👁 Прислать мне</button><button class="btn ghost" id="bClose">Закрыть</button></div><button class="btn danger" id="bArch">🗄 Убрать в архив</button></div>' +
     '<div class="note">Текст и картинки меняются в боте: <b>/posts</b> → этот пост → ✏️ «Текст и картинки».</div>';
@@ -333,7 +325,7 @@ function openPost(id) {
   $('bPrev').onclick = async () => { try { const r = await api('/post/' + p.id + '/preview', {}); toast(r.warn ? '⚠️ ' + r.warn : 'Отправила тебе в бот 👀'); } catch (e) { toast(e.message); } };
   $('bArch').onclick = async () => { try { await api('/post/' + p.id, { status: 'archived' }); S.posts = S.posts.filter((x) => x.id !== p.id); closeSheet(); toast('В архиве. Вернуть можно в боте: /posts → 🗄 Архив'); render(); } catch (e) { toast(e.message); } };
   $('bSave').onclick = async () => {
-    const body = { title: $('fTitle').value.trim(), audience: st.audience, zone: $('fZone').value, status: st.status };
+    const body = { title: $('fTitle').value.trim(), audience: st.audience, status: st.status };
     if (p.kind === 'drip') { body.day = st.day; if (st.day > 0) body.time = $('fTime').value || st.time; body.catchup = $('fCatch').checked; }
     if (p.kind === 'date') { const t = fromLocal($('fRun').value); if (!t) return toast('Выбери дату и время'); body.run_at = t; }
     try {

@@ -2,7 +2,7 @@
 // Вход: панель присылает initData от Telegram, мы проверяем подпись токеном бота
 // (так подделать вход нельзя) и что человек — админ.
 import { isAdmin } from './admin.js';
-import { ZONES, AUD, LEVELS } from './texts.js';
+import { AUD, LEVELS } from './texts.js';
 import { sendPost, audienceCount } from './posts.js';
 import { listMsgs, saveMsg, resetMsg, btn, say } from './msgs.js';
 
@@ -41,7 +41,7 @@ function postOut(p, sent, clicks) {
   const media = j(p.media, []);
   return {
     id: p.id, kind: p.kind, status: p.status, title: p.title || '', text: (p.text || '').slice(0, 400),
-    day: p.day, time: p.send_time, run_at: p.run_at, audience: p.audience, zone: p.zone, catchup: !!p.catchup, pos: p.pos || 0,
+    day: p.day, time: p.send_time, run_at: p.run_at, audience: p.audience, catchup: !!p.catchup, pos: p.pos || 0,
     media: media.map((m) => m.type), buttons: j(p.buttons, []).flat().map((b) => b.text),
     emoji: j(p.entities, []).some((e) => e.type === 'custom_emoji'), sent: sent || 0, clicks: clicks || 0,
   };
@@ -63,14 +63,14 @@ export async function handlePanelApi(ctx, request, url) {
     const people = await ctx.db.first(`SELECT COUNT(*) AS n, SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active FROM users`);
     return json({
       me: { id: user.id, name: user.first_name },
-      zones: ZONES, audiences: AUD, levels: LEVELS,
+      audiences: AUD, levels: LEVELS,
       posts: posts.map((p) => postOut(p, sent[p.id], clicks[p.id])),
       msgs: await listMsgs(ctx),
       people: { all: people.n || 0, active: people.active || 0 },
     });
   }
 
-  // правка одного поста: день, время, кому, зона, статус, название, дата, догонять
+  // правка одного поста: день, время, кому, статус, название, дата, догонять
   let m = /^\/post\/(\d+)$/.exec(path);
   if (m && request.method === 'POST') {
     const id = +m[1];
@@ -81,12 +81,6 @@ export async function handlePanelApi(ctx, request, url) {
     if (body.day !== undefined && p.kind === 'drip') { const d = parseInt(body.day, 10); if (!(d >= 0 && d <= 365)) return json({ error: 'День — от 0 до 365' }, 400); put('day', d); }
     if (body.time !== undefined) { const t = pad(body.time); if (!t) return json({ error: 'Время в формате 11:00' }, 400); put('send_time', t); }
     if (body.audience !== undefined) { if (!AUD[body.audience]) return json({ error: 'Неизвестная аудитория' }, 400); put('audience', body.audience); }
-    if (body.zone !== undefined) {
-      const z = body.zone || null;
-      if (z && !ZONES[z]) return json({ error: 'Неизвестная зона' }, 400);
-      if (p.kind === 'gift' && !z) return json({ error: 'У подарка должна быть зона' }, 400);
-      put('zone', z);
-    }
     if (body.status !== undefined) {
       if (!['active', 'paused', 'draft', 'archived'].includes(body.status)) return json({ error: 'Неизвестный статус' }, 400);
       if (body.status === 'active' && p.kind === 'date' && !(body.run_at || p.run_at)) return json({ error: 'Сначала задай дату' }, 400);
@@ -139,7 +133,7 @@ export async function handlePanelApi(ctx, request, url) {
 
   m = /^\/msg\/([A-Za-z]+)\/preview$/.exec(path);
   if (m && request.method === 'POST') {
-    await say(ctx, user.id, m[1], { зона: ZONES.P, уровень: LEVELS.start, политика: ctx.env.POLICY_URL || '— ссылка появится перед запуском —', согласие: ctx.env.CONSENT_URL || '— ссылка появится перед запуском —', оферта: ctx.env.OFFER_URL || '— скоро —', владелец: ctx.env.OWNER_INFO || '' });
+    await say(ctx, user.id, m[1], { уровень: LEVELS.start, политика: ctx.env.POLICY_URL || '— ссылка появится перед запуском —', согласие: ctx.env.CONSENT_URL || '— ссылка появится перед запуском —', оферта: ctx.env.OFFER_URL || '— скоро —', владелец: ctx.env.OWNER_INFO || '' });
     return json({ ok: true });
   }
 

@@ -1,4 +1,4 @@
-import { AUD, ZONES, ADMIN_COMMANDS } from './texts.js';
+import { AUD, ADMIN_COMMANDS } from './texts.js';
 import { sendPost, postSummary, postLabel, postWhen, audienceCount } from './posts.js';
 import { parseTime, parseWhen, fmtTime, fmtWhen } from './time.js';
 import { GUIDE, GUIDE_MENU } from './guide.js';
@@ -36,14 +36,14 @@ const HELP =
   `Команды админа:\n` +
   `/new — новый пост (текст, картинки, альбом до 10, файлы, кнопки)\n` +
   `/posts — все посты: показать, править, пауза, отправить сейчас\n` +
-  `/stats — сколько людей, уровни, зоны, нажатия\n` +
+  `/stats — сколько людей, уровни, нажатия\n` +
   `/admins — админы; /addadmin 123 — добавить по id; /deladmin 123 — убрать\n` +
   `/check — проверка, что бот и связь с Telegram в порядке\n` +
   `/cancel — отменить текущее действие\n\n` +
   `Виды постов:\n` +
   `• по дням — через N дней после входа человека, в выбранное время по Москве\n` +
   `• в дату — один раз в конкретные дату и время всем подходящим\n` +
-  `• подарок — уходит сразу после теста, под зону человека\n\n` +
+  `• подарок — уходит сразу после теста (всем, начинающим или продолжающим)\n\n` +
   `Пост пиши прямо здесь, как обычное сообщение: форматирование и премиум-эмодзи сохранятся.`;
 
 const CONTENT_PROMPT =
@@ -194,11 +194,6 @@ async function assemble(ctx, id) {
 async function askAudience(ctx, id) {
   return say(ctx, id, 'Кому отправлять?', { reply_markup: kb([[{ text: 'Всем', callback_data: 'w:aud:all' }], [{ text: 'Начинающим', callback_data: 'w:aud:start' }, { text: 'Продолжающим', callback_data: 'w:aud:pro' }]]) });
 }
-function zoneRows(prefix, withAll) {
-  const rows = Object.entries(ZONES).map(([k, v]) => [{ text: v, callback_data: prefix + k }]);
-  if (withAll) rows.unshift([{ text: 'Всем зонам', callback_data: prefix + '*' }]);
-  return rows;
-}
 
 async function preview(ctx, id, d) {
   const p = { ...d.post, id: 0 };
@@ -241,32 +236,28 @@ export async function onAdminCallback(ctx, cq) {
       await clearState(ctx, id);
       return showPost(ctx, id, pid, 'Содержимое обновлено ✓');
     }
-    d.post = { text: c.text, entities: c.entities, media: c.media, audience: 'all', zone: null, catchup: 0, send_time: '11:00', buttons: null };
+    d.post = { text: c.text, entities: c.entities, media: c.media, audience: 'all', catchup: 0, send_time: '11:00', buttons: null };
     await setState(ctx, id, 'w:kind', d);
     await ctx.db.run(`DELETE FROM draft_parts WHERE admin_id = ?`, [id]);
     await ctx.db.run(`DELETE FROM draft_groups WHERE admin_id = ?`, [id]);
     return say(ctx, id, 'Когда отправлять?', { reply_markup: kb([
       [{ text: '📅 Через N дней после входа', callback_data: 'w:kind:drip' }],
       [{ text: '🕒 В конкретные дату и время', callback_data: 'w:kind:date' }],
-      [{ text: '🎁 Подарок после теста (под зону)', callback_data: 'w:kind:gift' }],
+      [{ text: '🎁 Подарок после теста', callback_data: 'w:kind:gift' }],
     ]) });
   }
   if (data.startsWith('w:kind:') && d.post) {
     d.post.kind = data.slice(7);
     if (d.post.kind === 'drip') { await setState(ctx, id, 'w:day', d); return say(ctx, id, 'Через сколько дней после входа? 0 — сразу, 1 — на следующий день, 2 — через день…'); }
     if (d.post.kind === 'date') { await setState(ctx, id, 'w:when', d); return say(ctx, id, 'Когда отправить? Например: 05.11 19:00 или завтра 11:00 (время московское)'); }
-    await setState(ctx, id, 'w:gz', d);
-    return say(ctx, id, 'Для какой зоны теста этот подарок?', { reply_markup: kb(zoneRows('w:gz:', false)) });
+    await setState(ctx, id, 'w:aud', d);
+    return askAudience(ctx, id);
   }
   if (data.startsWith('w:tm:') && d.post) { d.post.send_time = data.slice(5); await setState(ctx, id, 'w:aud', d); return askAudience(ctx, id); }
-  if (data.startsWith('w:gz:') && d.post) { d.post.zone = data.slice(5); await setState(ctx, id, 'w:aud', d); return askAudience(ctx, id); }
   if (data.startsWith('w:aud:') && d.post) {
     d.post.audience = data.slice(6);
-    if (d.post.kind === 'gift') return askButtons(ctx, id, d);
-    await setState(ctx, id, 'w:zone', d);
-    return say(ctx, id, 'Только для людей с определённой зоной из теста?', { reply_markup: kb(zoneRows('w:zn:', true)) });
+    return askButtons(ctx, id, d);
   }
-  if (data.startsWith('w:zn:') && d.post) { const z = data.slice(5); d.post.zone = z === '*' ? null : z; return askButtons(ctx, id, d); }
   if (data === 'w:nobtn' && d.post) { d.post.buttons = null; await setState(ctx, id, 'w:preview', d); return preview(ctx, id, d); }
   if (data === 'w:ttl' && d.post) { await setState(ctx, id, 'w:title', d); return say(ctx, id, 'Короткое название для списка постов (видишь только ты):'); }
   if (data.startsWith('w:save:') && d.post) {
@@ -274,7 +265,7 @@ export async function onAdminCallback(ctx, cq) {
     const p = d.post;
     await ctx.db.run(
       `INSERT INTO posts (title, kind, audience, zone, day, send_time, run_at, catchup, status, text, entities, media, buttons, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [p.title || null, p.kind, p.audience, p.zone || null, p.day ?? null, p.send_time || '11:00', p.run_at || null, p.catchup ? 1 : 0, on ? 'active' : 'draft', p.text, p.entities, p.media, p.buttons, id, ctx.now],
+      [p.title || null, p.kind, p.audience, null, p.day ?? null, p.send_time || '11:00', p.run_at || null, p.catchup ? 1 : 0, on ? 'active' : 'draft', p.text, p.entities, p.media, p.buttons, id, ctx.now],
     );
     const row = await ctx.db.first(`SELECT MAX(id) AS id FROM posts WHERE created_by = ?`, [id]);
     await clearState(ctx, id);
@@ -343,8 +334,7 @@ export async function showPost(ctx, id, pid, note) {
     [{ text: '✏️ Текст и картинки', callback_data: `p:${pid}:ec` }, { text: '🔘 Кнопки', callback_data: `p:${pid}:eb` }],
     [{ text: '🕒 Когда', callback_data: `p:${pid}:ew` }, { text: '👥 Кому', callback_data: `p:${pid}:ea` }],
   ];
-  if (p.kind === 'drip') rows.push([{ text: '🎯 Зона', callback_data: `p:${pid}:ez` }, { text: `↩️ Догонять: ${p.catchup ? 'да' : 'нет'}`, callback_data: `p:${pid}:cu` }]);
-  if (p.kind === 'date') rows.push([{ text: '🎯 Зона', callback_data: `p:${pid}:ez` }]);
+  if (p.kind === 'drip') rows.push([{ text: `↩️ Догонять: ${p.catchup ? 'да' : 'нет'}`, callback_data: `p:${pid}:cu` }]);
   if (p.kind === 'date') rows.push([{ text: '🚀 Отправить сейчас', callback_data: `p:${pid}:sn` }]);
   rows.push([{ text: p.status === 'archived' ? '↩️ Из архива' : '🗄 В архив', callback_data: `p:${pid}:${p.status === 'archived' ? 'un' : 'ar'}` }, { text: '← Список', callback_data: 'pl' }]);
   return say(ctx, id, text, { reply_markup: kb(rows) });
@@ -381,13 +371,10 @@ async function postAction(ctx, id, pid, act) {
   if (act === 'ew') {
     if (p.kind === 'drip') { await setState(ctx, id, 'e:day:' + pid, {}); return say(ctx, id, `Сейчас: ${postWhen(p)}. Через сколько дней после входа? (число)`); }
     if (p.kind === 'date') { await setState(ctx, id, 'e:when:' + pid, {}); return say(ctx, id, `Сейчас: ${postWhen(p)}. Новая дата и время, например 05.11 19:00`); }
-    return say(ctx, id, 'Зона подарка:', { reply_markup: kb(zoneRows(`p:${pid}:gz:`, false)) });
+    return say(ctx, id, 'Подарок уходит сразу после теста — время для него не задаётся. Кому он уходит — кнопка «👥 Кому».');
   }
-  if (act.startsWith('gz:')) return upd(`UPDATE posts SET zone = ? WHERE id = ?`, [act.slice(3)], 'Зона подарка обновлена ✓');
   if (act === 'ea') return say(ctx, id, 'Кому отправлять?', { reply_markup: kb([[{ text: 'Всем', callback_data: `p:${pid}:a:all` }], [{ text: 'Начинающим', callback_data: `p:${pid}:a:start` }, { text: 'Продолжающим', callback_data: `p:${pid}:a:pro` }]]) });
   if (act.startsWith('a:')) return upd(`UPDATE posts SET audience = ? WHERE id = ?`, [act.slice(2)], 'Аудитория обновлена ✓');
-  if (act === 'ez') return say(ctx, id, 'Для какой зоны теста?', { reply_markup: kb(zoneRows(`p:${pid}:z:`, true)) });
-  if (act.startsWith('z:')) { const z = act.slice(2); return upd(`UPDATE posts SET zone = ? WHERE id = ?`, [z === '*' ? null : z], 'Зона обновлена ✓'); }
   if (act === 'sn') {
     const n = await audienceCount(ctx.db, p);
     return say(ctx, id, `Отправить пост #${pid} сейчас? Подходит людей: ${n}.`, { reply_markup: kb([[{ text: '🚀 Да, отправить', callback_data: `p:${pid}:sy` }, { text: 'Нет', callback_data: `p:${pid}` }]]) });
@@ -406,7 +393,6 @@ async function stats(ctx, id) {
   const paid = await q(`SELECT COUNT(*) AS n FROM users WHERE paid_at IS NOT NULL`);
   const wk = await q(`SELECT COUNT(*) AS n FROM users WHERE created_at >= ?`, [ctx.now - 7 * 86400]);
   const lv = await ctx.db.all(`SELECT level, COUNT(*) AS n FROM users WHERE status = 'active' GROUP BY level`);
-  const zn = await ctx.db.all(`SELECT zone, COUNT(*) AS n FROM users GROUP BY zone ORDER BY n DESC`);
   const src = await ctx.db.all(`SELECT CASE WHEN source LIKE 'audit_%' THEN 'тест' WHEN source IS NULL OR source = '' THEN 'без метки' ELSE source END AS s, COUNT(*) AS n FROM users GROUP BY s ORDER BY n DESC LIMIT 8`);
   const day = await q(`SELECT COUNT(*) AS n FROM deliveries WHERE sent_at >= ?`, [ctx.now - 86400]);
   const top = await ctx.db.all(`SELECT p.id, p.title, p.text, COUNT(c.id) AS n FROM clicks c JOIN posts p ON p.id = c.post_id GROUP BY p.id ORDER BY n DESC LIMIT 5`);
@@ -417,7 +403,7 @@ async function stats(ctx, id) {
     `💳 Оплатили: ${paid.n}`,
     '',
     'Уровни (активные): ' + (lv.map((r) => `${L[r.level] || L.null} ${r.n}`).join(' · ') || '—'),
-    'Зоны: ' + (zn.map((r) => `${r.zone ? ZONES[r.zone] || r.zone : 'нет'} ${r.n}`).join(' · ') || '—'),
+    'Прошли тест: ' + ((await ctx.db.first(`SELECT COUNT(*) AS n FROM users WHERE zone IS NOT NULL`)).n),
     'Откуда: ' + (src.map((r) => `${r.s} ${r.n}`).join(' · ') || '—'),
     '',
     `📨 Отправлено за сутки: ${day.n}`,
@@ -493,7 +479,7 @@ export async function showGuide(ctx, id, key) {
 
 // ---------- тексты бота ----------
 const sampleVars = (ctx, id) => ({
-  имя: 'Каролина', зона: ZONES.P, уровень: LEVELS.start,
+  имя: 'Каролина', уровень: LEVELS.start,
   политика: ctx.env.POLICY_URL || '— ссылка появится перед запуском —',
   согласие: ctx.env.CONSENT_URL || '— ссылка появится перед запуском —',
   оферта: ctx.env.OFFER_URL || '— скоро —', владелец: ctx.env.OWNER_INFO || '',

@@ -34,12 +34,11 @@ step('лента по дням: ' + JSON.stringify(days.slice(0, 5)));
 
 // 3. фильтр «как увидит человек»
 await page.click('#lvl button[data-v="start"]');
-await page.click('#zn button[data-z="B"]');
 const offs = await page.$$eval('.card.off .ttl', (e) => e.map((x) => x.textContent));
-assert.ok(offs.includes('Скрипты ответов') && offs.includes('Про обучение · портфолио'), 'продолжающим и зоне P — не получит: ' + offs);
+assert.ok(offs.includes('Скрипты ответов') && !offs.includes('Про обучение · портфолио'), 'начинающий не получит только посты для продолжающих: ' + offs);
 await page.screenshot({ path: OUT + '/panel-2-filter.png', fullPage: false });
-await page.click('#lvl button[data-v="all"]'); await page.click('#zn button[data-z=""]');
-step('фильтр: начинающий из зоны «Визуальная база» не получит посты для продолжающих и для зоны «Портфолио»');
+await page.click('#lvl button[data-v="all"]');
+step('фильтр: начинающий не получит посты для продолжающих');
 
 // 4. перетаскивание: пост «20 промптов» (день 2, 11:00) — на день 1 после «Чек-лист новичка»
 const card = page.locator('.card', { hasText: '20 промптов' }).locator('.handle');
@@ -58,7 +57,7 @@ const toastText = await page.textContent('#toast');
 await page.screenshot({ path: OUT + '/panel-3-after-drag.png' });
 step('перетаскивание на другой день сохраняется в базе: ' + JSON.stringify(row) + ' · ' + toastText);
 
-// 5. шторка поста: день, время, кому, зона, пауза
+// 5. шторка поста: день, время, кому, пауза
 await page.locator('.card', { hasText: 'Чек-лист новичка' }).locator('.ttl').click();
 await page.waitForSelector('.sheet.on');
 await page.waitForTimeout(300);
@@ -66,13 +65,12 @@ await page.screenshot({ path: OUT + '/panel-4-sheet.png' });
 await page.click('#dPlus'); await page.click('#dPlus');
 await page.fill('#fTime', '19:30');
 await page.click('#fAud button[data-v="all"]');
-await page.selectOption('#fZone', 'B');
 await page.click('#fSt button[data-v="paused"]');
 await page.click('#bSave');
 await page.waitForTimeout(500);
 row = await db.first(`SELECT day, send_time, audience, zone, status FROM posts WHERE title = 'Чек-лист новичка'`);
-assert.deepEqual({ ...row }, { day: 3, send_time: '19:30', audience: 'all', zone: 'B', status: 'paused' });
-step('шторка: день +2, время, кому, зона, пауза — сохранено');
+assert.deepEqual({ ...row }, { day: 3, send_time: '19:30', audience: 'all', zone: null, status: 'paused' });
+step('шторка: день +2, время, кому, пауза — сохранено');
 
 // 6. «прислать мне»
 await page.locator('.card', { hasText: 'Про обучение' }).locator('.ttl').click();
@@ -85,7 +83,7 @@ step('«прислать мне» отправляет пост админу');
 await page.click('#tabs button[data-t="dates"]'); await page.waitForTimeout(200);
 await page.screenshot({ path: OUT + '/panel-5-dates.png' });
 await page.click('#tabs button[data-t="gifts"]'); await page.waitForTimeout(200);
-assert.ok((await page.textContent('#body')).includes('Подарка нет'), 'пустые зоны подсвечены');
+assert.ok((await page.textContent('#body')).includes('Продолжающим'), 'подарки по уровням');
 await page.screenshot({ path: OUT + '/panel-6-gifts.png', fullPage: true });
 step('вкладки «Даты» и «Подарки»');
 
