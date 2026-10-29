@@ -692,9 +692,27 @@ var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function pause(ctx, id, ms) {
   const k = ctx.env.DELAY_FACTOR === void 0 ? 1 : Number(ctx.env.DELAY_FACTOR);
   if (!(k > 0)) return;
+  const t = Math.max(450, ms * k);
   await ctx.tg.call("sendChatAction", { chat_id: id, action: "typing" }).catch(() => {
   });
-  await sleep(ms * k);
+  if (ctx.env.TYPING_BUBBLE === "0") {
+    await sleep(t);
+    return;
+  }
+  const dots = await ctx.tg.call("sendMessage", { chat_id: id, text: "•", disable_notification: true }).catch(() => null);
+  if (!dots) {
+    await sleep(t);
+    return;
+  }
+  await sleep(t / 3);
+  await ctx.tg.call("editMessageText", { chat_id: id, message_id: dots.message_id, text: "• •" }).catch(() => {
+  });
+  await sleep(t / 3);
+  await ctx.tg.call("editMessageText", { chat_id: id, message_id: dots.message_id, text: "• • •" }).catch(() => {
+  });
+  await sleep(t / 3);
+  await ctx.tg.call("deleteMessage", { chat_id: id, message_id: dots.message_id }).catch(() => {
+  });
 }
 var techList = (u) => {
   try {
@@ -762,6 +780,7 @@ async function onStart(ctx, msg2, payload) {
   await cleanAll(ctx, from.id);
   u = await getUser(ctx, from.id);
   const name = from.first_name || "друг";
+  await pause(ctx, from.id, 600);
   await tech(ctx, from.id, say(ctx, from.id, st.zone ? "helloTest" : "hello", { имя: name }));
   return nextStep(ctx, u);
 }
@@ -783,8 +802,7 @@ async function nextStep(ctx, u) {
     await pause(ctx, id, 800);
     await tech(ctx, id, say(ctx, id, "testOffer", {}, url ? { reply_markup: kb([[{ text: await btn(ctx, "testBtn"), url }]]) } : {}));
   } else {
-    await pause(ctx, id, 800);
-    await sendGift(ctx, u);
+    await sendGift(ctx, u, 800);
   }
   if (!u.consent_ads_at && u.status !== "stopped") {
     await pause(ctx, id, 1200);
@@ -796,7 +814,7 @@ async function nextStep(ctx, u) {
     await ctx.db.run(`UPDATE users SET status = 'active', joined_at = COALESCE(joined_at, ?) WHERE tg_id = ?`, [ctx.now, id]);
   }
 }
-async function sendGift(ctx, u) {
+async function sendGift(ctx, u, pauseMs) {
   const gifts = await ctx.db.all(
     `SELECT * FROM posts WHERE kind = 'gift' AND status = 'active'
        AND (audience = 'all' OR audience = ?)
@@ -809,11 +827,13 @@ async function sendGift(ctx, u) {
     const told = await ctx.db.first(`SELECT 1 FROM settings WHERE key = ?`, ["nogift:" + u.tg_id]);
     if (!any && !told) {
       await ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING`, ["nogift:" + u.tg_id, String(ctx.now)]);
+      if (pauseMs) await pause(ctx, u.tg_id, pauseMs);
       await tech(ctx, u.tg_id, say(ctx, u.tg_id, "noGift"));
     }
     return;
   }
   for (const g of gifts) {
+    if (pauseMs) await pause(ctx, u.tg_id, pauseMs);
     await sendPost(ctx.tg, u.tg_id, g, { uid: u.tg_id, publicUrl: ctx.publicUrl, arrow: await btn(ctx, "buttonsArrow") });
     await recordDeliveries(ctx.db, g.id, [{ tg_id: u.tg_id, ok: true }], ctx.now);
   }
@@ -955,7 +975,7 @@ var GUIDE = {
 
 <b>Кто не получает рассылку</b>: кто отписался (/stop), заблокировал бота, не дал согласие, уже оплатил курс.
 
-<b>Чистый чат</b>: бот пишет постепенно (с «печатает…»), а служебные сообщения — согласия, вопрос про уровень, вопрос про рассылку — исчезают, как только человек нажал кнопку. Предложение пройти тест исчезает, когда человек вернулся из теста. В чате остаются приветствие, подарок и материалы.
+<b>Чистый чат</b>: бот пишет постепенно: перед каждым сообщением «печатает…» и пузырёк с точками • • • прямо в чате, а служебные сообщения — согласия, вопрос про уровень, вопрос про рассылку — исчезают, как только человек нажал кнопку. Предложение пройти тест исчезает, когда человек вернулся из теста. В чате остаются приветствие, подарок и материалы.
 
 Бот проверяет расписание раз в минуту и рассылает пачками — большая рассылка может идти несколько минут, это нормально.`,
   post: `<b>✍️ Как сделать красивый пост</b>

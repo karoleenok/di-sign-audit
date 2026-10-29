@@ -354,4 +354,32 @@ step('картинка в служебных сообщениях: добави�
 }
 step('без дублей: двойной «Старт» игнорируется, «подарок скоро» — один раз и исчезает');
 
+// ---------- «печатает…» в чате ----------
+{
+  const slowEnv = { ...env, DELAY_FACTOR: '0.001' };
+  const S = () => makeCtx({ db, env: slowEnv, fetchFn: fakeFetch, publicUrl: 'https://bot.test', now: (NOW += 10) });
+  const c0 = calls.length;
+  await handleUpdate(S(), { message: { message_id: 5001, from: { id: 970, first_name: 'Аня' }, chat: { id: 970, type: 'private' }, text: '/start' } });
+  const seq = calls.slice(c0).filter((c) => c.body.chat_id === 970).map((c) => c.method + (c.body.text ? ':' + c.body.text.slice(0, 12) : ''));
+  const i = seq.indexOf('sendMessage:•');
+  assert.ok(i >= 0 && seq[i + 1] === 'editMessageText:• •' && seq[i + 2] === 'editMessageText:• • •' && seq[i + 3] === 'deleteMessage', 'пузырёк с точками растёт и исчезает: ' + seq.join(' → '));
+  assert.match(seq[i + 4], /sendMessage:Привет/, 'сразу после пузырька — приветствие');
+  const bubbles = seq.filter((x) => x === 'sendMessage:•').length;
+  const real = seq.filter((x) => x.startsWith('sendMessage:') && x !== 'sendMessage:•').length;
+  assert.equal(bubbles, real, 'перед каждым сообщением ровно один пузырёк');
+  // уже прошёл весь путь: «Старт» → только приветствие, без пустого «печатает…»
+  await handleUpdate(S(), { callback_query: { id: 'x1', from: { id: 970 }, data: 'c:pd', message: { message_id: 1, chat: { id: 970 } } } });
+  await handleUpdate(S(), { callback_query: { id: 'x2', from: { id: 970 }, data: 'lv:pro', message: { message_id: 1, chat: { id: 970 } } } });
+  await handleUpdate(S(), { callback_query: { id: 'x3', from: { id: 970 }, data: 'c:ads:1', message: { message_id: 1, chat: { id: 970 } } } });
+  await db.run(`UPDATE users SET zone = 'B' WHERE tg_id = 970`);
+  await db.run(`INSERT INTO settings (key, value) VALUES ('nogift:970', '1') ON CONFLICT(key) DO NOTHING`);
+  await db.run(`UPDATE posts SET status = 'paused' WHERE kind = 'gift'`);
+  const c1 = calls.length;
+  await handleUpdate(S(), { message: { message_id: 5002, from: { id: 970, first_name: 'Аня' }, chat: { id: 970, type: 'private' }, text: '/start' } });
+  const s2 = calls.slice(c1).filter((c) => c.body.chat_id === 970 && (c.method === 'sendMessage' || c.method === 'sendChatAction'));
+  assert.equal(s2.filter((c) => c.method === 'sendChatAction').length, 1, 'одно «печатает…» — перед приветствием, лишних нет');
+  await db.run(`UPDATE posts SET status = 'active' WHERE kind = 'gift'`);
+}
+step('«печатает…» в чате: пузырёк • → • • → • • • перед каждым сообщением, без пустых пауз');
+
 console.log('\nВсе сценарии прошли. Запросов к фейковому Telegram:', calls.length);

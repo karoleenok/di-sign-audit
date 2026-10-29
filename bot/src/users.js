@@ -37,11 +37,22 @@ async function askLevel(ctx, id) {
 // Служебные сообщения (согласия, вопросы, предложение теста) запоминаем и убираем, когда они уже не нужны:
 // Telegram сам красиво растворяет удалённое сообщение. Между сообщениями — пауза с «печатает…».
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// «Печатает…» и в шапке, и прямо в чате: пузырёк «•» → «• •» → «• • •», который исчезает перед сообщением.
+// Вызывать только когда следом точно будет сообщение.
 async function pause(ctx, id, ms) {
   const k = ctx.env.DELAY_FACTOR === undefined ? 1 : Number(ctx.env.DELAY_FACTOR);
   if (!(k > 0)) return;
+  const t = Math.max(450, ms * k);
   await ctx.tg.call('sendChatAction', { chat_id: id, action: 'typing' }).catch(() => {});
-  await sleep(ms * k);
+  if (ctx.env.TYPING_BUBBLE === '0') { await sleep(t); return; }
+  const dots = await ctx.tg.call('sendMessage', { chat_id: id, text: '•', disable_notification: true }).catch(() => null);
+  if (!dots) { await sleep(t); return; }
+  await sleep(t / 3);
+  await ctx.tg.call('editMessageText', { chat_id: id, message_id: dots.message_id, text: '• •' }).catch(() => {});
+  await sleep(t / 3);
+  await ctx.tg.call('editMessageText', { chat_id: id, message_id: dots.message_id, text: '• • •' }).catch(() => {});
+  await sleep(t / 3);
+  await ctx.tg.call('deleteMessage', { chat_id: id, message_id: dots.message_id }).catch(() => {});
 }
 const techList = (u) => { try { return u && u.tech ? JSON.parse(u.tech) : []; } catch { return []; } };
 async function tech(ctx, id, sending) {
@@ -103,6 +114,7 @@ export async function onStart(ctx, msg, payload) {
   u = await getUser(ctx, from.id);
   const name = from.first_name || 'друг';
   // зона из теста запоминается только как отметка «прошёл тест» — посты и подарки по зонам не делим
+  await pause(ctx, from.id, 600);
   await tech(ctx, from.id, say(ctx, from.id, st.zone ? 'helloTest' : 'hello', { имя: name }));
   return nextStep(ctx, u);
 }
@@ -124,9 +136,8 @@ export async function nextStep(ctx, u) {
     await pause(ctx, id, 800);
     await tech(ctx, id, say(ctx, id, 'testOffer', {}, url ? { reply_markup: kb([[{ text: await btn(ctx, 'testBtn'), url }]]) } : {}));
   } else {
-    // прошёл тест — подарок (один раз): общий и/или под его уровень
-    await pause(ctx, id, 800);
-    await sendGift(ctx, u);
+    // прошёл тест — подарок (один раз): общий и/или под его уровень; пауза — только если есть что прислать
+    await sendGift(ctx, u, 800);
   }
   if (!u.consent_ads_at && u.status !== 'stopped') {
     await pause(ctx, id, 1200);
@@ -139,7 +150,7 @@ export async function nextStep(ctx, u) {
   }
 }
 
-async function sendGift(ctx, u) {
+async function sendGift(ctx, u, pauseMs) {
   const gifts = await ctx.db.all(
     `SELECT * FROM posts WHERE kind = 'gift' AND status = 'active'
        AND (audience = 'all' OR audience = ?)
@@ -153,11 +164,13 @@ async function sendGift(ctx, u) {
     const told = await ctx.db.first(`SELECT 1 FROM settings WHERE key = ?`, ['nogift:' + u.tg_id]);
     if (!any && !told) {
       await ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING`, ['nogift:' + u.tg_id, String(ctx.now)]);
+      if (pauseMs) await pause(ctx, u.tg_id, pauseMs);
       await tech(ctx, u.tg_id, say(ctx, u.tg_id, 'noGift'));
     }
     return;
   }
   for (const g of gifts) {
+    if (pauseMs) await pause(ctx, u.tg_id, pauseMs);
     await sendPost(ctx.tg, u.tg_id, g, { uid: u.tg_id, publicUrl: ctx.publicUrl, arrow: await btn(ctx, 'buttonsArrow') });
     await recordDeliveries(ctx.db, g.id, [{ tg_id: u.tg_id, ok: true }], ctx.now);
   }
