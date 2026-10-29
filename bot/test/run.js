@@ -18,6 +18,8 @@ const fakeFetch = async (url, init) => {
   if (fail403.has(body.chat_id) && method.startsWith('send')) return err(403, 'Forbidden: bot was blocked by the user');
   if (fail429 && method.startsWith('send')) return err(429, 'Too Many Requests', { parameters: { retry_after: 7 } });
   if (method === 'getMe') return ok({ username: 'di_sign_university_bot' });
+  if (method === 'getMyDescription') return ok({ description: 'бот с полезностями от Di Sign University' });
+  if (method === 'getMyShortDescription') return ok({ short_description: 'полезности для дизайнеров' });
   if (method === 'getWebhookInfo') return ok({ url: 'https://x.workers.dev/tg', pending_update_count: 0 });
   if (method === 'sendMediaGroup') return ok(body.media.map(() => ({ message_id: ++msgId })));
   return ok({ message_id: ++msgId });
@@ -281,5 +283,29 @@ step('тексты: правка в боте с подстановкой и пр
   assert.equal(JSON.parse(u8.tech).length, 1, 'в списке служебных осталось только новое приветствие');
 }
 step('чистый чат: «печатает…», служебные сообщения исчезают после нажатия, «спасибо» — всплывашкой');
+
+// ---------- профиль бота и меню команд ----------
+{
+  const c0 = calls.length;
+  await cb(100, 't:k:botDesc');
+  assert.ok(sentTo(100, c0).some((c) => /бот с полезностями/.test(c.body.text || '')), 'показывает текущее описание из BotFather');
+  await cb(100, 't:e:botDesc');
+  await msg(100, 'Привет! Здесь аудит для дизайнеров и полезности 🐾');
+  let set = calls.slice(c0).filter((c) => c.method === 'setMyDescription');
+  assert.equal(set.at(-1).body.description, 'Привет! Здесь аудит для дизайнеров и полезности 🐾', 'описание применилось в Telegram');
+  await cb(100, 't:r:botDesc');
+  set = calls.slice(c0).filter((c) => c.method === 'setMyDescription');
+  assert.equal(set.at(-1).body.description, 'бот с полезностями от Di Sign University', '«вернуть как было» возвращает текст из BotFather');
+  await cb(100, 't:e:botShort');
+  await msg(100, 'х'.repeat(130));
+  assert.match(lastText(100), /до 120 знаков/, 'слишком длинное короткое описание не принимается');
+  await msg(100, '/cancel');
+  await cb(100, 't:e:cmd_level');
+  await msg(100, 'Поменять уровень 🎚');
+  const cm = calls.slice(c0).filter((c) => c.method === 'setMyCommands');
+  assert.equal(cm.find((c) => !c.body.scope).body.commands.find((x) => x.command === 'level').description, 'Поменять уровень 🎚', 'меню учеников');
+  assert.ok(cm.some((c) => c.body.scope && c.body.commands.some((x) => x.command === 'level' && x.description === 'Поменять уровень 🎚') && c.body.commands.some((x) => x.command === 'admin')), 'меню админа тоже обновилось');
+}
+step('профиль бота: описание до «Старт», короткое описание и подписи команд меняются и применяются в Telegram');
 
 console.log('\nВсе сценарии прошли. Запросов к фейковому Telegram:', calls.length);

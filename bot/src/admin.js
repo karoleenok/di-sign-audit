@@ -1,8 +1,8 @@
-import { AUD, ADMIN_COMMANDS } from './texts.js';
+import { AUD } from './texts.js';
 import { sendPost, postSummary, postLabel, postWhen, audienceCount } from './posts.js';
 import { parseTime, parseWhen, fmtTime, fmtWhen } from './time.js';
 import { GUIDE, GUIDE_MENU } from './guide.js';
-import { MSG, MSG_GROUPS, msgInfo, loadMsgs, saveMsg, resetMsg, say as sayMsg } from './msgs.js';
+import { MSG, MSG_GROUPS, msgInfo, loadMsgs, saveMsg, resetMsg, say as sayMsg, msg as msgText, adminCommands } from './msgs.js';
 import { LEVELS } from './texts.js';
 
 const kb = (rows) => ({ inline_keyboard: rows });
@@ -84,7 +84,8 @@ export async function onAdminMessage(ctx, msg) {
   if (s.state.startsWith('e:msg:')) {
     const key = s.state.slice(6);
     if (!msg.text) { await say(ctx, id, 'Нужен текст одним сообщением (без картинок). Или /cancel.'); return true; }
-    await saveMsg(ctx, key, msg.text, msg.entities || []);
+    try { await saveMsg(ctx, key, msg.text, msg.entities || []); }
+    catch (e) { await say(ctx, id, '⚠️ ' + e.message + '. Пришли покороче или /cancel.'); return true; }
     await clearState(ctx, id);
     await showMsg(ctx, id, key, 'Сохранено ✓ Так это сообщение теперь увидят ученики:');
     return true;
@@ -283,9 +284,7 @@ export async function onAdminCallback(ctx, cq) {
     await setState(ctx, id, 'e:msg:' + key, {});
     return say(ctx, id,
       `Пришли новый текст для «${i.title}» одним сообщением.` +
-      (i.button ? `
-Это кнопка: до 64 знаков, без оформления.` : `
-Жирный, курсив, ссылки и премиум-эмодзи сохранятся.`) +
+      (i.button ? `\nЭто кнопка: до 64 знаков, без оформления.` : i.plain ? `\nЭто часть профиля бота: обычный текст${i.limit ? ', до ' + i.limit + ' знаков' : ''}. Применится в Telegram сразу.` : `\nЖирный, курсив, ссылки и премиум-эмодзи сохранятся.`) +
       (i.vars.length ? `
 
 Можно вставить подстановки: ${i.vars.map((v) => '{' + v + '}').join(' ')} — бот заменит их сам.` : '') +
@@ -293,7 +292,7 @@ export async function onAdminCallback(ctx, cq) {
 
 Текущий текст, чтобы скопировать и поправить:`,
       { reply_markup: kb([[{ text: 'Отмена', callback_data: 'w:cancel' }]]) })
-      .then(async () => { const all = await loadMsgs(ctx); const o = all[key]; await ctx.tg.call('sendMessage', { chat_id: id, text: o ? o.text : i.def, ...(o && o.entities && o.entities.length ? { entities: o.entities } : {}) }).catch(() => say(ctx, id, o ? o.text : i.def)); });
+      .then(async () => { const all = await loadMsgs(ctx); const o = all[key]; const cur = o ? o.text : (i.plain ? (await msgText(ctx, key)).text : i.def); await ctx.tg.call('sendMessage', { chat_id: id, text: cur || '(пусто)', ...(o && o.entities && o.entities.length ? { entities: o.entities } : {}) }).catch(() => say(ctx, id, cur || '(пусто)')); });
   }
   if (data.startsWith('t:r:')) { const key = data.slice(4); await resetMsg(ctx, key); return showMsg(ctx, id, key, 'Вернули текст по умолчанию ↩️'); }
   // список и карточка поста
@@ -429,7 +428,7 @@ async function addAdmin(ctx, id, arg) {
   if (!n) return say(ctx, id, 'Формат: /addadmin 123456789');
   const u = await ctx.db.first(`SELECT first_name FROM users WHERE tg_id = ?`, [n]);
   await ctx.db.run(`INSERT OR IGNORE INTO admins (tg_id, name, added_at) VALUES (?, ?, ?)`, [n, u ? u.first_name : null, ctx.now]);
-  await ctx.tg.call('setMyCommands', { commands: ADMIN_COMMANDS, scope: { type: 'chat', chat_id: n } }).catch(() => {});
+  await ctx.tg.call('setMyCommands', { commands: await adminCommands(ctx), scope: { type: 'chat', chat_id: n } }).catch(() => {});
   await ctx.tg.call('sendMessage', { chat_id: n, text: 'Тебе выдали права админа бота 🐾 Команды: /help' }).catch(() => {});
   return say(ctx, id, `Готово: ${n} теперь админ.`);
 }
@@ -504,7 +503,7 @@ async function textsGroup(ctx, id, g) {
 async function showMsg(ctx, id, key, note) {
   const i = msgInfo(key); if (!i) return;
   const all = await loadMsgs(ctx);
-  await say(ctx, id, `${note ? note + '\n\n' : ''}«${i.title}»${i.button ? ' — это кнопка' : ''}${all[key] ? ' · изменено' : ' · по умолчанию'}\nУченик видит так 👇`);
+  await say(ctx, id, `${note ? note + '\n\n' : ''}«${i.title}»${i.button ? ' — это кнопка' : ''}${all[key] ? ' · изменено' : ' · по умолчанию'}\n${i.group === 'profile' ? 'Сейчас в Telegram так 👇' : 'Ученик видит так 👇'}`);
   await sayMsg(ctx, id, key, sampleVars(ctx, id));
   const rows = [[{ text: '✏️ Изменить', callback_data: 't:e:' + key }]];
   if (all[key]) rows.push([{ text: '↩️ Вернуть как было', callback_data: 't:r:' + key }]);

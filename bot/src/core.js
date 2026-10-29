@@ -2,7 +2,7 @@
 import { migrate } from './schema.js';
 import { makeTg } from './tg.js';
 import { nowSec } from './time.js';
-import { USER_COMMANDS, ADMIN_COMMANDS } from './texts.js';
+import { userCommands, adminCommands } from './msgs.js';
 import { onStart, onUserCallback, onUserCommand } from './users.js';
 import { isAdmin, envAdmins, onAdminCommand, onAdminMessage, onAdminCallback } from './admin.js';
 import { sendPost, dueUsers, recordDeliveries } from './posts.js';
@@ -128,9 +128,10 @@ export async function setup(ctx, { webhookUrl, polling }) {
     });
     out.push('Вебхук установлен: ' + webhookUrl);
   }
-  await ctx.tg.call('setMyCommands', { commands: USER_COMMANDS });
+  await ctx.tg.call('setMyCommands', { commands: await userCommands(ctx) });
   const admins = [...envAdmins(ctx.env), ...(await ctx.db.all(`SELECT tg_id FROM admins`)).map((r) => r.tg_id)];
-  for (const a of new Set(admins)) await ctx.tg.call('setMyCommands', { commands: ADMIN_COMMANDS, scope: { type: 'chat', chat_id: a } }).catch(() => {});
+  const ac = await adminCommands(ctx);
+  for (const a of new Set(admins)) await ctx.tg.call('setMyCommands', { commands: ac, scope: { type: 'chat', chat_id: a } }).catch(() => {});
   out.push('Меню команд обновлено, админов: ' + new Set(admins).size);
   const me = await ctx.tg.call('getMe');
   out.push('Бот: @' + me.username);

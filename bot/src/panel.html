@@ -274,8 +274,8 @@ function renderGifts() {
 function renderTexts() {
   const groups = {};
   S.msgs.forEach((m) => { (groups[m.group] = groups[m.group] || []).push(m); });
-  const names = { hello: '👋 Приветствие', consent: '✅ Согласие на данные', level: '🎚 Уровень', test: '🧪 Аудит-тест и подарок', ads: '📬 Согласие на рассылку', cmd: '⚙️ Команды ученика' };
-  let h = '<p class="muted" style="margin-top:16px">Все сообщения, которые бот пишет ученикам. Нажми, чтобы поменять. ✎ — уже изменено. Премиум-эмодзи вставляются только в самом боте: <b>/texts</b>.</p>';
+  const names = { hello: '👋 Приветствие', consent: '✅ Согласие на данные', level: '🎚 Уровень', test: '🧪 Аудит-тест и подарок', ads: '📬 Согласие на рассылку', cmd: '⚙️ Команды ученика', profile: '🤖 Профиль бота и меню команд' };
+  let h = '<p class="muted" style="margin-top:16px">Все сообщения, которые бот пишет ученикам. Нажми, чтобы поменять. ✎ — уже изменено. Премиум-эмодзи вставляются только в самом боте: <b>/texts</b>. В самом низу — описание бота до «Старт» и подписи команд в меню.</p>';
   Object.keys(names).forEach((g) => {
     if (!groups[g]) return;
     h += '<div class="grp">' + names[g] + '</div>';
@@ -338,15 +338,18 @@ function openPost(id) {
 
 function openMsg(key) {
   const m = S.msgs.find((x) => x.key === key); if (!m) return;
-  let h = '<span class="pill">' + (m.button ? 'Кнопка' : 'Сообщение') + '</span><h2>' + esc(m.title) + '</h2>' +
+  let h = '<span class="pill">' + (m.button ? 'Кнопка' : m.group === 'profile' ? 'Профиль бота' : 'Сообщение') + '</span><h2>' + esc(m.title) + '</h2>' +
+    (m.group === 'profile' ? '<div class="note">' + (m.key === 'botDesc' ? 'Этот текст человек видит в пустом чате до нажатия «Старт».' : m.key === 'botShort' ? 'Виден в профиле бота и когда ссылку на бота пересылают.' : 'Подпись команды в меню «Меню» слева от поля ввода.') + ' Обычный текст до ' + m.limit + ' знаков. Применится в Telegram сразу после сохранения.</div>' : '') +
     (m.emoji ? '<div class="note warn">В этом тексте есть премиум-эмодзи. Если сохранить его отсюда, они станут обычными. Чтобы оставить премиум — меняй в боте: <b>/texts</b>.</div>' : '') +
-    (m.button ? '<input type="text" id="mText" maxlength="64" value="' + esc(m.text) + '">' : '<textarea id="mText">' + esc(m.text) + '</textarea>') +
+    (m.button ? '<input type="text" id="mText" maxlength="64" value="' + esc(m.text) + '">' : '<textarea id="mText"' + (m.limit ? ' maxlength="' + m.limit + '"' : '') + '>' + esc(m.text) + '</textarea>') +
+    (m.limit && !m.button ? '<p class="small muted" style="margin:6px 2px 0" id="mCount"></p>' : '') +
     (m.vars.length ? '<p class="small muted" style="margin:10px 2px 0">Нажми, чтобы вставить — бот подставит сам:</p><div class="vars" id="mVars">' + m.vars.map((v) => '<button type="button" data-v="{' + v + '}">{' + v + '}</button>').join('') + '</div>' : '') +
     '<div class="btns"><button class="btn" id="mSave">Сохранить</button><div class="btns two" style="margin:0"><button class="btn ghost" id="mPrev">👁 Прислать мне</button><button class="btn ghost" id="mClose">Закрыть</button></div>' +
     (m.changed ? '<button class="btn danger" id="mReset">↩️ Вернуть текст по умолчанию</button>' : '') + '</div>' +
     (m.changed ? '<p class="small muted" style="margin-top:12px">По умолчанию было:</p><div class="preview">' + esc(m.def) + '</div>' : '');
   sheet(h);
   const ta = $('mText');
+  if ($('mCount')) { const upc = () => { $('mCount').textContent = ta.value.length + ' / ' + m.limit; }; ta.oninput = upc; upc(); }
   if ($('mVars')) $('mVars').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; const s = ta.selectionStart ?? ta.value.length, en = ta.selectionEnd ?? s; ta.value = ta.value.slice(0, s) + b.dataset.v + ta.value.slice(en); ta.focus(); ta.selectionStart = ta.selectionEnd = s + b.dataset.v.length; };
   $('mClose').onclick = closeSheet;
   $('mPrev').onclick = async () => { try { await api('/msg/' + key + '/preview', {}); toast('Отправила тебе в бот — так видит ученик (сохранённая версия)'); } catch (e) { toast(e.message); } };

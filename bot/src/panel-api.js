@@ -117,7 +117,7 @@ export async function handlePanelApi(ctx, request, url) {
     } catch (e) { return json({ error: 'Telegram не принял пост: ' + e.message }, 400); }
   }
 
-  m = /^\/msg\/([A-Za-z]+)$/.exec(path);
+  m = /^\/msg\/([A-Za-z_]+)$/.exec(path);
   if (m && request.method === 'POST') {
     try {
       if (body.reset) await resetMsg(ctx, m[1]);
@@ -125,13 +125,14 @@ export async function handlePanelApi(ctx, request, url) {
         const t = String(body.text || '');
         if (!t.trim()) return json({ error: 'Пустой текст' }, 400);
         if (t.length > 4000) return json({ error: 'Слишком длинно для Telegram' }, 400);
+        if (body.text === undefined) return json({ error: 'Нет текста' }, 400);
         await saveMsg(ctx, m[1], t, []);
       }
       return json({ ok: true, msgs: await listMsgs(ctx) });
     } catch (e) { return json({ error: e.message }, 400); }
   }
 
-  m = /^\/msg\/([A-Za-z]+)\/preview$/.exec(path);
+  m = /^\/msg\/([A-Za-z_]+)\/preview$/.exec(path);
   if (m && request.method === 'POST') {
     await say(ctx, user.id, m[1], { уровень: LEVELS.start, политика: ctx.env.POLICY_URL || '— ссылка появится перед запуском —', согласие: ctx.env.CONSENT_URL || '— ссылка появится перед запуском —', оферта: ctx.env.OFFER_URL || '— скоро —', владелец: ctx.env.OWNER_INFO || '' });
     return json({ ok: true });

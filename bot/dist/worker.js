@@ -271,7 +271,8 @@ var MSG_GROUPS = [
   ["level", "🎚 Уровень"],
   ["test", "🧪 Аудит-тест и подарок"],
   ["ads", "📬 Согласие на рассылку"],
-  ["cmd", "⚙️ Команды ученика"]
+  ["cmd", "⚙️ Команды ученика"],
+  ["profile", "🤖 Профиль бота и меню команд"]
 ];
 var MSG = {
   hello: [
@@ -330,11 +331,20 @@ var MSG = {
     "Ответ на непонятное сообщение",
     "Я бот с материалами 🐾 Команды: /level — сменить уровень, /stop — отписаться, /policy — документы, /delete — удалить данные.",
     []
-  ]
+  ],
+  // профиль бота: применяются в Telegram сразу после сохранения
+  botDesc: ["profile", "Описание до кнопки «Старт» (что умеет бот)", "", []],
+  botShort: ["profile", "Короткое описание в профиле бота", "", []],
+  ...Object.fromEntries(USER_COMMANDS.map((c) => ["cmd_" + c.command, ["profile", "Меню команд: /" + c.command, c.description, []]]))
 };
+var PROFILE_LIMIT = { botDesc: 512, botShort: 120 };
+var isProfile = (key) => MSG[key] && MSG[key][0] === "profile";
+var limitOf = (key) => PROFILE_LIMIT[key] || (key.startsWith("cmd_") ? 256 : null);
 var msgInfo = (key) => {
   const m = MSG[key];
-  return m && { key, group: m[0], title: m[1], def: m[2], vars: m[4] ? m[3] : [.../* @__PURE__ */ new Set(["имя", ...m[3]])], button: !!m[4] };
+  if (!m) return null;
+  const plain = !!m[4] || m[0] === "profile";
+  return { key, group: m[0], title: m[1], def: m[2], vars: plain ? m[3] : [.../* @__PURE__ */ new Set(["имя", ...m[3]])], button: !!m[4], plain, limit: m[4] ? 64 : limitOf(key) };
 };
 async function loadMsgs(ctx) {
   if (ctx._msgs) return ctx._msgs;
@@ -371,6 +381,7 @@ function fill(text, entities, vars) {
 async function msg(ctx, key, vars) {
   const all = await loadMsgs(ctx);
   const o = all[key];
+  if (isProfile(key) && !(o && o.text)) return { text: await liveProfile(ctx, key), entities: [] };
   const base = o && o.text ? o : { text: MSG[key] ? MSG[key][2] : key, entities: [] };
   return fill(base.text, base.entities, { имя: ctx.userName || "друг", ...vars || {} });
 }
@@ -395,22 +406,74 @@ async function say(ctx, chatId, key, vars, extra = {}) {
 async function saveMsg(ctx, key, text, entities) {
   const info = msgInfo(key);
   if (!info) throw new Error("нет такого сообщения");
-  const v = info.button ? { text: String(text).replace(/\s+/g, " ").trim().slice(0, 64), entities: [] } : { text: String(text), entities: entities || [] };
+  let v;
+  if (info.button) v = { text: String(text).replace(/\s+/g, " ").trim().slice(0, 64), entities: [] };
+  else if (info.plain) {
+    const t = String(text).trim();
+    if (info.limit && t.length > info.limit) throw new Error(`Telegram разрешает до ${info.limit} знаков, сейчас ${t.length}`);
+    if (key.startsWith("cmd_") && t.length < 3) throw new Error("Подпись команды — хотя бы 3 знака");
+    v = { text: t, entities: [] };
+  } else v = { text: String(text), entities: entities || [] };
+  if (isProfile(key)) await rememberOriginal(ctx, key);
   await ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, ["msg:" + key, JSON.stringify(v)]);
   if (ctx._msgs) ctx._msgs[key] = v;
+  if (isProfile(key)) await applyProfile(ctx, key);
   return v;
 }
 async function resetMsg(ctx, key) {
   await ctx.db.run(`DELETE FROM settings WHERE key = ?`, ["msg:" + key]);
   if (ctx._msgs) delete ctx._msgs[key];
+  if (isProfile(key)) await applyProfile(ctx, key);
+}
+async function liveProfile(ctx, key) {
+  try {
+    if (key === "botDesc") return (await ctx.tg.call("getMyDescription", {})).description || "";
+    if (key === "botShort") return (await ctx.tg.call("getMyShortDescription", {})).short_description || "";
+  } catch {
+  }
+  return MSG[key] ? MSG[key][2] : "";
+}
+async function rememberOriginal(ctx, key) {
+  if (key !== "botDesc" && key !== "botShort") return;
+  const has = await ctx.db.first(`SELECT 1 FROM settings WHERE key = ?`, ["orig:" + key]);
+  if (has) return;
+  const all = await loadMsgs(ctx);
+  if (all[key]) return;
+  await ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?)`, ["orig:" + key, await liveProfile(ctx, key)]);
+}
+async function profileText(ctx, key) {
+  const all = await loadMsgs(ctx);
+  if (all[key] && all[key].text) return all[key].text;
+  const o = await ctx.db.first(`SELECT value FROM settings WHERE key = ?`, ["orig:" + key]);
+  return o ? o.value : MSG[key] ? MSG[key][2] : "";
+}
+async function userCommands(ctx) {
+  const all = await loadMsgs(ctx);
+  return USER_COMMANDS.map((c) => ({ command: c.command, description: all["cmd_" + c.command] && all["cmd_" + c.command].text || c.description }));
+}
+async function adminCommands(ctx) {
+  const userSet = new Set(USER_COMMANDS.map((c) => c.command));
+  return [...ADMIN_COMMANDS.filter((c) => !userSet.has(c.command)), ...await userCommands(ctx)];
+}
+async function applyProfile(ctx, key) {
+  if (key === "botDesc") return ctx.tg.call("setMyDescription", { description: await profileText(ctx, key) });
+  if (key === "botShort") return ctx.tg.call("setMyShortDescription", { short_description: await profileText(ctx, key) });
+  if (key.startsWith("cmd_")) {
+    await ctx.tg.call("setMyCommands", { commands: await userCommands(ctx) });
+    const env = String(ctx.env.ADMIN_IDS || "").split(/[\s,;]+/).filter(Boolean).map(Number);
+    const extra = (await ctx.db.all(`SELECT tg_id FROM admins`)).map((r) => r.tg_id);
+    const ac = await adminCommands(ctx);
+    for (const a of /* @__PURE__ */ new Set([...env, ...extra])) await ctx.tg.call("setMyCommands", { commands: ac, scope: { type: "chat", chat_id: a } }).catch(() => {
+    });
+  }
 }
 async function listMsgs(ctx) {
   const all = await loadMsgs(ctx);
-  return Object.keys(MSG).map((k) => {
+  return Promise.all(Object.keys(MSG).map((k) => {
     const i = msgInfo(k);
     const o = all[k];
     return { ...i, text: o ? o.text : i.def, changed: !!o, emoji: !!(o && (o.entities || []).some((e) => e.type === "custom_emoji")) };
-  });
+  }).map(async (m) => m.group === "profile" && !m.changed && (m.key === "botDesc" || m.key === "botShort") ? { ...m, text: await liveProfile(ctx, m.key), def: "(как задано в BotFather)" } : m));
 }
 
 // src/posts.js
@@ -907,6 +970,8 @@ var GUIDE = {
 
 <b>Кнопки</b> — до 64 знаков, без оформления.
 
+<b>🤖 Профиль бота и меню команд</b> — последняя группа: описание до кнопки «Старт» (до 512 знаков), короткое описание профиля (до 120) и подписи команд в «Меню». Обычный текст, применяется в Telegram сразу после сохранения. «Вернуть как было» вернёт текст из BotFather.
+
 <b>Вернуть как было</b>: в /texts — «↩️ Вернуть как было», в панели — «Вернуть текст по умолчанию». ✎ рядом с названием значит, что текст уже менялся.
 
 <b>Проверка</b>: в панели «👁 Прислать мне» — сообщение придёт тебе так, как его видит ученик.`,
@@ -1051,7 +1116,12 @@ async function onAdminMessage(ctx, msg2) {
       await say2(ctx, id, "Нужен текст одним сообщением (без картинок). Или /cancel.");
       return true;
     }
-    await saveMsg(ctx, key, msg2.text, msg2.entities || []);
+    try {
+      await saveMsg(ctx, key, msg2.text, msg2.entities || []);
+    } catch (e) {
+      await say2(ctx, id, "⚠️ " + e.message + ". Пришли покороче или /cancel.");
+      return true;
+    }
     await clearState(ctx, id);
     await showMsg(ctx, id, key, "Сохранено ✓ Так это сообщение теперь увидят ученики:");
     return true;
@@ -1330,7 +1400,8 @@ async function onAdminCallback(ctx, cq) {
       ctx,
       id,
       `Пришли новый текст для «${i.title}» одним сообщением.` + (i.button ? `
-Это кнопка: до 64 знаков, без оформления.` : `
+Это кнопка: до 64 знаков, без оформления.` : i.plain ? `
+Это часть профиля бота: обычный текст${i.limit ? ", до " + i.limit + " знаков" : ""}. Применится в Telegram сразу.` : `
 Жирный, курсив, ссылки и премиум-эмодзи сохранятся.`) + (i.vars.length ? `
 
 Можно вставить подстановки: ${i.vars.map((v) => "{" + v + "}").join(" ")} — бот заменит их сам.` : "") + `
@@ -1340,7 +1411,8 @@ async function onAdminCallback(ctx, cq) {
     ).then(async () => {
       const all = await loadMsgs(ctx);
       const o = all[key];
-      await ctx.tg.call("sendMessage", { chat_id: id, text: o ? o.text : i.def, ...o && o.entities && o.entities.length ? { entities: o.entities } : {} }).catch(() => say2(ctx, id, o ? o.text : i.def));
+      const cur = o ? o.text : i.plain ? (await msg(ctx, key)).text : i.def;
+      await ctx.tg.call("sendMessage", { chat_id: id, text: cur || "(пусто)", ...o && o.entities && o.entities.length ? { entities: o.entities } : {} }).catch(() => say2(ctx, id, cur || "(пусто)"));
     });
   }
   if (data.startsWith("t:r:")) {
@@ -1489,7 +1561,7 @@ async function addAdmin(ctx, id, arg) {
   if (!n) return say2(ctx, id, "Формат: /addadmin 123456789");
   const u = await ctx.db.first(`SELECT first_name FROM users WHERE tg_id = ?`, [n]);
   await ctx.db.run(`INSERT OR IGNORE INTO admins (tg_id, name, added_at) VALUES (?, ?, ?)`, [n, u ? u.first_name : null, ctx.now]);
-  await ctx.tg.call("setMyCommands", { commands: ADMIN_COMMANDS, scope: { type: "chat", chat_id: n } }).catch(() => {
+  await ctx.tg.call("setMyCommands", { commands: await adminCommands(ctx), scope: { type: "chat", chat_id: n } }).catch(() => {
   });
   await ctx.tg.call("sendMessage", { chat_id: n, text: "Тебе выдали права админа бота 🐾 Команды: /help" }).catch(() => {
   });
@@ -1569,7 +1641,7 @@ async function showMsg(ctx, id, key, note) {
   if (!i) return;
   const all = await loadMsgs(ctx);
   await say2(ctx, id, `${note ? note + "\n\n" : ""}«${i.title}»${i.button ? " — это кнопка" : ""}${all[key] ? " · изменено" : " · по умолчанию"}
-Ученик видит так 👇`);
+${i.group === "profile" ? "Сейчас в Telegram так 👇" : "Ученик видит так 👇"}`);
   await say(ctx, id, key, sampleVars(ctx, id));
   const rows = [[{ text: "✏️ Изменить", callback_data: "t:e:" + key }]];
   if (all[key]) rows.push([{ text: "↩️ Вернуть как было", callback_data: "t:r:" + key }]);
@@ -1719,9 +1791,10 @@ async function setup(ctx, { webhookUrl, polling }) {
     });
     out.push("Вебхук установлен: " + webhookUrl);
   }
-  await ctx.tg.call("setMyCommands", { commands: USER_COMMANDS });
+  await ctx.tg.call("setMyCommands", { commands: await userCommands(ctx) });
   const admins = [...envAdmins(ctx.env), ...(await ctx.db.all(`SELECT tg_id FROM admins`)).map((r) => r.tg_id)];
-  for (const a of new Set(admins)) await ctx.tg.call("setMyCommands", { commands: ADMIN_COMMANDS, scope: { type: "chat", chat_id: a } }).catch(() => {
+  const ac = await adminCommands(ctx);
+  for (const a of new Set(admins)) await ctx.tg.call("setMyCommands", { commands: ac, scope: { type: "chat", chat_id: a } }).catch(() => {
   });
   out.push("Меню команд обновлено, админов: " + new Set(admins).size);
   const me = await ctx.tg.call("getMe");
@@ -1891,7 +1964,7 @@ async function handlePanelApi(ctx, request, url) {
       return json({ error: "Telegram не принял пост: " + e.message }, 400);
     }
   }
-  m = /^\/msg\/([A-Za-z]+)$/.exec(path);
+  m = /^\/msg\/([A-Za-z_]+)$/.exec(path);
   if (m && request.method === "POST") {
     try {
       if (body.reset) await resetMsg(ctx, m[1]);
@@ -1899,6 +1972,7 @@ async function handlePanelApi(ctx, request, url) {
         const t = String(body.text || "");
         if (!t.trim()) return json({ error: "Пустой текст" }, 400);
         if (t.length > 4e3) return json({ error: "Слишком длинно для Telegram" }, 400);
+        if (body.text === void 0) return json({ error: "Нет текста" }, 400);
         await saveMsg(ctx, m[1], t, []);
       }
       return json({ ok: true, msgs: await listMsgs(ctx) });
@@ -1906,7 +1980,7 @@ async function handlePanelApi(ctx, request, url) {
       return json({ error: e.message }, 400);
     }
   }
-  m = /^\/msg\/([A-Za-z]+)\/preview$/.exec(path);
+  m = /^\/msg\/([A-Za-z_]+)\/preview$/.exec(path);
   if (m && request.method === "POST") {
     await say(ctx, user.id, m[1], { уровень: LEVELS.start, политика: ctx.env.POLICY_URL || "— ссылка появится перед запуском —", согласие: ctx.env.CONSENT_URL || "— ссылка появится перед запуском —", оферта: ctx.env.OFFER_URL || "— скоро —", владелец: ctx.env.OWNER_INFO || "" });
     return json({ ok: true });
@@ -2191,8 +2265,8 @@ function renderGifts() {
 function renderTexts() {
   const groups = {};
   S.msgs.forEach((m) => { (groups[m.group] = groups[m.group] || []).push(m); });
-  const names = { hello: '👋 Приветствие', consent: '✅ Согласие на данные', level: '🎚 Уровень', test: '🧪 Аудит-тест и подарок', ads: '📬 Согласие на рассылку', cmd: '⚙️ Команды ученика' };
-  let h = '<p class="muted" style="margin-top:16px">Все сообщения, которые бот пишет ученикам. Нажми, чтобы поменять. ✎ — уже изменено. Премиум-эмодзи вставляются только в самом боте: <b>/texts</b>.</p>';
+  const names = { hello: '👋 Приветствие', consent: '✅ Согласие на данные', level: '🎚 Уровень', test: '🧪 Аудит-тест и подарок', ads: '📬 Согласие на рассылку', cmd: '⚙️ Команды ученика', profile: '🤖 Профиль бота и меню команд' };
+  let h = '<p class="muted" style="margin-top:16px">Все сообщения, которые бот пишет ученикам. Нажми, чтобы поменять. ✎ — уже изменено. Премиум-эмодзи вставляются только в самом боте: <b>/texts</b>. В самом низу — описание бота до «Старт» и подписи команд в меню.</p>';
   Object.keys(names).forEach((g) => {
     if (!groups[g]) return;
     h += '<div class="grp">' + names[g] + '</div>';
@@ -2255,15 +2329,18 @@ function openPost(id) {
 
 function openMsg(key) {
   const m = S.msgs.find((x) => x.key === key); if (!m) return;
-  let h = '<span class="pill">' + (m.button ? 'Кнопка' : 'Сообщение') + '</span><h2>' + esc(m.title) + '</h2>' +
+  let h = '<span class="pill">' + (m.button ? 'Кнопка' : m.group === 'profile' ? 'Профиль бота' : 'Сообщение') + '</span><h2>' + esc(m.title) + '</h2>' +
+    (m.group === 'profile' ? '<div class="note">' + (m.key === 'botDesc' ? 'Этот текст человек видит в пустом чате до нажатия «Старт».' : m.key === 'botShort' ? 'Виден в профиле бота и когда ссылку на бота пересылают.' : 'Подпись команды в меню «Меню» слева от поля ввода.') + ' Обычный текст до ' + m.limit + ' знаков. Применится в Telegram сразу после сохранения.</div>' : '') +
     (m.emoji ? '<div class="note warn">В этом тексте есть премиум-эмодзи. Если сохранить его отсюда, они станут обычными. Чтобы оставить премиум — меняй в боте: <b>/texts</b>.</div>' : '') +
-    (m.button ? '<input type="text" id="mText" maxlength="64" value="' + esc(m.text) + '">' : '<textarea id="mText">' + esc(m.text) + '</textarea>') +
+    (m.button ? '<input type="text" id="mText" maxlength="64" value="' + esc(m.text) + '">' : '<textarea id="mText"' + (m.limit ? ' maxlength="' + m.limit + '"' : '') + '>' + esc(m.text) + '</textarea>') +
+    (m.limit && !m.button ? '<p class="small muted" style="margin:6px 2px 0" id="mCount"></p>' : '') +
     (m.vars.length ? '<p class="small muted" style="margin:10px 2px 0">Нажми, чтобы вставить — бот подставит сам:</p><div class="vars" id="mVars">' + m.vars.map((v) => '<button type="button" data-v="{' + v + '}">{' + v + '}</button>').join('') + '</div>' : '') +
     '<div class="btns"><button class="btn" id="mSave">Сохранить</button><div class="btns two" style="margin:0"><button class="btn ghost" id="mPrev">👁 Прислать мне</button><button class="btn ghost" id="mClose">Закрыть</button></div>' +
     (m.changed ? '<button class="btn danger" id="mReset">↩️ Вернуть текст по умолчанию</button>' : '') + '</div>' +
     (m.changed ? '<p class="small muted" style="margin-top:12px">По умолчанию было:</p><div class="preview">' + esc(m.def) + '</div>' : '');
   sheet(h);
   const ta = $('mText');
+  if ($('mCount')) { const upc = () => { $('mCount').textContent = ta.value.length + ' / ' + m.limit; }; ta.oninput = upc; upc(); }
   if ($('mVars')) $('mVars').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; const s = ta.selectionStart ?? ta.value.length, en = ta.selectionEnd ?? s; ta.value = ta.value.slice(0, s) + b.dataset.v + ta.value.slice(en); ta.focus(); ta.selectionStart = ta.selectionEnd = s + b.dataset.v.length; };
   $('mClose').onclick = closeSheet;
   $('mPrev').onclick = async () => { try { await api('/msg/' + key + '/preview', {}); toast('Отправила тебе в бот — так видит ученик (сохранённая версия)'); } catch (e) { toast(e.message); } };

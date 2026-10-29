@@ -2,6 +2,7 @@
 // Админ может поменять любое (в боте через /texts или в панели), правка хранится в базе
 // (settings: 'msg:<ключ>' -> {text, entities}). Здесь — тексты «по умолчанию».
 // В тексте можно использовать подстановки в фигурных скобках, например {имя}.
+import { USER_COMMANDS, ADMIN_COMMANDS } from './texts.js';
 
 export const MSG_GROUPS = [
   ['hello', '👋 Приветствие'],
@@ -10,6 +11,7 @@ export const MSG_GROUPS = [
   ['test', '🧪 Аудит-тест и подарок'],
   ['ads', '📬 Согласие на рассылку'],
   ['cmd', '⚙️ Команды ученика'],
+  ['profile', '🤖 Профиль бота и меню команд'],
 ];
 
 // key: [группа, название для админа, текст по умолчанию, подстановки, это кнопка?]
@@ -52,12 +54,24 @@ export const MSG = {
   needStart: ['cmd', 'Если человек не нажал /start', 'Нажми /start 🐾', []],
   unknown: ['cmd', 'Ответ на непонятное сообщение',
     'Я бот с материалами 🐾 Команды: /level — сменить уровень, /stop — отписаться, /policy — документы, /delete — удалить данные.', []],
+
+  // профиль бота: применяются в Telegram сразу после сохранения
+  botDesc: ['profile', 'Описание до кнопки «Старт» (что умеет бот)', '', []],
+  botShort: ['profile', 'Короткое описание в профиле бота', '', []],
+  ...Object.fromEntries(USER_COMMANDS.map((c) => ['cmd_' + c.command, ['profile', 'Меню команд: /' + c.command, c.description, []]])),
 };
+
+// Ограничения Telegram для профиля
+const PROFILE_LIMIT = { botDesc: 512, botShort: 120 };
+const isProfile = (key) => MSG[key] && MSG[key][0] === 'profile';
+const limitOf = (key) => PROFILE_LIMIT[key] || (key.startsWith('cmd_') ? 256 : null);
 
 export const msgInfo = (key) => {
   const m = MSG[key];
   // {имя} можно вставить в любое сообщение (кроме кнопок)
-  return m && { key, group: m[0], title: m[1], def: m[2], vars: m[4] ? m[3] : [...new Set(['имя', ...m[3]])], button: !!m[4] };
+  if (!m) return null;
+  const plain = !!m[4] || m[0] === 'profile';
+  return { key, group: m[0], title: m[1], def: m[2], vars: plain ? m[3] : [...new Set(['имя', ...m[3]])], button: !!m[4], plain, limit: m[4] ? 64 : limitOf(key) };
 };
 
 // Все правки из базы — одним запросом на обновление
@@ -95,6 +109,7 @@ export function fill(text, entities, vars) {
 export async function msg(ctx, key, vars) {
   const all = await loadMsgs(ctx);
   const o = all[key];
+  if (isProfile(key) && !(o && o.text)) return { text: await liveProfile(ctx, key), entities: [] };
   const base = o && o.text ? o : { text: MSG[key] ? MSG[key][2] : key, entities: [] };
   return fill(base.text, base.entities, { имя: ctx.userName || 'друг', ...(vars || {}) });
 }
@@ -122,22 +137,76 @@ export async function say(ctx, chatId, key, vars, extra = {}) {
 export async function saveMsg(ctx, key, text, entities) {
   const info = msgInfo(key);
   if (!info) throw new Error('нет такого сообщения');
-  const v = info.button ? { text: String(text).replace(/\s+/g, ' ').trim().slice(0, 64), entities: [] } : { text: String(text), entities: entities || [] };
+  let v;
+  if (info.button) v = { text: String(text).replace(/\s+/g, ' ').trim().slice(0, 64), entities: [] };
+  else if (info.plain) {
+    const t = String(text).trim();
+    if (info.limit && t.length > info.limit) throw new Error(`Telegram разрешает до ${info.limit} знаков, сейчас ${t.length}`);
+    if (key.startsWith('cmd_') && t.length < 3) throw new Error('Подпись команды — хотя бы 3 знака');
+    v = { text: t, entities: [] };
+  } else v = { text: String(text), entities: entities || [] };
+  if (isProfile(key)) await rememberOriginal(ctx, key);
   await ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, ['msg:' + key, JSON.stringify(v)]);
   if (ctx._msgs) ctx._msgs[key] = v;
+  if (isProfile(key)) await applyProfile(ctx, key);
   return v;
 }
 export async function resetMsg(ctx, key) {
   await ctx.db.run(`DELETE FROM settings WHERE key = ?`, ['msg:' + key]);
   if (ctx._msgs) delete ctx._msgs[key];
+  if (isProfile(key)) await applyProfile(ctx, key);
+}
+
+// ---------- профиль бота в Telegram ----------
+// Текущее описание (как задано в BotFather или нами)
+async function liveProfile(ctx, key) {
+  try {
+    if (key === 'botDesc') return (await ctx.tg.call('getMyDescription', {})).description || '';
+    if (key === 'botShort') return (await ctx.tg.call('getMyShortDescription', {})).short_description || '';
+  } catch {}
+  return MSG[key] ? MSG[key][2] : '';
+}
+// Перед первой правкой запоминаем то, что было в BotFather, — чтобы «вернуть как было» вернуло именно это
+async function rememberOriginal(ctx, key) {
+  if (key !== 'botDesc' && key !== 'botShort') return;
+  const has = await ctx.db.first(`SELECT 1 FROM settings WHERE key = ?`, ['orig:' + key]);
+  if (has) return;
+  const all = await loadMsgs(ctx);
+  if (all[key]) return;
+  await ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?)`, ['orig:' + key, await liveProfile(ctx, key)]);
+}
+async function profileText(ctx, key) {
+  const all = await loadMsgs(ctx);
+  if (all[key] && all[key].text) return all[key].text;
+  const o = await ctx.db.first(`SELECT value FROM settings WHERE key = ?`, ['orig:' + key]);
+  return o ? o.value : (MSG[key] ? MSG[key][2] : '');
+}
+export async function userCommands(ctx) {
+  const all = await loadMsgs(ctx);
+  return USER_COMMANDS.map((c) => ({ command: c.command, description: (all['cmd_' + c.command] && all['cmd_' + c.command].text) || c.description }));
+}
+export async function adminCommands(ctx) {
+  const userSet = new Set(USER_COMMANDS.map((c) => c.command));
+  return [...ADMIN_COMMANDS.filter((c) => !userSet.has(c.command)), ...(await userCommands(ctx))];
+}
+export async function applyProfile(ctx, key) {
+  if (key === 'botDesc') return ctx.tg.call('setMyDescription', { description: await profileText(ctx, key) });
+  if (key === 'botShort') return ctx.tg.call('setMyShortDescription', { short_description: await profileText(ctx, key) });
+  if (key.startsWith('cmd_')) {
+    await ctx.tg.call('setMyCommands', { commands: await userCommands(ctx) });
+    const env = String(ctx.env.ADMIN_IDS || '').split(/[\s,;]+/).filter(Boolean).map(Number);
+    const extra = (await ctx.db.all(`SELECT tg_id FROM admins`)).map((r) => r.tg_id);
+    const ac = await adminCommands(ctx);
+    for (const a of new Set([...env, ...extra])) await ctx.tg.call('setMyCommands', { commands: ac, scope: { type: 'chat', chat_id: a } }).catch(() => {});
+  }
 }
 
 // Для панели: всё о сообщениях
 export async function listMsgs(ctx) {
   const all = await loadMsgs(ctx);
-  return Object.keys(MSG).map((k) => {
+  return Promise.all(Object.keys(MSG).map((k) => {
     const i = msgInfo(k);
     const o = all[k];
     return { ...i, text: o ? o.text : i.def, changed: !!o, emoji: !!(o && (o.entities || []).some((e) => e.type === 'custom_emoji')) };
-  });
+  }).map(async (m) => (m.group === 'profile' && !m.changed && (m.key === 'botDesc' || m.key === 'botShort') ? { ...m, text: await liveProfile(ctx, m.key), def: '(как задано в BotFather)' } : m)));
 }
