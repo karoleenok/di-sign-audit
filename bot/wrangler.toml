@@ -1,0 +1,13 @@
+# Настройки для Cloudflare (используются, если загружать через командную строку).
+# При загрузке через сайт Cloudflare этот файл не нужен — всё задаётся кнопками.
+name = "di-sign-bot"
+main = "src/worker.js"
+compatibility_date = "2026-10-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "di-sign-bot"
+database_id = "local-test"
+
+[triggers]
+crons = ["* * * * *"]

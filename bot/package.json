@@ -1,0 +1,15 @@
+{
+  "name": "di-sign-warmup-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/gen-panel.mjs && node scripts/build.mjs",
+    "test": "node scripts/gen-panel.mjs && node --no-warnings test/run.js",
+    "test:panel": "node scripts/gen-panel.mjs && node --no-warnings test/panel-ui.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "wrangler": "^4.155.0"
+  }
+}

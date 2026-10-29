@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Панель бота</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#fffbf7; --card:#fff; --ink:#2c0d02; --soft:rgba(44,13,2,.6); --faint:rgba(44,13,2,.38);
+  --line:rgba(44,13,2,.12); --pill:rgba(244,201,246,.45); --blue:#e3f0fc; --good:#3f7d2e; --good-bg:#eaf4e2;
+  --warn:#a4421b; --warn-bg:#fbe9df; --shadow:0 1px 2px rgba(44,13,2,.06),0 6px 20px rgba(44,13,2,.06);
+  --serif:'Instrument Serif',Georgia,serif; --sans:'Inter Tight',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 var(--sans)}
+button,input,select,textarea{font:inherit;color:inherit}
+.wrap{max-width:640px;margin:0 auto;padding:16px 16px 120px}
+.top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.pill{display:inline-block;background:var(--pill);border-radius:99px;padding:5px 12px;font-size:13px}
+h1{font:400 34px/1.05 var(--serif);margin:12px 0 4px}
+h1 i{font-style:italic}
+.lead{color:var(--soft);margin:0 0 14px}
+.tabs{position:sticky;top:0;z-index:20;background:var(--bg);padding:8px 0 10px;margin:0 -16px;padding-left:16px;padding-right:16px;border-bottom:1px solid var(--line)}
+.seg{display:flex;gap:4px;background:rgba(44,13,2,.06);border-radius:14px;padding:4px}
+.seg button{flex:1;border:0;background:transparent;border-radius:10px;padding:9px 6px;font-weight:500;cursor:pointer;white-space:nowrap}
+.seg button.on{background:var(--card);box-shadow:var(--shadow)}
+.seg.sm button{padding:7px 6px;font-size:14px}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:2px 0 4px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;border:1px solid var(--line);background:var(--card);border-radius:99px;padding:6px 12px;font-size:13px;cursor:pointer}
+.chip.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.box{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;margin:14px 0}
+.box h3{margin:0 0 8px;font-size:13px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--soft)}
+.row{display:flex;align-items:center;gap:10px}
+.muted{color:var(--soft)}
+.small{font-size:13px}
+.day{margin:22px 0 0}
+.dayh{display:flex;align-items:baseline;gap:8px;margin:0 2px 8px}
+.dayh b{font:400 24px/1 var(--serif)}
+.dayh span{color:var(--soft);font-size:13px}
+.list{display:flex;flex-direction:column;gap:8px;min-height:54px;border-radius:16px}
+.list:empty{border:1.5px dashed var(--line);display:flex;align-items:center;justify-content:center}
+.list:empty::after{content:'перетащи сюда пост';color:var(--faint);font-size:13px}
+.card{display:flex;gap:10px;align-items:stretch;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 12px 12px 6px;box-shadow:var(--shadow);cursor:pointer;transition:opacity .2s}
+.card.off{opacity:.38}
+.card.ghost{opacity:.3;background:var(--blue)}
+.card.chosen{box-shadow:0 10px 30px rgba(44,13,2,.18)}
+.handle{flex:none;width:22px;display:flex;align-items:center;justify-content:center;color:var(--faint);cursor:grab;touch-action:none;font-size:18px;letter-spacing:-3px}
+.cbody{flex:1;min-width:0}
+.ctop{display:flex;gap:8px;align-items:center;margin-bottom:4px;flex-wrap:wrap}
+.time{background:var(--blue);border-radius:8px;padding:2px 8px;font-weight:600;font-size:13px}
+.ttl{font-weight:500;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.tag{font-size:12px;border-radius:99px;padding:2px 8px;background:rgba(44,13,2,.06)}
+.tag.zone{background:var(--pill)}
+.tag.paused{background:var(--warn-bg);color:var(--warn)}
+.tag.draft{background:rgba(44,13,2,.08)}
+.tag.no{background:transparent;border:1px dashed var(--faint);color:var(--soft)}
+.stat{font-size:12px;color:var(--soft);margin-left:auto}
+.empty{color:var(--soft);text-align:center;padding:28px 12px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:0;border-radius:14px;background:var(--ink);color:var(--bg);padding:13px 16px;font-weight:600;cursor:pointer;width:100%}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.btn.danger{background:transparent;color:var(--warn);border:1px solid var(--warn-bg)}
+.btns{display:grid;gap:8px;margin-top:14px}
+.btns.two{grid-template-columns:1fr 1fr}
+label.f{display:block;margin:14px 0 6px;font-size:13px;color:var(--soft);font-weight:500}
+input[type=text],input[type=time],input[type=datetime-local],select,textarea{width:100%;border:1px solid var(--line);background:var(--card);border-radius:12px;padding:11px 12px;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--ink)}
+textarea{min-height:120px;resize:vertical;line-height:1.45}
+.step{display:flex;align-items:center;gap:10px}
+.step button{width:44px;height:44px;border-radius:12px;border:1px solid var(--line);background:var(--card);font-size:20px;cursor:pointer}
+.step b{min-width:64px;text-align:center;font:400 28px/1 var(--serif)}
+.toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px}
+.sw{position:relative;width:48px;height:28px;flex:none}
+.sw input{opacity:0;width:0;height:0}
+.sw span{position:absolute;inset:0;background:rgba(44,13,2,.15);border-radius:99px;transition:.2s}
+.sw span::before{content:'';position:absolute;width:22px;height:22px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.sw input:checked+span{background:var(--good)}
+.sw input:checked+span::before{transform:translateX(20px)}
+.note{background:var(--blue);border-radius:12px;padding:10px 12px;font-size:13px;margin-top:12px}
+.note.warn{background:var(--warn-bg);color:var(--warn)}
+.preview{white-space:pre-wrap;background:rgba(44,13,2,.04);border-radius:12px;padding:10px 12px;font-size:14px;max-height:180px;overflow:auto}
+.sheet-bg{position:fixed;inset:0;background:rgba(44,13,2,.35);z-index:50;opacity:0;pointer-events:none;transition:.2s}
+.sheet-bg.on{opacity:1;pointer-events:auto}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:60;background:var(--bg);border-radius:22px 22px 0 0;max-height:92vh;overflow:auto;transform:translateY(105%);transition:transform .25s ease;padding:8px 16px 28px;max-width:640px;margin:0 auto}
+.sheet.on{transform:none}
+.grab{width:40px;height:5px;border-radius:9px;background:var(--line);margin:4px auto 10px}
+.sheet h2{font:400 26px/1.1 var(--serif);margin:4px 0 6px}
+.toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,40px);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;opacity:0;transition:.25s;z-index:80;font-size:14px;max-width:90vw;text-align:center}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+.grp{margin:22px 0 8px;font:400 22px/1.1 var(--serif)}
+.msg{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px;margin-bottom:8px;cursor:pointer}
+.msg .t{font-weight:500;display:flex;gap:8px;align-items:center}
+.msg .p{color:var(--soft);font-size:13px;margin-top:4px;white-space:pre-wrap;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.vars{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.vars button{border:1px dashed var(--ink);background:transparent;border-radius:99px;padding:4px 10px;font-size:13px;cursor:pointer}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--soft);margin-top:10px}
+.gate{min-height:80vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:10px}
+@media (min-width:700px){ h1{font-size:44px} }
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <div class="gate" id="gate"><span class="pill">Di Sign University</span><h1>Загружаю панель…</h1><p class="lead" id="gateText"></p></div>
+</div>
+<div class="sheet-bg" id="sheetBg"></div>
+<div class="sheet" id="sheet"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+const tg = window.Telegram && Telegram.WebApp;
+if (tg) { tg.ready(); tg.expand(); try{ tg.setHeaderColor('#fffbf7'); tg.setBackgroundColor('#fffbf7'); }catch(e){} }
+const INIT = tg ? tg.initData : '';
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let S = null;                // всё, что пришло с сервера
+let tab = 'feed';
+let view = { level: 'all', zone: '', hide: false };
+try { const v = JSON.parse(localStorage.getItem('panelView') || 'null'); if (v) view = Object.assign(view, v); } catch (e) {}
+const saveView = () => { try { localStorage.setItem('panelView', JSON.stringify(view)); } catch (e) {} };
+
+async function api(path, body) {
+  const r = await fetch('/api/panel' + path, { method: body ? 'POST' : 'GET', headers: { 'x-init-data': INIT, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  const d = await r.json().catch(() => ({ error: 'Сервер не ответил' }));
+  if (!r.ok || d.error) throw new Error(d.error || 'Ошибка');
+  return d;
+}
+function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toast._t); toast._t = setTimeout(() => el.classList.remove('on'), 2200); }
+const haptic = (k) => { try { tg && tg.HapticFeedback.impactOccurred(k || 'light'); } catch (e) {} };
+
+async function load() {
+  if (!INIT) { $('gate').querySelector('h1').textContent = 'Открой панель из бота'; $('gateText').textContent = 'Напиши боту команду /admin и нажми «Открыть панель».'; return; }
+  try { S = await api('/state'); render(); }
+  catch (e) { $('gate').querySelector('h1').textContent = 'Нет доступа'; $('gateText').textContent = e.message; }
+}
+
+// ---------- помощники ----------
+const Z = () => S.zones;
+const postName = (p) => p.title || (p.text || '').split('\n')[0] || (p.media.length ? 'Картинки без текста' : 'Без текста');
+const fmtRun = (t) => { if (!t) return 'дата не задана'; const d = new Date((t + 10800) * 1000); const wd = ['вс','пн','вт','ср','чт','пт','сб'][d.getUTCDay()]; const mon = ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'][d.getUTCMonth()]; return wd + ', ' + d.getUTCDate() + ' ' + mon + ' · ' + String(d.getUTCHours()).padStart(2,'0') + ':' + String(d.getUTCMinutes()).padStart(2,'0'); };
+const toLocal = (t) => t ? new Date((t + 10800) * 1000).toISOString().slice(0, 16) : '';
+const fromLocal = (s) => { const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(s || ''); return m ? Date.UTC(+m[1], +m[2]-1, +m[3], +m[4], +m[5]) / 1000 - 10800 : null; };
+const dayLabel = (d) => d === 0 ? 'сразу после согласия на рассылку' : d === 1 ? 'на следующий день' : 'через ' + d + ' ' + (d % 10 === 1 && d % 100 !== 11 ? 'день' : (d % 10 >= 2 && d % 10 <= 4 && (d % 100 < 10 || d % 100 >= 20)) ? 'дня' : 'дней') + ' после входа';
+// получит ли этот пост выбранный человек
+function gets(p) {
+  if (view.level !== 'all' && p.audience !== 'all' && p.audience !== view.level) return false;
+  if (p.zone && view.zone && p.zone !== view.zone) return false;
+  return true;
+}
+function tags(p) {
+  let h = '';
+  if (p.audience !== 'all') h += '<span class="tag">' + esc(S.audiences[p.audience]) + '</span>';
+  if (p.zone && p.kind !== 'gift') h += '<span class="tag zone">зона: ' + esc(Z()[p.zone]) + '</span>';
+  if (p.status === 'paused') h += '<span class="tag paused">⏸ пауза</span>';
+  if (p.status === 'draft') h += '<span class="tag draft">📝 черновик</span>';
+  if (p.media.length) h += '<span class="tag">🖼 ' + (p.media.length > 1 ? '×' + p.media.length : '') + '</span>';
+  if (p.buttons.length) h += '<span class="tag">🔘 ' + p.buttons.length + '</span>';
+  if (p.emoji) h += '<span class="tag">✨ премиум</span>';
+  if (view.level !== 'all' || view.zone) if (!gets(p)) h += '<span class="tag no">не получит</span>';
+  return h;
+}
+function cardHtml(p, opts) {
+  opts = opts || {};
+  const off = (view.level !== 'all' || view.zone) && !gets(p);
+  const time = opts.time != null ? opts.time : (p.kind === 'drip' ? (p.day === 0 ? 'сразу' : p.time) : '');
+  return '<div class="card' + (off ? ' off' : '') + '" data-id="' + p.id + '">' +
+    (opts.drag ? '<div class="handle" aria-label="перетащить">⋮⋮</div>' : '<div style="width:6px"></div>') +
+    '<div class="cbody"><div class="ctop">' + (time ? '<span class="time">' + esc(time) + '</span>' : '') +
+    '<span class="stat">' + (p.sent ? 'отправлено ' + p.sent : 'ещё не отправлялся') + (p.clicks ? ' · нажатий ' + p.clicks : '') + '</span></div>' +
+    '<div class="ttl">' + esc(postName(p)) + '</div><div class="meta">' + tags(p) + '</div></div></div>';
+}
+
+// ---------- отрисовка ----------
+function render() {
+  const app = $('app');
+  const counts = { feed: S.posts.filter((p) => p.kind === 'drip').length, dates: S.posts.filter((p) => p.kind === 'date').length, gifts: S.posts.filter((p) => p.kind === 'gift').length };
+  app.innerHTML =
+    '<div class="top"><span class="pill">Di Sign University · панель</span><span class="small muted">людей: ' + S.people.all + ' · в рассылке: ' + S.people.active + '</span></div>' +
+    '<h1>Лента <i>бота</i></h1><p class="lead">Перетаскивай посты за ⋮⋮, нажми на пост — чтобы поменять день, время и кому он уходит.</p>' +
+    '<div class="tabs"><div class="seg" id="tabs">' +
+    [['feed','Лента · ' + counts.feed],['dates','Даты · ' + counts.dates],['gifts','Подарки · ' + counts.gifts],['texts','Тексты']].map(([k,t]) => '<button data-t="' + k + '" class="' + (tab === k ? 'on' : '') + '">' + t + '</button>').join('') +
+    '</div></div><div id="body"></div>';
+  $('tabs').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; tab = b.dataset.t; haptic(); render(); window.scrollTo(0, 0); };
+  ({ feed: renderFeed, dates: renderDates, gifts: renderGifts, texts: renderTexts })[tab]();
+}
+
+function viewBox() {
+  return '<div class="box"><h3>Как увидит человек</h3>' +
+    '<div class="seg sm" id="lvl">' + [['all','Все посты'],['start','Начинающий'],['pro','Продолжающий']].map(([k,t]) => '<button data-v="' + k + '" class="' + (view.level === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>' +
+    '<div class="chips" id="zn" style="margin-top:8px"><button class="chip ' + (!view.zone ? 'on' : '') + '" data-z="">Любая зона</button>' +
+    Object.keys(Z()).map((k) => '<button class="chip ' + (view.zone === k ? 'on' : '') + '" data-z="' + k + '">' + esc(Z()[k]) + '</button>').join('') + '</div>' +
+    ((view.level !== 'all' || view.zone) ? '<div class="toggle"><span class="small">Прятать посты, которые этот человек не получит</span><label class="sw"><input type="checkbox" id="hide" ' + (view.hide ? 'checked' : '') + '><span></span></label></div>' : '') +
+    '</div>';
+}
+function bindView() {
+  $('lvl').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; view.level = b.dataset.v; saveView(); haptic(); render(); };
+  $('zn').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; view.zone = b.dataset.z; saveView(); haptic(); render(); };
+  if ($('hide')) $('hide').onchange = (e) => { view.hide = e.target.checked; saveView(); render(); };
+}
+
+function renderFeed() {
+  const drip = S.posts.filter((p) => p.kind === 'drip');
+  const maxDay = drip.reduce((m, p) => Math.max(m, p.day), 0);
+  const last = Math.max(7, maxDay + 1);
+  const filtered = (view.hide && (view.level !== 'all' || view.zone)) ? drip.filter(gets) : drip;
+  let h = viewBox();
+  if (!drip.length) h += '<div class="empty">Постов по дням пока нет.<br>Создай первый в боте: <b>/new</b> → «Через N дней после входа».</div>';
+  for (let d = 0; d <= last; d++) {
+    const items = filtered.filter((p) => p.day === d).sort((a, b) => (a.day === 0 ? 0 : a.time.localeCompare(b.time)) || a.pos - b.pos || a.id - b.id);
+    h += '<section class="day"><div class="dayh"><b>День ' + d + '</b><span>' + dayLabel(d) + '</span></div><div class="list" data-day="' + d + '">' + items.map((p) => cardHtml(p, { drag: true })).join('') + '</div></section>';
+  }
+  h += '<div class="note" style="margin-top:22px">Новый пост создаётся в боте: <b>/new</b>. Там же меняются текст и картинки поста (<b>/posts</b> → пост → ✏️). Здесь — порядок, дни, время и кому.</div>';
+  $('body').innerHTML = h;
+  bindView();
+  document.querySelectorAll('.list').forEach((el) => {
+    Sortable.create(el, {
+      group: 'drip', handle: '.handle', animation: 160, ghostClass: 'ghost', chosenClass: 'chosen', forceFallback: true, fallbackTolerance: 4, scroll: true, bubbleScroll: true,
+      onEnd: (ev) => onDrop(ev),
+    });
+  });
+  bindCards();
+}
+
+// после перетаскивания: новый день и порядок; время подстраиваем только у перенесённого поста
+async function onDrop(ev) {
+  const id = +ev.item.dataset.id;
+  const moved = S.posts.find((p) => p.id === id);
+  const toDay = +ev.to.dataset.day;
+  const ids = [...ev.to.children].map((c) => +c.dataset.id);
+  const list = ids.map((i) => S.posts.find((p) => p.id === i));
+  const k = ids.indexOf(id);
+  const old = { day: moved.day, time: moved.time };
+  moved.day = toDay;
+  let note = '';
+  if (toDay > 0) {
+    const prev = list[k - 1], next = list[k + 1];
+    if (prev && moved.time < prev.time) { moved.time = prev.time; note = 'время подстроено: ' + moved.time; }
+    else if (next && moved.time > next.time) { moved.time = next.time; note = 'время подстроено: ' + moved.time; }
+    if (old.day === 0 && !prev && !next) { moved.time = moved.time && moved.time !== '00:00' ? moved.time : '11:00'; }
+  }
+  const items = list.map((p, i) => ({ id: p.id, day: toDay, time: p.time || '11:00', pos: i }));
+  if (ev.from !== ev.to) [...ev.from.children].forEach((c, i) => { const p = S.posts.find((x) => x.id === +c.dataset.id); items.push({ id: p.id, day: p.day, time: p.time || '11:00', pos: i }); });
+  list.forEach((p, i) => { p.pos = i; });
+  haptic('medium');
+  try {
+    await api('/reorder', { items });
+    toast(old.day !== toDay ? 'Перенесено на день ' + toDay + (note ? ' · ' + note : '') : 'Порядок сохранён' + (note ? ' · ' + note : ''));
+  } catch (e) { moved.day = old.day; moved.time = old.time; toast('Не сохранилось: ' + e.message); }
+  renderFeed();
+}
+
+function renderDates() {
+  const ds = S.posts.filter((p) => p.kind === 'date').sort((a, b) => (a.run_at || 9e12) - (b.run_at || 9e12));
+  const now = Date.now() / 1000;
+  let h = viewBox();
+  if (!ds.length) h += '<div class="empty">Постов на конкретную дату пока нет.<br>Создай в боте: <b>/new</b> → «В конкретные дату и время». Подходит для эфиров и анонсов.</div>';
+  ds.forEach((p) => {
+    const past = p.run_at && p.run_at < now;
+    h += '<div style="margin-top:10px">' + cardHtml(p, { time: fmtRun(p.run_at) + (past ? ' · уже ушёл' : '') }) + '</div>';
+  });
+  h += '<div class="note" style="margin-top:18px">Пост на дату уходит один раз всем подходящим, кто уже в боте в этот момент.</div>';
+  $('body').innerHTML = h; bindView(); bindCards();
+}
+
+function renderGifts() {
+  const gs = S.posts.filter((p) => p.kind === 'gift');
+  let h = '<p class="muted" style="margin-top:16px">Подарок уходит сразу после теста — под главную зону человека. Если у зоны два подарка, придут оба по порядку.</p>';
+  Object.keys(Z()).forEach((z) => {
+    const list = gs.filter((p) => p.zone === z);
+    h += '<div class="grp">' + esc(Z()[z]) + '</div>' + (list.length ? list.map((p) => cardHtml(p)).join('<div style="height:8px"></div>') : '<p class="small muted" style="margin:6px 2px;border:1.5px dashed var(--line);border-radius:16px;padding:12px">Подарка нет — люди с этой зоной получат «Подарок скоро появится». Создай в боте: <b>/new</b> → «Подарок после теста».</p>');
+  });
+  $('body').innerHTML = h; bindCards();
+}
+
+function renderTexts() {
+  const groups = {};
+  S.msgs.forEach((m) => { (groups[m.group] = groups[m.group] || []).push(m); });
+  const names = { hello: '👋 Приветствие', consent: '✅ Согласие на данные', level: '🎚 Уровень', test: '🧪 Аудит-тест и подарок', ads: '📬 Согласие на рассылку', cmd: '⚙️ Команды ученика' };
+  let h = '<p class="muted" style="margin-top:16px">Все сообщения, которые бот пишет ученикам. Нажми, чтобы поменять. ✎ — уже изменено. Премиум-эмодзи вставляются только в самом боте: <b>/texts</b>.</p>';
+  Object.keys(names).forEach((g) => {
+    if (!groups[g]) return;
+    h += '<div class="grp">' + names[g] + '</div>';
+    groups[g].forEach((m) => {
+      h += '<div class="msg" data-k="' + m.key + '"><div class="t">' + (m.changed ? '✎ ' : '') + esc(m.title) + (m.button ? '<span class="tag">кнопка</span>' : '') + '</div><div class="p">' + esc(m.text) + '</div></div>';
+    });
+  });
+  $('body').innerHTML = h;
+  document.querySelectorAll('.msg').forEach((el) => el.onclick = () => openMsg(el.dataset.k));
+}
+
+function bindCards() {
+  document.querySelectorAll('.card').forEach((el) => el.addEventListener('click', (e) => { if (e.target.closest('.handle')) return; openPost(+el.dataset.id); }));
+}
+
+// ---------- шторка ----------
+function sheet(html) { $('sheet').innerHTML = '<div class="grab"></div>' + html; $('sheet').classList.add('on'); $('sheetBg').classList.add('on'); $('sheet').scrollTop = 0; }
+function closeSheet() { $('sheet').classList.remove('on'); $('sheetBg').classList.remove('on'); }
+$('sheetBg').onclick = closeSheet;
+
+function segHtml(id, opts, cur) { return '<div class="seg sm" id="' + id + '">' + opts.map(([k,t]) => '<button type="button" data-v="' + k + '" class="' + (cur === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>'; }
+function segBind(id, on) { $(id).onclick = (e) => { const b = e.target.closest('button'); if (!b) return; [...$(id).children].forEach((x) => x.classList.toggle('on', x === b)); on(b.dataset.v); }; }
+
+function openPost(id) {
+  const p = S.posts.find((x) => x.id === id); if (!p) return;
+  const st = { day: p.day, time: p.time, audience: p.audience, zone: p.zone || '', status: p.status, catchup: p.catchup, run_at: p.run_at };
+  const kindName = { drip: 'Пост ленты', date: 'Пост на дату', gift: 'Подарок после теста' }[p.kind];
+  let h = '<span class="pill">' + kindName + ' · #' + p.id + '</span><h2>' + esc(postName(p)) + '</h2>' +
+    '<div class="preview">' + esc(p.text || '(без текста)') + '</div>' +
+    '<p class="small muted" style="margin:6px 2px 0">' + (p.media.length ? '🖼 вложений: ' + p.media.length + ' · ' : '') + (p.buttons.length ? 'кнопки: ' + esc(p.buttons.join(', ')) : 'без кнопок') + '</p>' +
+    '<label class="f">Название для себя</label><input type="text" id="fTitle" maxlength="80" placeholder="Например: «Чек-лист, день 1»" value="' + esc(p.title) + '">';
+  if (p.kind === 'drip') {
+    h += '<label class="f">Когда</label><div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:12px"><div class="step"><button type="button" id="dMinus">−</button><b id="dVal">' + st.day + '</b><button type="button" id="dPlus">+</button></div>' +
+      '<div id="tWrap" style="flex:1;min-width:140px"><input type="time" id="fTime" value="' + esc(st.time) + '"></div></div><p class="small muted" id="dHint" style="margin:6px 2px 0"></p>' +
+      '<div class="toggle"><span><b>Догонять опоздавших</b><br><span class="small muted">Пост получат и те, у кого этот день уже прошёл</span></span><label class="sw"><input type="checkbox" id="fCatch" ' + (st.catchup ? 'checked' : '') + '><span></span></label></div>';
+  }
+  if (p.kind === 'date') h += '<label class="f">Дата и время (по Москве)</label><input type="datetime-local" id="fRun" value="' + toLocal(st.run_at) + '">';
+  h += '<label class="f">Кому</label>' + segHtml('fAud', [['all','Всем'],['start','Начинающим'],['pro','Продолжающим']], st.audience);
+  h += '<label class="f">' + (p.kind === 'gift' ? 'Зона теста' : 'Только для зоны теста') + '</label><select id="fZone">' + (p.kind === 'gift' ? '' : '<option value="">Всем зонам</option>') +
+    Object.keys(Z()).map((k) => '<option value="' + k + '"' + (st.zone === k ? ' selected' : '') + '>' + esc(Z()[k]) + '</option>').join('') + '</select>';
+  h += '<label class="f">Статус</label>' + segHtml('fSt', [['active','✅ Включён'],['paused','⏸ Пауза'],['draft','📝 Черновик']], st.status);
+  h += '<div class="btns"><button class="btn" id="bSave">Сохранить</button><div class="btns two" style="margin:0"><button class="btn ghost" id="bPrev">👁 Прислать мне</button><button class="btn ghost" id="bClose">Закрыть</button></div><button class="btn danger" id="bArch">🗄 Убрать в архив</button></div>' +
+    '<div class="note">Текст и картинки меняются в боте: <b>/posts</b> → этот пост → ✏️ «Текст и картинки».</div>';
+  sheet(h);
+  const upd = () => { if (!$('dVal')) return; $('dVal').textContent = st.day; $('tWrap').style.display = st.day === 0 ? 'none' : ''; $('dHint').textContent = 'День ' + st.day + ' — ' + dayLabel(st.day) + (st.day ? ', в ' + ($('fTime').value || st.time) + ' по Москве' : ''); };
+  if ($('dMinus')) { $('dMinus').onclick = () => { st.day = Math.max(0, st.day - 1); haptic(); upd(); }; $('dPlus').onclick = () => { st.day = Math.min(365, st.day + 1); haptic(); upd(); }; $('fTime').oninput = upd; upd(); }
+  segBind('fAud', (v) => st.audience = v); segBind('fSt', (v) => st.status = v);
+  $('bClose').onclick = closeSheet;
+  $('bPrev').onclick = async () => { try { const r = await api('/post/' + p.id + '/preview', {}); toast(r.warn ? '⚠️ ' + r.warn : 'Отправила тебе в бот 👀'); } catch (e) { toast(e.message); } };
+  $('bArch').onclick = async () => { try { await api('/post/' + p.id, { status: 'archived' }); S.posts = S.posts.filter((x) => x.id !== p.id); closeSheet(); toast('В архиве. Вернуть можно в боте: /posts → 🗄 Архив'); render(); } catch (e) { toast(e.message); } };
+  $('bSave').onclick = async () => {
+    const body = { title: $('fTitle').value.trim(), audience: st.audience, zone: $('fZone').value, status: st.status };
+    if (p.kind === 'drip') { body.day = st.day; if (st.day > 0) body.time = $('fTime').value || st.time; body.catchup = $('fCatch').checked; }
+    if (p.kind === 'date') { const t = fromLocal($('fRun').value); if (!t) return toast('Выбери дату и время'); body.run_at = t; }
+    try {
+      const r = await api('/post/' + p.id, body);
+      Object.assign(p, r.post, { sent: p.sent, clicks: p.clicks });
+      closeSheet(); haptic('medium'); toast('Сохранено · сейчас подходит людей: ' + r.reach); render();
+    } catch (e) { toast(e.message); }
+  };
+}
+
+function openMsg(key) {
+  const m = S.msgs.find((x) => x.key === key); if (!m) return;
+  let h = '<span class="pill">' + (m.button ? 'Кнопка' : 'Сообщение') + '</span><h2>' + esc(m.title) + '</h2>' +
+    (m.emoji ? '<div class="note warn">В этом тексте есть премиум-эмодзи. Если сохранить его отсюда, они станут обычными. Чтобы оставить премиум — меняй в боте: <b>/texts</b>.</div>' : '') +
+    (m.button ? '<input type="text" id="mText" maxlength="64" value="' + esc(m.text) + '">' : '<textarea id="mText">' + esc(m.text) + '</textarea>') +
+    (m.vars.length ? '<p class="small muted" style="margin:10px 2px 0">Нажми, чтобы вставить — бот подставит сам:</p><div class="vars" id="mVars">' + m.vars.map((v) => '<button type="button" data-v="{' + v + '}">{' + v + '}</button>').join('') + '</div>' : '') +
+    '<div class="btns"><button class="btn" id="mSave">Сохранить</button><div class="btns two" style="margin:0"><button class="btn ghost" id="mPrev">👁 Прислать мне</button><button class="btn ghost" id="mClose">Закрыть</button></div>' +
+    (m.changed ? '<button class="btn danger" id="mReset">↩️ Вернуть текст по умолчанию</button>' : '') + '</div>' +
+    (m.changed ? '<p class="small muted" style="margin-top:12px">По умолчанию было:</p><div class="preview">' + esc(m.def) + '</div>' : '');
+  sheet(h);
+  const ta = $('mText');
+  if ($('mVars')) $('mVars').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; const s = ta.selectionStart ?? ta.value.length, en = ta.selectionEnd ?? s; ta.value = ta.value.slice(0, s) + b.dataset.v + ta.value.slice(en); ta.focus(); ta.selectionStart = ta.selectionEnd = s + b.dataset.v.length; };
+  $('mClose').onclick = closeSheet;
+  $('mPrev').onclick = async () => { try { await api('/msg/' + key + '/preview', {}); toast('Отправила тебе в бот — так видит ученик (сохранённая версия)'); } catch (e) { toast(e.message); } };
+  $('mSave').onclick = async () => { try { const r = await api('/msg/' + key, { text: ta.value }); S.msgs = r.msgs; closeSheet(); haptic('medium'); toast('Сохранено ✓'); render(); } catch (e) { toast(e.message); } };
+  if ($('mReset')) $('mReset').onclick = async () => { try { const r = await api('/msg/' + key, { reset: true }); S.msgs = r.msgs; closeSheet(); toast('Вернули как было ↩️'); render(); } catch (e) { toast(e.message); } };
+}
+
+load();
+})();
+</script>
+</body>
+</html>
