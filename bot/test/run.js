@@ -22,7 +22,8 @@ const fakeFetch = async (url, init) => {
   if (method === 'getMyShortDescription') return ok({ short_description: 'полезности для дизайнеров' });
   if (method === 'getWebhookInfo') return ok({ url: 'https://x.workers.dev/tg', pending_update_count: 0 });
   if (method === 'sendMediaGroup') return ok(body.media.map(() => ({ message_id: ++msgId })));
-  return ok({ message_id: ++msgId });
+  const r = { message_id: ++msgId }; calls[calls.length - 1].res = r;
+  return ok(r);
 };
 
 const db = await nodeSqliteAdapter(':memory:');
@@ -307,5 +308,36 @@ step('чистый чат: «печатает…», служебные сооб�
   assert.ok(cm.some((c) => c.body.scope && c.body.commands.some((x) => x.command === 'level' && x.description === 'Поменять уровень 🎚') && c.body.commands.some((x) => x.command === 'admin')), 'меню админа тоже обновилось');
 }
 step('профиль бота: описание до «Старт», короткое описание и подписи команд меняются и применяются в Telegram');
+
+// ---------- картинка в служебном сообщении ----------
+{
+  await cb(100, 't:k:hello');
+  assert.ok(last(100)[0].body.reply_markup.inline_keyboard.some((r) => r.some((b) => b.callback_data === 't:p:hello')), 'кнопка «Добавить картинку»');
+  await cb(100, 't:p:hello');
+  await msg(100, undefined, { photo: [{ file_id: 'sm' }, { file_id: 'HELLO_PIC' }] });
+  assert.match(sentTo(100, calls.length - 6).map((c) => c.body.text || '').join('|'), /Картинка сохранена/);
+  const c0 = calls.length;
+  await msg(900, '/start');
+  const hp = calls.slice(c0).find((c) => c.method === 'sendPhoto' && c.body.chat_id === 900);
+  assert.ok(hp, 'приветствие пришло картинкой');
+  assert.equal(hp.body.photo, 'HELLO_PIC');
+  assert.match(hp.body.caption, /Привет, U900!/, 'текст стал подписью с подстановкой имени');
+  // повторный /start убирает и картинку-приветствие
+  const c1 = calls.length;
+  await msg(900, '/start');
+  assert.ok(calls.slice(c1).filter((c) => c.method === 'deleteMessage').some((c) => c.body.message_id === hp.res.message_id), 'старое приветствие-картинка исчезло');
+  // картинку с подписью в режиме «Изменить» — и текст, и картинка
+  await cb(100, 't:e:askLevel');
+  await msg(100, undefined, { photo: [{ file_id: 'LV' }], caption: 'Кто ты сейчас, {имя}?' });
+  const c2 = calls.length;
+  await msg(901, '/start'); await cb(901, 'c:pd');
+  const lp = calls.slice(c2).find((c) => c.method === 'sendPhoto' && c.body.chat_id === 901 && c.body.photo === 'LV');
+  assert.ok(lp && lp.body.reply_markup && /Кто ты сейчас/.test(lp.body.caption), 'вопрос про уровень — картинка с подписью и кнопками');
+  await cb(100, 't:x:hello');
+  const c3 = calls.length; await msg(902, '/start');
+  assert.ok(!calls.slice(c3).some((c) => c.method === 'sendPhoto' && c.body.chat_id === 902), 'картинку убрали — снова просто текст');
+  await cb(100, 't:r:askLevel');
+}
+step('картинка в служебных сообщениях: добавить, с подписью, убрать; исчезает вместе с сообщением');
 
 console.log('\nВсе сценарии прошли. Запросов к фейковому Telegram:', calls.length);

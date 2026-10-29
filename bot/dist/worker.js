@@ -135,6 +135,23 @@ function makeTg({ token, root, fetchFn, relayKey }) {
         throw e;
       }
       return j3.result;
+    },
+    // загрузка файла (картинка из панели): multipart вместо JSON
+    async upload(method, form) {
+      tg.calls++;
+      const res = await f(`${base}/bot${token}/${method}`, { method: "POST", headers: relayKey ? { "x-relay-key": relayKey } : {}, body: form });
+      const j3 = await res.json().catch(() => ({ ok: false, description: "bad response" }));
+      if (!j3.ok) {
+        const e = new Error(j3.description || "telegram error");
+        e.code = j3.error_code;
+        throw e;
+      }
+      return j3.result;
+    },
+    // скачать файл по file_id (превью картинки в панели)
+    async download(fileId) {
+      const file = await tg.call("getFile", { file_id: fileId });
+      return f(`${base}/file/bot${token}/${file.file_path}`, { headers: relayKey ? { "x-relay-key": relayKey } : {} });
     }
   };
   return tg;
@@ -382,28 +399,46 @@ async function msg(ctx, key, vars) {
   const all = await loadMsgs(ctx);
   const o = all[key];
   if (isProfile(key) && !(o && o.text)) return { text: await liveProfile(ctx, key), entities: [] };
-  const base = o && o.text ? o : { text: MSG[key] ? MSG[key][2] : key, entities: [] };
-  return fill(base.text, base.entities, { имя: ctx.userName || "друг", ...vars || {} });
+  const base = o && (o.text || o.media) ? o : { text: MSG[key] ? MSG[key][2] : key, entities: [] };
+  const out = fill(base.text || "", base.entities, { имя: ctx.userName || "друг", ...vars || {} });
+  if (base.media && base.media.file_id) out.media = base.media;
+  return out;
 }
 async function btn(ctx, key, vars) {
   return (await msg(ctx, key, vars)).text.slice(0, 64);
 }
-async function say(ctx, chatId, key, vars, extra = {}) {
-  const m = await msg(ctx, key, vars);
-  const p = { chat_id: chatId, text: m.text || "…", ...extra };
-  if (m.entities.length) p.entities = m.entities;
+var MEDIA_METHOD = { photo: "sendPhoto", video: "sendVideo", animation: "sendAnimation" };
+var CAPTION_MAX = 1024;
+async function withEmojiFallback(send, ents) {
   try {
-    return await ctx.tg.call("sendMessage", p);
+    return await send(ents);
   } catch (e) {
-    if (e.code === 400 && p.entities) {
-      p.entities = p.entities.filter((x) => x.type !== "custom_emoji");
-      if (!p.entities.length) delete p.entities;
-      return ctx.tg.call("sendMessage", p);
-    }
+    if (e.code === 400 && (ents || []).some((x) => x.type === "custom_emoji")) return send(ents.filter((x) => x.type !== "custom_emoji"));
     throw e;
   }
 }
-async function saveMsg(ctx, key, text, entities) {
+async function say(ctx, chatId, key, vars, extra = {}) {
+  const m = await msg(ctx, key, vars);
+  const ents = m.entities.length ? m.entities : void 0;
+  if (m.media) {
+    const { link_preview_options, reply_markup, ...rest } = extra;
+    const method = MEDIA_METHOD[m.media.type] || "sendPhoto";
+    const field = MEDIA_METHOD[m.media.type] ? m.media.type : "photo";
+    const fits = (m.text || "").length <= CAPTION_MAX;
+    const first = await withEmojiFallback((e) => ctx.tg.call(method, {
+      chat_id: chatId,
+      [field]: m.media.file_id,
+      ...rest,
+      ...fits && m.text ? { caption: m.text, ...e && e.length ? { caption_entities: e } : {} } : {},
+      ...fits && reply_markup ? { reply_markup } : {}
+    }), ents);
+    if (fits) return first;
+    const second = await withEmojiFallback((e) => ctx.tg.call("sendMessage", { chat_id: chatId, text: m.text, ...e && e.length ? { entities: e } : {}, ...extra }), ents);
+    return { ...second, also: [first.message_id] };
+  }
+  return withEmojiFallback((e) => ctx.tg.call("sendMessage", { chat_id: chatId, text: m.text || "…", ...extra, ...e && e.length ? { entities: e } : {} }), ents);
+}
+async function saveMsg(ctx, key, text, entities, media) {
   const info = msgInfo(key);
   if (!info) throw new Error("нет такого сообщения");
   let v;
@@ -414,12 +449,28 @@ async function saveMsg(ctx, key, text, entities) {
     if (key.startsWith("cmd_") && t.length < 3) throw new Error("Подпись команды — хотя бы 3 знака");
     v = { text: t, entities: [] };
   } else v = { text: String(text), entities: entities || [] };
+  if (!info.plain && !info.button) {
+    const prev = (await loadMsgs(ctx))[key];
+    const md = media === void 0 ? prev && prev.media : media;
+    if (md) v.media = md;
+    if ((v.text || "").length > 4e3) throw new Error("Слишком длинно для Telegram");
+  }
   if (isProfile(key)) await rememberOriginal(ctx, key);
   await ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, ["msg:" + key, JSON.stringify(v)]);
   if (ctx._msgs) ctx._msgs[key] = v;
   if (isProfile(key)) await applyProfile(ctx, key);
   return v;
 }
+async function setMsgMedia(ctx, key, media) {
+  const info = msgInfo(key);
+  if (!info || info.button || info.plain) throw new Error("К этому сообщению картинку не прикрепить");
+  const o = (await loadMsgs(ctx))[key];
+  return saveMsg(ctx, key, o ? o.text : info.def, o ? o.entities : [], media || null);
+}
+var canMedia = (key) => {
+  const i = msgInfo(key);
+  return !!(i && !i.button && !i.plain);
+};
 async function resetMsg(ctx, key) {
   await ctx.db.run(`DELETE FROM settings WHERE key = ?`, ["msg:" + key]);
   if (ctx._msgs) delete ctx._msgs[key];
@@ -472,12 +523,12 @@ async function listMsgs(ctx) {
   return Promise.all(Object.keys(MSG).map((k) => {
     const i = msgInfo(k);
     const o = all[k];
-    return { ...i, text: o ? o.text : i.def, changed: !!o, emoji: !!(o && (o.entities || []).some((e) => e.type === "custom_emoji")) };
+    return { ...i, text: o ? o.text : i.def, changed: !!o, media: o && o.media ? o.media.type : null, canMedia: !i.button && !i.plain, emoji: !!(o && (o.entities || []).some((e) => e.type === "custom_emoji")) };
   }).map(async (m) => m.group === "profile" && !m.changed && (m.key === "botDesc" || m.key === "botShort") ? { ...m, text: await liveProfile(ctx, m.key), def: "(как задано в BotFather)" } : m));
 }
 
 // src/posts.js
-var CAPTION_MAX = 1024;
+var CAPTION_MAX2 = 1024;
 var j = (s, d) => {
   try {
     return s ? JSON.parse(s) : d;
@@ -508,7 +559,7 @@ async function sendPost(tg, chatId, post, { uid, publicUrl, arrow } = {}) {
       await tg.call("sendMessage", { chat_id: chatId, text: text || "…", entities, reply_markup: kb3, link_preview_options: { is_disabled: true } });
       return;
     }
-    const fits = text.length <= CAPTION_MAX;
+    const fits = text.length <= CAPTION_MAX2;
     if (media.length === 1) {
       const m = media[0];
       const method = { photo: "sendPhoto", video: "sendVideo", document: "sendDocument", animation: "sendAnimation" }[m.type] || "sendDocument";
@@ -656,7 +707,7 @@ async function tech(ctx, id, sending) {
   const m = await sending;
   if (m && m.message_id) {
     const u = await getUser(ctx, id);
-    if (u) await ctx.db.run(`UPDATE users SET tech = ? WHERE tg_id = ?`, [JSON.stringify([...techList(u), m.message_id].slice(-20)), id]);
+    if (u) await ctx.db.run(`UPDATE users SET tech = ? WHERE tg_id = ?`, [JSON.stringify([...techList(u), ...m.also || [], m.message_id].slice(-20)), id]);
   }
   return m;
 }
@@ -968,6 +1019,8 @@ var GUIDE = {
 • <code>{уровень}</code> — начинающий / продолжающий (после /level)
 • <code>{политика}</code>, <code>{согласие}</code>, <code>{оферта}</code> — ссылки на документы
 
+<b>🖼 Картинка</b>: к любому сообщению (кроме кнопок и профиля) можно прикрепить картинку, гифку или видео — текст станет подписью. В /texts → сообщение → «🖼 Добавить картинку» (пришли фото; с подписью — заменится и текст). В панели — «＋ Добавить картинку» в окне сообщения, там же превью, «Заменить» и «Убрать». Подпись — до 1024 знаков, длиннее уйдёт следующим сообщением.
+
 <b>Кнопки</b> — до 64 знаков, без оформления.
 
 <b>🤖 Профиль бота и меню команд</b> — последняя группа: описание до кнопки «Старт» (до 512 знаков), короткое описание профиля (до 120) и подписи команд в «Меню». Обычный текст, применяется в Telegram сразу после сохранения. «Вернуть как было» вернёт текст из BotFather.
@@ -1110,10 +1163,41 @@ async function onAdminMessage(ctx, msg2) {
   const id = msg2.from.id;
   const s = await getState(ctx, id);
   if (!s.state) return false;
+  const mediaOf = (m) => m.photo ? { type: "photo", file_id: m.photo[m.photo.length - 1].file_id } : m.video ? { type: "video", file_id: m.video.file_id } : m.animation ? { type: "animation", file_id: m.animation.file_id } : null;
+  if (s.state.startsWith("e:pic:")) {
+    const key = s.state.slice(6);
+    const md = mediaOf(msg2);
+    if (!md) {
+      await say2(ctx, id, "Пришли картинку, видео или гифку одним сообщением. Или /cancel.");
+      return true;
+    }
+    try {
+      if (msg2.caption) await saveMsg(ctx, key, msg2.caption, msg2.caption_entities || [], md);
+      else await setMsgMedia(ctx, key, md);
+    } catch (e) {
+      await say2(ctx, id, "⚠️ " + e.message);
+      return true;
+    }
+    await clearState(ctx, id);
+    await showMsg(ctx, id, key, msg2.caption ? "Картинка и текст сохранены ✓" : "Картинка сохранена ✓ Текст остался прежним — он стал подписью.");
+    return true;
+  }
   if (s.state.startsWith("e:msg:")) {
     const key = s.state.slice(6);
+    const md = canMedia(key) ? mediaOf(msg2) : null;
+    if (md) {
+      try {
+        await saveMsg(ctx, key, msg2.caption || "", msg2.caption_entities || [], md);
+      } catch (e) {
+        await say2(ctx, id, "⚠️ " + e.message);
+        return true;
+      }
+      await clearState(ctx, id);
+      await showMsg(ctx, id, key, "Сохранено ✓ Так это сообщение теперь увидят ученики:");
+      return true;
+    }
     if (!msg2.text) {
-      await say2(ctx, id, "Нужен текст одним сообщением (без картинок). Или /cancel.");
+      await say2(ctx, id, "Нужен текст одним сообщением. Или /cancel.");
       return true;
     }
     try {
@@ -1402,7 +1486,7 @@ async function onAdminCallback(ctx, cq) {
       `Пришли новый текст для «${i.title}» одним сообщением.` + (i.button ? `
 Это кнопка: до 64 знаков, без оформления.` : i.plain ? `
 Это часть профиля бота: обычный текст${i.limit ? ", до " + i.limit + " знаков" : ""}. Применится в Telegram сразу.` : `
-Жирный, курсив, ссылки и премиум-эмодзи сохранятся.`) + (i.vars.length ? `
+Жирный, курсив, ссылки и премиум-эмодзи сохранятся. Можно прислать картинку с подписью — тогда будет картинка с этим текстом.`) + (i.vars.length ? `
 
 Можно вставить подстановки: ${i.vars.map((v) => "{" + v + "}").join(" ")} — бот заменит их сам.` : "") + `
 
@@ -1414,6 +1498,18 @@ async function onAdminCallback(ctx, cq) {
       const cur = o ? o.text : i.plain ? (await msg(ctx, key)).text : i.def;
       await ctx.tg.call("sendMessage", { chat_id: id, text: cur || "(пусто)", ...o && o.entities && o.entities.length ? { entities: o.entities } : {} }).catch(() => say2(ctx, id, cur || "(пусто)"));
     });
+  }
+  if (data.startsWith("t:p:")) {
+    const key = data.slice(4);
+    if (!canMedia(key)) return;
+    await clearState(ctx, id);
+    await setState(ctx, id, "e:pic:" + key, {});
+    return say2(ctx, id, "Пришли картинку, видео или гифку одним сообщением.\nМожно сразу с подписью — она станет новым текстом. Без подписи текст останется прежним.", { reply_markup: kb2([[{ text: "Отмена", callback_data: "w:cancel" }]]) });
+  }
+  if (data.startsWith("t:x:")) {
+    const key = data.slice(4);
+    await setMsgMedia(ctx, key, null);
+    return showMsg(ctx, id, key, "Картинку убрали — остался только текст.");
   }
   if (data.startsWith("t:r:")) {
     const key = data.slice(4);
@@ -1644,6 +1740,7 @@ async function showMsg(ctx, id, key, note) {
 ${i.group === "profile" ? "Сейчас в Telegram так 👇" : "Ученик видит так 👇"}`);
   await say(ctx, id, key, sampleVars(ctx, id));
   const rows = [[{ text: "✏️ Изменить", callback_data: "t:e:" + key }]];
+  if (canMedia(key)) rows.push(all[key] && all[key].media ? [{ text: "🖼 Заменить картинку", callback_data: "t:p:" + key }, { text: "✖️ Убрать картинку", callback_data: "t:x:" + key }] : [{ text: "🖼 Добавить картинку", callback_data: "t:p:" + key }]);
   if (all[key]) rows.push([{ text: "↩️ Вернуть как было", callback_data: "t:r:" + key }]);
   rows.push([{ text: "← Назад", callback_data: "t:g:" + i.group }]);
   return say2(ctx, id, i.vars.length ? `Подстановки: ${i.vars.map((v) => "{" + v + "}").join(" ")} (в примере — образец)` : "Что дальше?", { reply_markup: kb2(rows) });
@@ -1887,6 +1984,50 @@ async function handlePanelApi(ctx, request, url) {
   if (!await isAdmin(ctx, user.id)) return json({ error: "Панель только для админов" }, 403);
   ctx.userName = user.first_name;
   const path = url.pathname.replace(/^\/api\/panel/, "");
+  let mm = /^\/msg\/([A-Za-z_]+)\/media$/.exec(path);
+  if (mm && request.method === "POST") {
+    const key = mm[1];
+    if (!canMedia(key)) return json({ error: "К этому сообщению картинку не прикрепить" }, 400);
+    let file;
+    try {
+      file = (await request.formData()).get("file");
+    } catch {
+      file = null;
+    }
+    if (!file || typeof file === "string") return json({ error: "Файл не пришёл" }, 400);
+    const type = (file.type || "").toLowerCase();
+    const kind = type === "image/gif" ? "animation" : type.startsWith("image/") ? "photo" : type.startsWith("video/") ? "video" : null;
+    if (!kind) return json({ error: "Нужна картинка (jpg, png, webp, gif) или видео mp4" }, 400);
+    const max = kind === "photo" ? 10 : 50;
+    if (file.size > max * 1024 * 1024) return json({ error: `Файл больше ${max} МБ — Telegram такой не примет` }, 400);
+    const form = new FormData();
+    form.append("chat_id", String(user.id));
+    form.append("disable_notification", "true");
+    form.append(kind, file, file.name || "file");
+    let res;
+    try {
+      res = await ctx.tg.upload({ photo: "sendPhoto", video: "sendVideo", animation: "sendAnimation" }[kind], form);
+    } catch (e) {
+      return json({ error: "Telegram не принял файл: " + e.message }, 400);
+    }
+    const fid = kind === "photo" ? res.photo && res.photo[res.photo.length - 1].file_id : (res[kind] || res.document || res.video || {}).file_id;
+    if (!fid) return json({ error: "Telegram не вернул файл" }, 400);
+    await ctx.tg.call("deleteMessage", { chat_id: user.id, message_id: res.message_id }).catch(() => {
+    });
+    await setMsgMedia(ctx, key, { type: kind, file_id: fid });
+    return json({ ok: true, msgs: await listMsgs(ctx) });
+  }
+  mm = /^\/msg\/([A-Za-z_]+)\/img$/.exec(path);
+  if (mm) {
+    const o = (await loadMsgs(ctx))[mm[1]];
+    if (!o || !o.media) return json({ error: "Картинки нет" }, 404);
+    try {
+      const r = await ctx.tg.download(o.media.file_id);
+      return new Response(r.body, { headers: { "content-type": r.headers.get("content-type") || "image/jpeg", "cache-control": "private, max-age=300" } });
+    } catch (e) {
+      return json({ error: "Не получилось загрузить превью" }, 400);
+    }
+  }
   const body = request.method === "POST" ? await request.json().catch(() => ({})) : {};
   if (path === "/state") {
     const posts = await ctx.db.all(`SELECT * FROM posts WHERE status != 'archived' ORDER BY day, send_time, pos, id`);
@@ -1968,6 +2109,7 @@ async function handlePanelApi(ctx, request, url) {
   if (m && request.method === "POST") {
     try {
       if (body.reset) await resetMsg(ctx, m[1]);
+      else if (body.removeMedia) await setMsgMedia(ctx, m[1], null);
       else {
         const t = String(body.text || "");
         if (!t.trim()) return json({ error: "Пустой текст" }, 400);
@@ -2271,7 +2413,7 @@ function renderTexts() {
     if (!groups[g]) return;
     h += '<div class="grp">' + names[g] + '</div>';
     groups[g].forEach((m) => {
-      h += '<div class="msg" data-k="' + m.key + '"><div class="t">' + (m.changed ? '✎ ' : '') + esc(m.title) + (m.button ? '<span class="tag">кнопка</span>' : '') + '</div><div class="p">' + esc(m.text) + '</div></div>';
+      h += '<div class="msg" data-k="' + m.key + '"><div class="t">' + (m.changed ? '✎ ' : '') + esc(m.title) + (m.button ? '<span class="tag">кнопка</span>' : '') + (m.media ? '<span class="tag">' + ({ photo: '🖼 картинка', video: '🎬 видео', animation: '🎞 гифка' }[m.media] || '🖼') + '</span>' : '') + '</div><div class="p">' + esc(m.text) + '</div></div>';
     });
   });
   $('body').innerHTML = h;
@@ -2334,12 +2476,33 @@ function openMsg(key) {
     (m.emoji ? '<div class="note warn">В этом тексте есть премиум-эмодзи. Если сохранить его отсюда, они станут обычными. Чтобы оставить премиум — меняй в боте: <b>/texts</b>.</div>' : '') +
     (m.button ? '<input type="text" id="mText" maxlength="64" value="' + esc(m.text) + '">' : '<textarea id="mText"' + (m.limit ? ' maxlength="' + m.limit + '"' : '') + '>' + esc(m.text) + '</textarea>') +
     (m.limit && !m.button ? '<p class="small muted" style="margin:6px 2px 0" id="mCount"></p>' : '') +
+    (m.canMedia ? '<label class="f">Картинка над текстом</label>' + (m.media
+      ? (m.media === 'photo' ? '<img id="mImg" alt="" style="width:100%;max-height:260px;object-fit:cover;border-radius:14px;background:rgba(44,13,2,.06);min-height:80px">' : '<div class="preview">' + (m.media === 'video' ? '🎬 видео прикреплено' : '🎞 гифка прикреплена') + '</div>') +
+        '<div class="btns two" style="margin-top:8px"><button class="btn ghost" id="mAdd" type="button">Заменить</button><button class="btn ghost" id="mDelImg" type="button">Убрать</button></div>'
+      : '<button class="btn ghost" id="mAdd" type="button">＋ Добавить картинку, гифку или видео</button>') +
+      '<input type="file" id="mFile" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4" hidden><p class="small muted" style="margin:6px 2px 0">Текст станет подписью под картинкой (до 1024 знаков — длиннее уйдёт следующим сообщением).</p>' : '') +
     (m.vars.length ? '<p class="small muted" style="margin:10px 2px 0">Нажми, чтобы вставить — бот подставит сам:</p><div class="vars" id="mVars">' + m.vars.map((v) => '<button type="button" data-v="{' + v + '}">{' + v + '}</button>').join('') + '</div>' : '') +
     '<div class="btns"><button class="btn" id="mSave">Сохранить</button><div class="btns two" style="margin:0"><button class="btn ghost" id="mPrev">👁 Прислать мне</button><button class="btn ghost" id="mClose">Закрыть</button></div>' +
     (m.changed ? '<button class="btn danger" id="mReset">↩️ Вернуть текст по умолчанию</button>' : '') + '</div>' +
     (m.changed ? '<p class="small muted" style="margin-top:12px">По умолчанию было:</p><div class="preview">' + esc(m.def) + '</div>' : '');
   sheet(h);
   const ta = $('mText');
+  if ($('mImg')) fetch('/api/panel/msg/' + key + '/img', { headers: { 'x-init-data': INIT } }).then((r) => r.ok ? r.blob() : null).then((b) => { if (b) $('mImg').src = URL.createObjectURL(b); }).catch(() => {});
+  if ($('mAdd')) {
+    $('mAdd').onclick = () => $('mFile').click();
+    $('mFile').onchange = async () => {
+      const f = $('mFile').files[0]; if (!f) return;
+      const fd = new FormData(); fd.append('file', f);
+      $('mAdd').textContent = 'Загружаю…'; $('mAdd').disabled = true;
+      try {
+        const r = await fetch('/api/panel/msg/' + key + '/media', { method: 'POST', headers: { 'x-init-data': INIT }, body: fd });
+        const d = await r.json().catch(() => ({ error: 'Сервер не ответил' }));
+        if (!r.ok || d.error) throw new Error(d.error || 'Ошибка');
+        S.msgs = d.msgs; haptic('medium'); toast('Картинка сохранена ✓'); openMsg(key); render();
+      } catch (e) { toast(e.message); $('mAdd').textContent = 'Попробовать ещё раз'; $('mAdd').disabled = false; }
+    };
+  }
+  if ($('mDelImg')) $('mDelImg').onclick = async () => { try { const r = await api('/msg/' + key, { removeMedia: true }); S.msgs = r.msgs; toast('Картинку убрали'); openMsg(key); render(); } catch (e) { toast(e.message); } };
   if ($('mCount')) { const upc = () => { $('mCount').textContent = ta.value.length + ' / ' + m.limit; }; ta.oninput = upc; upc(); }
   if ($('mVars')) $('mVars').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; const s = ta.selectionStart ?? ta.value.length, en = ta.selectionEnd ?? s; ta.value = ta.value.slice(0, s) + b.dataset.v + ta.value.slice(en); ta.focus(); ta.selectionStart = ta.selectionEnd = s + b.dataset.v.length; };
   $('mClose').onclick = closeSheet;

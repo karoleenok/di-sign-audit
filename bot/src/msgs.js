@@ -110,31 +110,44 @@ export async function msg(ctx, key, vars) {
   const all = await loadMsgs(ctx);
   const o = all[key];
   if (isProfile(key) && !(o && o.text)) return { text: await liveProfile(ctx, key), entities: [] };
-  const base = o && o.text ? o : { text: MSG[key] ? MSG[key][2] : key, entities: [] };
-  return fill(base.text, base.entities, { имя: ctx.userName || 'друг', ...(vars || {}) });
+  const base = o && (o.text || o.media) ? o : { text: MSG[key] ? MSG[key][2] : key, entities: [] };
+  const out = fill(base.text || '', base.entities, { имя: ctx.userName || 'друг', ...(vars || {}) });
+  if (base.media && base.media.file_id) out.media = base.media;
+  return out;
 }
 export async function btn(ctx, key, vars) {
   return (await msg(ctx, key, vars)).text.slice(0, 64);
 }
 
 // Отправить сообщение по ключу. Если премиум-эмодзи не прошли — отправим без них.
-export async function say(ctx, chatId, key, vars, extra = {}) {
-  const m = await msg(ctx, key, vars);
-  const p = { chat_id: chatId, text: m.text || '…', ...extra };
-  if (m.entities.length) p.entities = m.entities;
-  try {
-    return await ctx.tg.call('sendMessage', p);
-  } catch (e) {
-    if (e.code === 400 && p.entities) {
-      p.entities = p.entities.filter((x) => x.type !== 'custom_emoji');
-      if (!p.entities.length) delete p.entities;
-      return ctx.tg.call('sendMessage', p);
-    }
+const MEDIA_METHOD = { photo: 'sendPhoto', video: 'sendVideo', animation: 'sendAnimation' };
+const CAPTION_MAX = 1024;
+// повторить без премиум-эмодзи, если Telegram их не принял
+async function withEmojiFallback(send, ents) {
+  try { return await send(ents); } catch (e) {
+    if (e.code === 400 && (ents || []).some((x) => x.type === 'custom_emoji')) return send(ents.filter((x) => x.type !== 'custom_emoji'));
     throw e;
   }
 }
+export async function say(ctx, chatId, key, vars, extra = {}) {
+  const m = await msg(ctx, key, vars);
+  const ents = m.entities.length ? m.entities : undefined;
+  if (m.media) {
+    // с картинкой: текст становится подписью; если он длиннее 1024 знаков — отдельным сообщением следом
+    const { link_preview_options, reply_markup, ...rest } = extra;
+    const method = MEDIA_METHOD[m.media.type] || 'sendPhoto';
+    const field = MEDIA_METHOD[m.media.type] ? m.media.type : 'photo';
+    const fits = (m.text || '').length <= CAPTION_MAX;
+    const first = await withEmojiFallback((e) => ctx.tg.call(method, { chat_id: chatId, [field]: m.media.file_id, ...rest,
+      ...(fits && m.text ? { caption: m.text, ...(e && e.length ? { caption_entities: e } : {}) } : {}), ...(fits && reply_markup ? { reply_markup } : {}) }), ents);
+    if (fits) return first;
+    const second = await withEmojiFallback((e) => ctx.tg.call('sendMessage', { chat_id: chatId, text: m.text, ...(e && e.length ? { entities: e } : {}), ...extra }), ents);
+    return { ...second, also: [first.message_id] };
+  }
+  return withEmojiFallback((e) => ctx.tg.call('sendMessage', { chat_id: chatId, text: m.text || '…', ...extra, ...(e && e.length ? { entities: e } : {}) }), ents);
+}
 
-export async function saveMsg(ctx, key, text, entities) {
+export async function saveMsg(ctx, key, text, entities, media) {
   const info = msgInfo(key);
   if (!info) throw new Error('нет такого сообщения');
   let v;
@@ -145,12 +158,28 @@ export async function saveMsg(ctx, key, text, entities) {
     if (key.startsWith('cmd_') && t.length < 3) throw new Error('Подпись команды — хотя бы 3 знака');
     v = { text: t, entities: [] };
   } else v = { text: String(text), entities: entities || [] };
+  // картинка: undefined — оставить как была, null — убрать
+  if (!info.plain && !info.button) {
+    const prev = (await loadMsgs(ctx))[key];
+    const md = media === undefined ? prev && prev.media : media;
+    if (md) v.media = md;
+    if ((v.text || '').length > 4000) throw new Error('Слишком длинно для Telegram');
+  }
   if (isProfile(key)) await rememberOriginal(ctx, key);
   await ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, ['msg:' + key, JSON.stringify(v)]);
   if (ctx._msgs) ctx._msgs[key] = v;
   if (isProfile(key)) await applyProfile(ctx, key);
   return v;
 }
+// Поставить / убрать картинку, текст оставить как есть
+export async function setMsgMedia(ctx, key, media) {
+  const info = msgInfo(key);
+  if (!info || info.button || info.plain) throw new Error('К этому сообщению картинку не прикрепить');
+  const o = (await loadMsgs(ctx))[key];
+  return saveMsg(ctx, key, o ? o.text : info.def, o ? o.entities : [], media || null);
+}
+export const canMedia = (key) => { const i = msgInfo(key); return !!(i && !i.button && !i.plain); };
+
 export async function resetMsg(ctx, key) {
   await ctx.db.run(`DELETE FROM settings WHERE key = ?`, ['msg:' + key]);
   if (ctx._msgs) delete ctx._msgs[key];
@@ -207,6 +236,6 @@ export async function listMsgs(ctx) {
   return Promise.all(Object.keys(MSG).map((k) => {
     const i = msgInfo(k);
     const o = all[k];
-    return { ...i, text: o ? o.text : i.def, changed: !!o, emoji: !!(o && (o.entities || []).some((e) => e.type === 'custom_emoji')) };
+    return { ...i, text: o ? o.text : i.def, changed: !!o, media: o && o.media ? o.media.type : null, canMedia: !i.button && !i.plain, emoji: !!(o && (o.entities || []).some((e) => e.type === 'custom_emoji')) };
   }).map(async (m) => (m.group === 'profile' && !m.changed && (m.key === 'botDesc' || m.key === 'botShort') ? { ...m, text: await liveProfile(ctx, m.key), def: '(как задано в BotFather)' } : m)));
 }

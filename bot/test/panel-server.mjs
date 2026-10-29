@@ -10,7 +10,20 @@ import PANEL from '../src/panel-html.js';
 
 const TOKEN = '1:test';
 export const sent = [];
-const fakeFetch = async (url, init) => { sent.push({ method: url.split('/').pop(), body: JSON.parse(init.body) }); return { json: async () => ({ ok: true, result: { message_id: 1 } }) }; };
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+const fakeFetch = async (url, init = {}) => {
+  if (url.includes('/file/bot')) return new Response(PNG, { headers: { 'content-type': 'image/png' } });
+  const method = url.split('/').pop();
+  if (init.body instanceof FormData) {
+    const f = init.body.get('photo') || init.body.get('video') || init.body.get('animation');
+    sent.push({ method, body: { chat_id: +init.body.get('chat_id'), file: f && f.name, size: f && f.size } });
+    return { json: async () => ({ ok: true, result: { message_id: 77, photo: [{ file_id: 'small' }, { file_id: 'UPLOADED' }] } }) };
+  }
+  const body = JSON.parse(init.body || '{}');
+  sent.push({ method, body });
+  if (method === 'getFile') return { json: async () => ({ ok: true, result: { file_path: 'photos/x.png' } }) };
+  return { json: async () => ({ ok: true, result: { message_id: 1 } }) };
+};
 const db = await nodeSqliteAdapter(':memory:');
 await migrate(db);
 const now = () => Math.floor(Date.now() / 1000);
@@ -42,10 +55,10 @@ export const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost:8788');
   if (url.pathname === '/admin') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); return res.end(PANEL); }
   if (url.pathname.startsWith('/api/panel/')) {
-    let body = ''; for await (const c of req) body += c;
-    const request = new Request(url, { method: req.method, headers: req.headers, body: req.method === 'POST' ? body : undefined });
+    const chunks = []; for await (const c of req) chunks.push(c); const body = Buffer.concat(chunks);
+    const request = new Request(url, { method: req.method, headers: req.headers, body: req.method === 'POST' ? body : undefined, duplex: 'half' });
     const r = await handlePanelApi(makeCtx({ db, env, fetchFn: fakeFetch, publicUrl: 'http://localhost:8788' }), request, url);
-    res.writeHead(r.status, { 'content-type': 'application/json' }); return res.end(await r.text());
+    res.writeHead(r.status, { 'content-type': r.headers.get('content-type') || 'application/json' }); return res.end(Buffer.from(await r.arrayBuffer()));
   }
   res.writeHead(404); res.end();
 });

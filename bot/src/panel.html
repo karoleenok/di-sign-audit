@@ -280,7 +280,7 @@ function renderTexts() {
     if (!groups[g]) return;
     h += '<div class="grp">' + names[g] + '</div>';
     groups[g].forEach((m) => {
-      h += '<div class="msg" data-k="' + m.key + '"><div class="t">' + (m.changed ? '✎ ' : '') + esc(m.title) + (m.button ? '<span class="tag">кнопка</span>' : '') + '</div><div class="p">' + esc(m.text) + '</div></div>';
+      h += '<div class="msg" data-k="' + m.key + '"><div class="t">' + (m.changed ? '✎ ' : '') + esc(m.title) + (m.button ? '<span class="tag">кнопка</span>' : '') + (m.media ? '<span class="tag">' + ({ photo: '🖼 картинка', video: '🎬 видео', animation: '🎞 гифка' }[m.media] || '🖼') + '</span>' : '') + '</div><div class="p">' + esc(m.text) + '</div></div>';
     });
   });
   $('body').innerHTML = h;
@@ -343,12 +343,33 @@ function openMsg(key) {
     (m.emoji ? '<div class="note warn">В этом тексте есть премиум-эмодзи. Если сохранить его отсюда, они станут обычными. Чтобы оставить премиум — меняй в боте: <b>/texts</b>.</div>' : '') +
     (m.button ? '<input type="text" id="mText" maxlength="64" value="' + esc(m.text) + '">' : '<textarea id="mText"' + (m.limit ? ' maxlength="' + m.limit + '"' : '') + '>' + esc(m.text) + '</textarea>') +
     (m.limit && !m.button ? '<p class="small muted" style="margin:6px 2px 0" id="mCount"></p>' : '') +
+    (m.canMedia ? '<label class="f">Картинка над текстом</label>' + (m.media
+      ? (m.media === 'photo' ? '<img id="mImg" alt="" style="width:100%;max-height:260px;object-fit:cover;border-radius:14px;background:rgba(44,13,2,.06);min-height:80px">' : '<div class="preview">' + (m.media === 'video' ? '🎬 видео прикреплено' : '🎞 гифка прикреплена') + '</div>') +
+        '<div class="btns two" style="margin-top:8px"><button class="btn ghost" id="mAdd" type="button">Заменить</button><button class="btn ghost" id="mDelImg" type="button">Убрать</button></div>'
+      : '<button class="btn ghost" id="mAdd" type="button">＋ Добавить картинку, гифку или видео</button>') +
+      '<input type="file" id="mFile" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4" hidden><p class="small muted" style="margin:6px 2px 0">Текст станет подписью под картинкой (до 1024 знаков — длиннее уйдёт следующим сообщением).</p>' : '') +
     (m.vars.length ? '<p class="small muted" style="margin:10px 2px 0">Нажми, чтобы вставить — бот подставит сам:</p><div class="vars" id="mVars">' + m.vars.map((v) => '<button type="button" data-v="{' + v + '}">{' + v + '}</button>').join('') + '</div>' : '') +
     '<div class="btns"><button class="btn" id="mSave">Сохранить</button><div class="btns two" style="margin:0"><button class="btn ghost" id="mPrev">👁 Прислать мне</button><button class="btn ghost" id="mClose">Закрыть</button></div>' +
     (m.changed ? '<button class="btn danger" id="mReset">↩️ Вернуть текст по умолчанию</button>' : '') + '</div>' +
     (m.changed ? '<p class="small muted" style="margin-top:12px">По умолчанию было:</p><div class="preview">' + esc(m.def) + '</div>' : '');
   sheet(h);
   const ta = $('mText');
+  if ($('mImg')) fetch('/api/panel/msg/' + key + '/img', { headers: { 'x-init-data': INIT } }).then((r) => r.ok ? r.blob() : null).then((b) => { if (b) $('mImg').src = URL.createObjectURL(b); }).catch(() => {});
+  if ($('mAdd')) {
+    $('mAdd').onclick = () => $('mFile').click();
+    $('mFile').onchange = async () => {
+      const f = $('mFile').files[0]; if (!f) return;
+      const fd = new FormData(); fd.append('file', f);
+      $('mAdd').textContent = 'Загружаю…'; $('mAdd').disabled = true;
+      try {
+        const r = await fetch('/api/panel/msg/' + key + '/media', { method: 'POST', headers: { 'x-init-data': INIT }, body: fd });
+        const d = await r.json().catch(() => ({ error: 'Сервер не ответил' }));
+        if (!r.ok || d.error) throw new Error(d.error || 'Ошибка');
+        S.msgs = d.msgs; haptic('medium'); toast('Картинка сохранена ✓'); openMsg(key); render();
+      } catch (e) { toast(e.message); $('mAdd').textContent = 'Попробовать ещё раз'; $('mAdd').disabled = false; }
+    };
+  }
+  if ($('mDelImg')) $('mDelImg').onclick = async () => { try { const r = await api('/msg/' + key, { removeMedia: true }); S.msgs = r.msgs; toast('Картинку убрали'); openMsg(key); render(); } catch (e) { toast(e.message); } };
   if ($('mCount')) { const upc = () => { $('mCount').textContent = ta.value.length + ' / ' + m.limit; }; ta.oninput = upc; upc(); }
   if ($('mVars')) $('mVars').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; const s = ta.selectionStart ?? ta.value.length, en = ta.selectionEnd ?? s; ta.value = ta.value.slice(0, s) + b.dataset.v + ta.value.slice(en); ta.focus(); ta.selectionStart = ta.selectionEnd = s + b.dataset.v.length; };
   $('mClose').onclick = closeSheet;

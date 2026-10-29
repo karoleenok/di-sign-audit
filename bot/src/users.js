@@ -48,7 +48,7 @@ async function tech(ctx, id, sending) {
   const m = await sending;
   if (m && m.message_id) {
     const u = await getUser(ctx, id);
-    if (u) await ctx.db.run(`UPDATE users SET tech = ? WHERE tg_id = ?`, [JSON.stringify([...techList(u), m.message_id].slice(-20)), id]);
+    if (u) await ctx.db.run(`UPDATE users SET tech = ? WHERE tg_id = ?`, [JSON.stringify([...techList(u), ...(m.also || []), m.message_id].slice(-20)), id]);
   }
   return m;
 }

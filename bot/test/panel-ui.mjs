@@ -103,6 +103,23 @@ m = await db.first(`SELECT value FROM settings WHERE key = 'msg:askLevel'`);
 assert.equal(m, null);
 step('тексты: правка с подстановкой {имя} и возврат по умолчанию');
 
+// 8б. картинка к приветствию: загрузить, превью, убрать
+await page.click('.msg[data-k="hello"]'); await page.waitForSelector('#mAdd');
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+await page.setInputFiles('#mFile', { name: 'hello.png', mimeType: 'image/png', buffer: PNG });
+await page.waitForSelector('#mImg'); await page.waitForTimeout(500);
+let hm = JSON.parse((await db.first(`SELECT value FROM settings WHERE key = 'msg:hello'`)).value);
+assert.deepEqual(hm.media, { type: 'photo', file_id: 'UPLOADED' }, 'картинка сохранена');
+assert.match(hm.text, /Привет, \{имя\}/, 'текст приветствия остался');
+assert.ok(await page.$eval('#mImg', (i) => i.naturalWidth > 0), 'превью картинки показалось');
+assert.ok(sent.some((c) => c.method === 'deleteMessage' && c.body.message_id === 77), 'служебная загрузка в чате админа убрана');
+await page.screenshot({ path: OUT + '/panel-9-picture.png' });
+await page.click('#mDelImg'); await page.waitForTimeout(400);
+hm = JSON.parse((await db.first(`SELECT value FROM settings WHERE key = 'msg:hello'`)).value);
+assert.equal(hm.media, undefined, 'картинку убрали');
+await page.click('#mClose');
+step('картинка в приветствии: загрузка из панели, превью, убрать');
+
 // 9. открыть не из Telegram
 INIT = '';
 const p2 = await b.newPage(); await p2.route('**/telegram-web-app.js', (r) => r.fulfill({ contentType: 'application/javascript', body: stub('') }));

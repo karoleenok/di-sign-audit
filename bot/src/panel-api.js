@@ -4,7 +4,7 @@
 import { isAdmin } from './admin.js';
 import { AUD, LEVELS } from './texts.js';
 import { sendPost, audienceCount } from './posts.js';
-import { listMsgs, saveMsg, resetMsg, btn, say } from './msgs.js';
+import { listMsgs, saveMsg, resetMsg, btn, say, setMsgMedia, canMedia, msgInfo, loadMsgs } from './msgs.js';
 
 const enc = new TextEncoder();
 async function hmac(key, data) {
@@ -54,6 +54,44 @@ export async function handlePanelApi(ctx, request, url) {
   if (!(await isAdmin(ctx, user.id))) return json({ error: 'Панель только для админов' }, 403);
   ctx.userName = user.first_name;
   const path = url.pathname.replace(/^\/api\/panel/, '');
+
+  // картинка к служебному сообщению: загрузить (multipart) / показать превью
+  let mm = /^\/msg\/([A-Za-z_]+)\/media$/.exec(path);
+  if (mm && request.method === 'POST') {
+    const key = mm[1];
+    if (!canMedia(key)) return json({ error: 'К этому сообщению картинку не прикрепить' }, 400);
+    let file;
+    try { file = (await request.formData()).get('file'); } catch { file = null; }
+    if (!file || typeof file === 'string') return json({ error: 'Файл не пришёл' }, 400);
+    const type = (file.type || '').toLowerCase();
+    const kind = type === 'image/gif' ? 'animation' : type.startsWith('image/') ? 'photo' : type.startsWith('video/') ? 'video' : null;
+    if (!kind) return json({ error: 'Нужна картинка (jpg, png, webp, gif) или видео mp4' }, 400);
+    const max = kind === 'photo' ? 10 : 50;
+    if (file.size > max * 1024 * 1024) return json({ error: `Файл больше ${max} МБ — Telegram такой не примет` }, 400);
+    // Telegram хранит файлы сам: отправляем его тебе в бот, берём file_id и это служебное сообщение сразу убираем
+    const form = new FormData();
+    form.append('chat_id', String(user.id));
+    form.append('disable_notification', 'true');
+    form.append(kind, file, file.name || 'file');
+    let res;
+    try { res = await ctx.tg.upload({ photo: 'sendPhoto', video: 'sendVideo', animation: 'sendAnimation' }[kind], form); }
+    catch (e) { return json({ error: 'Telegram не принял файл: ' + e.message }, 400); }
+    const fid = kind === 'photo' ? res.photo && res.photo[res.photo.length - 1].file_id : (res[kind] || res.document || res.video || {}).file_id;
+    if (!fid) return json({ error: 'Telegram не вернул файл' }, 400);
+    await ctx.tg.call('deleteMessage', { chat_id: user.id, message_id: res.message_id }).catch(() => {});
+    await setMsgMedia(ctx, key, { type: kind, file_id: fid });
+    return json({ ok: true, msgs: await listMsgs(ctx) });
+  }
+  mm = /^\/msg\/([A-Za-z_]+)\/img$/.exec(path);
+  if (mm) {
+    const o = (await loadMsgs(ctx))[mm[1]];
+    if (!o || !o.media) return json({ error: 'Картинки нет' }, 404);
+    try {
+      const r = await ctx.tg.download(o.media.file_id);
+      return new Response(r.body, { headers: { 'content-type': r.headers.get('content-type') || 'image/jpeg', 'cache-control': 'private, max-age=300' } });
+    } catch (e) { return json({ error: 'Не получилось загрузить превью' }, 400); }
+  }
+
   const body = request.method === 'POST' ? await request.json().catch(() => ({})) : {};
 
   if (path === '/state') {
@@ -121,6 +159,7 @@ export async function handlePanelApi(ctx, request, url) {
   if (m && request.method === 'POST') {
     try {
       if (body.reset) await resetMsg(ctx, m[1]);
+      else if (body.removeMedia) await setMsgMedia(ctx, m[1], null);
       else {
         const t = String(body.text || '');
         if (!t.trim()) return json({ error: 'Пустой текст' }, 400);
