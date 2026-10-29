@@ -69,6 +69,10 @@ export const MIGRATIONS = [
   [
     `ALTER TABLE posts ADD COLUMN pos INTEGER NOT NULL DEFAULT 0`,
   ],
+  // v3: служебные сообщения бота (согласия, вопросы), которые убираются, когда уже не нужны
+  [
+    `ALTER TABLE users ADD COLUMN tech TEXT`,
+  ],
 ];
 
 // Обновить базу при первом запуске после выкладки новой версии (один раз на процесс)

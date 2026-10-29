@@ -21,7 +21,11 @@ export default {
     if (url.pathname === '/tg' && request.method === 'POST') {
       if (env.WEBHOOK_SECRET && request.headers.get('x-telegram-bot-api-secret-token') !== env.WEBHOOK_SECRET) return new Response('forbidden', { status: 403 });
       const upd = await request.json().catch(() => null);
-      if (upd) { try { await handleUpdate(ctx, upd); } catch (e) { console.log('update error', e && e.stack); } }
+      if (upd) {
+        // отвечаем Telegram сразу, а сообщения бот досылает следом (с паузами «печатает…»)
+        const job = handleUpdate(ctx, upd).catch((e) => console.log('update error', e && e.stack));
+        if (execCtx && execCtx.waitUntil) execCtx.waitUntil(job); else await job;
+      }
       return new Response('ok');
     }
     if (url.pathname === '/setup') {

@@ -25,7 +25,7 @@ const fakeFetch = async (url, init) => {
 
 const db = await nodeSqliteAdapter(':memory:');
 await migrate(db);
-const env = { BOT_TOKEN: '1:x', ADMIN_IDS: '100', POLICY_URL: 'https://disign.ru/policy', TEST_URL: 'https://example.com/test' };
+const env = { DELAY_FACTOR: '0', BOT_TOKEN: '1:x', ADMIN_IDS: '100', POLICY_URL: 'https://disign.ru/policy', TEST_URL: 'https://example.com/test' };
 let NOW = parseWhen('01.11.2026 10:00', Date.UTC(2026, 9, 29) / 1000);
 const C = () => makeCtx({ db, env, fetchFn: fakeFetch, publicUrl: 'https://bot.test', now: NOW });
 let upd = 1, mid = 1;
@@ -254,5 +254,32 @@ await cb(100, 't:r:askLevel');
 await msg(701, '/start'); await cb(701, 'c:pd');
 assert.equal(lastText(701), 'Где ты сейчас в дизайне?', 'вернули как было');
 step('тексты: правка в боте с подстановкой и премиум-эмодзи, возврат по умолчанию');
+
+// ---------- чистый чат: служебное убирается ----------
+{
+  const c0 = calls.length;
+  const sentIds = {};
+  const idOf = (re) => { const c = calls.slice(c0).find((x) => x.method === 'sendMessage' && x.body.chat_id === 800 && re.test(x.body.text || '')); return c && c.res; };
+  await msg(800, '/start');
+  await cb(800, 'c:pd');
+  await cb(800, 'lv:start');
+  await cb(800, 'c:ads:1');
+  const after = calls.slice(c0).filter((x) => x.body.chat_id === 800);
+  const dels = after.filter((x) => x.method === 'deleteMessage').map((x) => x.body.message_id);
+  const thanks = calls.slice(c0).find((x) => x.method === 'answerCallbackQuery' && x.body.text);
+  assert.equal(thanks.body.text, 'Спасибо! ✅', '«спасибо» — всплывающим уведомлением, а не сообщением');
+  assert.ok(!after.some((x) => x.method === 'sendMessage' && /^Спасибо/.test(x.body.text || '')), 'отдельного сообщения «Спасибо» нет');
+  assert.equal(dels.length, 4, 'убраны: /start, согласие, вопрос про уровень, вопрос про рассылку — ' + dels);
+  const offer = after.find((x) => x.method === 'sendMessage' && /аудит-тест/.test(x.body.text || ''));
+  assert.ok(offer, 'предложение теста осталось, пока тест не пройден');
+  // вернулся из теста: предложение теста и прошлое приветствие уходят, /start тоже
+  const c1 = calls.length;
+  await msg(800, '/start audit_B_start');
+  const d2 = calls.slice(c1).filter((x) => x.method === 'deleteMessage').length;
+  assert.ok(d2 >= 3, 'после теста убраны /start, старое приветствие и предложение теста: ' + d2);
+  const u8 = await db.first('SELECT tech FROM users WHERE tg_id = 800');
+  assert.equal(JSON.parse(u8.tech).length, 1, 'в списке служебных осталось только новое приветствие');
+}
+step('чистый чат: «печатает…», служебные сообщения исчезают после нажатия, «спасибо» — всплывашкой');
 
 console.log('\nВсе сценарии прошли. Запросов к фейковому Telegram:', calls.length);

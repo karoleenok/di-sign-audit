@@ -85,6 +85,10 @@ var MIGRATIONS = [
   // v2: порядок постов внутри одного дня и времени (меняется в панели перетаскиванием)
   [
     `ALTER TABLE posts ADD COLUMN pos INTEGER NOT NULL DEFAULT 0`
+  ],
+  // v3: служебные сообщения бота (согласия, вопросы), которые убираются, когда уже не нужны
+  [
+    `ALTER TABLE users ADD COLUMN tech TEXT`
   ]
 ];
 var checked = false;
@@ -289,7 +293,7 @@ var MSG = {
     ["политика", "согласие"]
   ],
   consentPdBtn: ["consent", "Кнопка согласия", "Даю согласие", [], true],
-  consentThanks: ["consent", "Ответ после согласия", "Спасибо! ✅", []],
+  consentThanks: ["consent", "Всплывающее «спасибо» после согласия", "Спасибо! ✅", []],
   askLevel: ["level", "Вопрос про уровень", "Где ты сейчас в дизайне?", []],
   levelBtnStart: ["level", "Кнопка «начинающий»", "Начинаю, хочу зайти в дизайн", [], true],
   levelBtnPro: ["level", "Кнопка «продолжающий»", "Уже есть знания и заказы", [], true],
@@ -319,7 +323,7 @@ var MSG = {
   deleteYes: ["cmd", "/delete — кнопка «удалить»", "Удалить", [], true],
   deleteNo: ["cmd", "/delete — кнопка «отмена»", "Отмена", [], true],
   deleted: ["cmd", "/delete — данные удалены", "Данные удалены. Спасибо, что были с нами 🐾", []],
-  deleteCancel: ["cmd", "/delete — отмена", "Ок, ничего не удаляем.", []],
+  deleteCancel: ["cmd", "/delete — отмена (всплывающее)", "Ок, ничего не удаляем.", []],
   needStart: ["cmd", "Если человек не нажал /start", "Нажми /start 🐾", []],
   unknown: [
     "cmd",
@@ -566,9 +570,46 @@ var docVars = (ctx) => ({
   владелец: ctx.env.OWNER_INFO || ""
 });
 async function askLevel(ctx, id) {
-  return say(ctx, id, "askLevel", {}, {
+  return tech(ctx, id, say(ctx, id, "askLevel", {}, {
     reply_markup: kb([[{ text: await btn(ctx, "levelBtnStart"), callback_data: "lv:start" }], [{ text: await btn(ctx, "levelBtnPro"), callback_data: "lv:pro" }]])
+  }));
+}
+var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function pause(ctx, id, ms) {
+  const k = ctx.env.DELAY_FACTOR === void 0 ? 1 : Number(ctx.env.DELAY_FACTOR);
+  if (!(k > 0)) return;
+  await ctx.tg.call("sendChatAction", { chat_id: id, action: "typing" }).catch(() => {
   });
+  await sleep(ms * k);
+}
+var techList = (u) => {
+  try {
+    return u && u.tech ? JSON.parse(u.tech) : [];
+  } catch {
+    return [];
+  }
+};
+async function tech(ctx, id, sending) {
+  const m = await sending;
+  if (m && m.message_id) {
+    const u = await getUser(ctx, id);
+    if (u) await ctx.db.run(`UPDATE users SET tech = ? WHERE tg_id = ?`, [JSON.stringify([...techList(u), m.message_id].slice(-20)), id]);
+  }
+  return m;
+}
+var delMsg = (ctx, id, mid) => mid ? ctx.tg.call("deleteMessage", { chat_id: id, message_id: mid }).catch(() => {
+}) : null;
+async function untech(ctx, id, mid) {
+  await delMsg(ctx, id, mid);
+  const u = await getUser(ctx, id);
+  if (u) await ctx.db.run(`UPDATE users SET tech = ? WHERE tg_id = ?`, [JSON.stringify(techList(u).filter((x) => x !== mid)), id]);
+}
+async function cleanAll(ctx, id) {
+  const u = await getUser(ctx, id);
+  const list = techList(u);
+  if (!list.length) return;
+  for (const mid of list) await delMsg(ctx, id, mid);
+  await ctx.db.run(`UPDATE users SET tech = NULL WHERE tg_id = ?`, [id]);
 }
 async function getUser(ctx, id) {
   return ctx.db.first(`SELECT * FROM users WHERE tg_id = ?`, [id]);
@@ -594,30 +635,39 @@ async function onStart(ctx, msg2, payload) {
     }
     if (u.status === "stopped" || u.status === "blocked") await ctx.db.run(`UPDATE users SET status = 'new' WHERE tg_id = ?`, [from.id]);
   }
+  await delMsg(ctx, from.id, msg2.message_id);
+  await cleanAll(ctx, from.id);
   u = await getUser(ctx, from.id);
   const name = from.first_name || "друг";
-  await say(ctx, from.id, st.zone ? "helloTest" : "hello", { имя: name });
+  await tech(ctx, from.id, say(ctx, from.id, st.zone ? "helloTest" : "hello", { имя: name }));
   return nextStep(ctx, u);
 }
 async function nextStep(ctx, u) {
   const id = u.tg_id;
   if (!u.consent_pd_at) {
-    return say(ctx, id, "consentPd", docVars(ctx), {
+    await pause(ctx, id, 900);
+    return tech(ctx, id, say(ctx, id, "consentPd", docVars(ctx), {
       link_preview_options: { is_disabled: true },
       reply_markup: kb([[{ text: await btn(ctx, "consentPdBtn"), callback_data: "c:pd" }]])
-    });
+    }));
   }
-  if (!u.level) return askLevel(ctx, id);
+  if (!u.level) {
+    await pause(ctx, id, 700);
+    return askLevel(ctx, id);
+  }
   if (!u.zone) {
     const url = ctx.env.TEST_URL;
-    await say(ctx, id, "testOffer", {}, url ? { reply_markup: kb([[{ text: await btn(ctx, "testBtn"), url }]]) } : {});
+    await pause(ctx, id, 800);
+    await tech(ctx, id, say(ctx, id, "testOffer", {}, url ? { reply_markup: kb([[{ text: await btn(ctx, "testBtn"), url }]]) } : {}));
   } else {
+    await pause(ctx, id, 800);
     await sendGift(ctx, u);
   }
   if (!u.consent_ads_at && u.status !== "stopped") {
-    return say(ctx, id, "consentAds", {}, {
+    await pause(ctx, id, 1200);
+    return tech(ctx, id, say(ctx, id, "consentAds", {}, {
       reply_markup: kb([[{ text: await btn(ctx, "consentAdsYes"), callback_data: "c:ads:1" }, { text: await btn(ctx, "consentAdsNo"), callback_data: "c:ads:0" }]])
-    });
+    }));
   }
   if (u.consent_ads_at && u.status !== "active") {
     await ctx.db.run(`UPDATE users SET status = 'active', joined_at = COALESCE(joined_at, ?) WHERE tg_id = ?`, [ctx.now, id]);
@@ -644,22 +694,32 @@ async function sendGift(ctx, u) {
 async function onUserCallback(ctx, cq) {
   const id = cq.from.id;
   const d = cq.data || "";
+  const answer = async (key, vars) => ctx.tg.call("answerCallbackQuery", { callback_query_id: cq.id, ...key ? { text: (await msg(ctx, key, vars)).text.slice(0, 190) } : {} }).catch(() => {
+  });
   const u = await getUser(ctx, id);
-  if (!u) return say(ctx, id, "needStart");
+  if (!u) {
+    await answer();
+    return say(ctx, id, "needStart");
+  }
+  const mid = cq.message && cq.message.message_id;
   const done = async (key, vars) => {
-    await ctx.tg.call("editMessageReplyMarkup", { chat_id: id, message_id: cq.message.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => {
-    });
-    if (key) await say(ctx, id, key, vars);
+    await untech(ctx, id, mid);
+    if (key) {
+      await pause(ctx, id, 500);
+      await say(ctx, id, key, vars);
+    }
   };
   if (d === "c:pd") {
+    await answer("consentThanks");
     if (!u.consent_pd_at) {
       await ctx.db.run(`UPDATE users SET consent_pd_at = ? WHERE tg_id = ?`, [ctx.now, id]);
       await logConsent(ctx, id, "pd", true);
     }
-    await done("consentThanks");
+    await done();
     return nextStep(ctx, await getUser(ctx, id));
   }
   if (d.startsWith("lv:")) {
+    await answer();
     const lv = d.slice(3) === "start" ? "start" : "pro";
     await ctx.db.run(`UPDATE users SET level = ?, level_raw = COALESCE(level_raw, ?) WHERE tg_id = ?`, [lv, lv === "start" ? "start" : "free", id]);
     if (u.consent_pd_at && u.consent_ads_at) {
@@ -670,6 +730,7 @@ async function onUserCallback(ctx, cq) {
     return nextStep(ctx, await getUser(ctx, id));
   }
   if (d.startsWith("c:ads:")) {
+    await answer();
     const yes = d.endsWith(":1");
     await logConsent(ctx, id, "ads", yes);
     if (yes) {
@@ -680,14 +741,22 @@ async function onUserCallback(ctx, cq) {
     return done("adsNo");
   }
   if (d === "del:yes") {
+    await answer();
+    await cleanAll(ctx, id);
+    await delMsg(ctx, id, mid);
     for (const t of ["users", "consents", "deliveries", "clicks", "states"]) await ctx.db.run(`DELETE FROM ${t} WHERE tg_id = ?`, [id]);
-    return done("deleted");
+    return say(ctx, id, "deleted");
   }
-  if (d === "del:no") return done("deleteCancel");
+  if (d === "del:no") {
+    await answer("deleteCancel");
+    return done();
+  }
+  await answer();
 }
 async function onUserCommand(ctx, msg2, cmd) {
   const id = msg2.from.id;
   const u = await getUser(ctx, id);
+  if (cmd === "level" || cmd === "delete") await delMsg(ctx, id, msg2.message_id);
   if (cmd === "stop") {
     if (u) {
       await ctx.db.run(`UPDATE users SET status = 'stopped', consent_ads_at = NULL WHERE tg_id = ?`, [id]);
@@ -695,10 +764,10 @@ async function onUserCommand(ctx, msg2, cmd) {
     }
     return say(ctx, id, "stopped");
   }
-  if (cmd === "level") return askLevel(ctx, id);
+  if (cmd === "level") return u ? askLevel(ctx, id) : say(ctx, id, "needStart");
   if (cmd === "policy") return say(ctx, id, "policy", docVars(ctx), { link_preview_options: { is_disabled: true } });
   if (cmd === "delete") {
-    return say(ctx, id, "deleteAsk", {}, { reply_markup: kb([[{ text: await btn(ctx, "deleteYes"), callback_data: "del:yes" }, { text: await btn(ctx, "deleteNo"), callback_data: "del:no" }]]) });
+    return tech(ctx, id, say(ctx, id, "deleteAsk", {}, { reply_markup: kb([[{ text: await btn(ctx, "deleteYes"), callback_data: "del:yes" }, { text: await btn(ctx, "deleteNo"), callback_data: "del:no" }]]) }));
   }
   if (cmd === "id") return ctx.tg.call("sendMessage", { chat_id: id, text: `Твой Telegram-id: ${id}` });
   return say(ctx, id, "unknown");
@@ -757,6 +826,8 @@ var GUIDE = {
 • <b>подарок</b> — сразу после теста (всем, начинающим или продолжающим).
 
 <b>Кто не получает рассылку</b>: кто отписался (/stop), заблокировал бота, не дал согласие, уже оплатил курс.
+
+<b>Чистый чат</b>: бот пишет постепенно (с «печатает…»), а служебные сообщения — согласия, вопрос про уровень, вопрос про рассылку — исчезают, как только человек нажал кнопку. Предложение пройти тест исчезает, когда человек вернулся из теста. В чате остаются приветствие, подарок и материалы.
 
 Бот проверяет расписание раз в минуту и рассылает пачками — большая рассылка может идти несколько минут, это нормально.`,
   post: `<b>✍️ Как сделать красивый пост</b>
@@ -1549,10 +1620,10 @@ async function handleUpdate(ctx, upd) {
   }
   if (upd.callback_query) {
     const cq = upd.callback_query;
-    await ctx.tg.call("answerCallbackQuery", { callback_query_id: cq.id }).catch(() => {
-    });
     const d = cq.data || "";
     if (/^(w:|p:|pl|h:|t:)/.test(d)) {
+      await ctx.tg.call("answerCallbackQuery", { callback_query_id: cq.id }).catch(() => {
+      });
       if (!await isAdmin(ctx, cq.from.id)) return;
       return onAdminCallback(ctx, cq);
     }
@@ -1581,8 +1652,8 @@ async function tick(ctx, budget, queryBudget) {
   ctx = { ...ctx, db };
   const maxQ = queryBudget || 1e9;
   await ctx.db.run(`INSERT INTO settings (key, value) VALUES ('last_tick', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(now)]);
-  const pause = await ctx.db.first(`SELECT value FROM settings WHERE key = 'pause_until'`);
-  if (pause && +pause.value > now) return { sent: 0, paused: true };
+  const pause2 = await ctx.db.first(`SELECT value FROM settings WHERE key = 'pause_until'`);
+  if (pause2 && +pause2.value > now) return { sent: 0, paused: true };
   const posts = await ctx.db.all(
     `SELECT * FROM posts WHERE status = 'active' AND ((kind = 'date' AND run_at <= ?) OR kind = 'drip')
      ORDER BY CASE kind WHEN 'date' THEN 0 ELSE 1 END, run_at, day, send_time, pos, id`,
@@ -2221,11 +2292,9 @@ var worker_default = {
       if (env.WEBHOOK_SECRET && request.headers.get("x-telegram-bot-api-secret-token") !== env.WEBHOOK_SECRET) return new Response("forbidden", { status: 403 });
       const upd = await request.json().catch(() => null);
       if (upd) {
-        try {
-          await handleUpdate(ctx, upd);
-        } catch (e) {
-          console.log("update error", e && e.stack);
-        }
+        const job = handleUpdate(ctx, upd).catch((e) => console.log("update error", e && e.stack));
+        if (execCtx && execCtx.waitUntil) execCtx.waitUntil(job);
+        else await job;
       }
       return new Response("ok");
     }

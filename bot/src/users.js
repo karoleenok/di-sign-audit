@@ -1,5 +1,5 @@
 import { ZONES, LEVELS } from './texts.js';
-import { say, btn } from './msgs.js';
+import { say, btn, msg as msgText } from './msgs.js';
 import { sendPost, recordDeliveries } from './posts.js';
 
 const CONSENT_VERSION = 'v1';
@@ -28,9 +28,42 @@ const docVars = (ctx) => ({
 });
 
 async function askLevel(ctx, id) {
-  return say(ctx, id, 'askLevel', {}, {
+  return tech(ctx, id, say(ctx, id, 'askLevel', {}, {
     reply_markup: kb([[{ text: await btn(ctx, 'levelBtnStart'), callback_data: 'lv:start' }], [{ text: await btn(ctx, 'levelBtnPro'), callback_data: 'lv:pro' }]]),
-  });
+  }));
+}
+
+// ---------- «чистый» чат ----------
+// Служебные сообщения (согласия, вопросы, предложение теста) запоминаем и убираем, когда они уже не нужны:
+// Telegram сам красиво растворяет удалённое сообщение. Между сообщениями — пауза с «печатает…».
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function pause(ctx, id, ms) {
+  const k = ctx.env.DELAY_FACTOR === undefined ? 1 : Number(ctx.env.DELAY_FACTOR);
+  if (!(k > 0)) return;
+  await ctx.tg.call('sendChatAction', { chat_id: id, action: 'typing' }).catch(() => {});
+  await sleep(ms * k);
+}
+const techList = (u) => { try { return u && u.tech ? JSON.parse(u.tech) : []; } catch { return []; } };
+async function tech(ctx, id, sending) {
+  const m = await sending;
+  if (m && m.message_id) {
+    const u = await getUser(ctx, id);
+    if (u) await ctx.db.run(`UPDATE users SET tech = ? WHERE tg_id = ?`, [JSON.stringify([...techList(u), m.message_id].slice(-20)), id]);
+  }
+  return m;
+}
+const delMsg = (ctx, id, mid) => mid ? ctx.tg.call('deleteMessage', { chat_id: id, message_id: mid }).catch(() => {}) : null;
+async function untech(ctx, id, mid) {
+  await delMsg(ctx, id, mid);
+  const u = await getUser(ctx, id);
+  if (u) await ctx.db.run(`UPDATE users SET tech = ? WHERE tg_id = ?`, [JSON.stringify(techList(u).filter((x) => x !== mid)), id]);
+}
+async function cleanAll(ctx, id) {
+  const u = await getUser(ctx, id);
+  const list = techList(u);
+  if (!list.length) return;
+  for (const mid of list) await delMsg(ctx, id, mid);
+  await ctx.db.run(`UPDATE users SET tech = NULL WHERE tg_id = ?`, [id]);
 }
 
 export async function getUser(ctx, id) {
@@ -58,10 +91,13 @@ export async function onStart(ctx, msg, payload) {
     }
     if (u.status === 'stopped' || u.status === 'blocked') await ctx.db.run(`UPDATE users SET status = 'new' WHERE tg_id = ?`, [from.id]);
   }
+  // убираем саму команду /start и старые служебные сообщения (прошлое приветствие, вопросы, предложение теста)
+  await delMsg(ctx, from.id, msg.message_id);
+  await cleanAll(ctx, from.id);
   u = await getUser(ctx, from.id);
   const name = from.first_name || 'друг';
   // зона из теста запоминается только как отметка «прошёл тест» — посты и подарки по зонам не делим
-  await say(ctx, from.id, st.zone ? 'helloTest' : 'hello', { имя: name });
+  await tech(ctx, from.id, say(ctx, from.id, st.zone ? 'helloTest' : 'hello', { имя: name }));
   return nextStep(ctx, u);
 }
 
@@ -69,24 +105,28 @@ export async function onStart(ctx, msg, payload) {
 export async function nextStep(ctx, u) {
   const id = u.tg_id;
   if (!u.consent_pd_at) {
-    return say(ctx, id, 'consentPd', docVars(ctx), {
+    await pause(ctx, id, 900);
+    return tech(ctx, id, say(ctx, id, 'consentPd', docVars(ctx), {
       link_preview_options: { is_disabled: true },
       reply_markup: kb([[{ text: await btn(ctx, 'consentPdBtn'), callback_data: 'c:pd' }]]),
-    });
+    }));
   }
-  if (!u.level) return askLevel(ctx, id);
+  if (!u.level) { await pause(ctx, id, 700); return askLevel(ctx, id); }
   if (!u.zone) {
-    // ещё не проходил тест: предлагаем пройти, по кнопке в конце теста он вернётся в бот
+    // ещё не проходил тест: предлагаем пройти, по кнопке в конце теста он вернётся в бот (тогда это сообщение уберём)
     const url = ctx.env.TEST_URL;
-    await say(ctx, id, 'testOffer', {}, url ? { reply_markup: kb([[{ text: await btn(ctx, 'testBtn'), url }]]) } : {});
+    await pause(ctx, id, 800);
+    await tech(ctx, id, say(ctx, id, 'testOffer', {}, url ? { reply_markup: kb([[{ text: await btn(ctx, 'testBtn'), url }]]) } : {}));
   } else {
     // прошёл тест — подарок (один раз): общий и/или под его уровень
+    await pause(ctx, id, 800);
     await sendGift(ctx, u);
   }
   if (!u.consent_ads_at && u.status !== 'stopped') {
-    return say(ctx, id, 'consentAds', {}, {
+    await pause(ctx, id, 1200);
+    return tech(ctx, id, say(ctx, id, 'consentAds', {}, {
       reply_markup: kb([[{ text: await btn(ctx, 'consentAdsYes'), callback_data: 'c:ads:1' }, { text: await btn(ctx, 'consentAdsNo'), callback_data: 'c:ads:0' }]]),
-    });
+    }));
   }
   if (u.consent_ads_at && u.status !== 'active') {
     await ctx.db.run(`UPDATE users SET status = 'active', joined_at = COALESCE(joined_at, ?) WHERE tg_id = ?`, [ctx.now, id]);
@@ -115,20 +155,25 @@ async function sendGift(ctx, u) {
 export async function onUserCallback(ctx, cq) {
   const id = cq.from.id;
   const d = cq.data || '';
+  // ответ на нажатие: убирает «часики» на кнопке; с текстом — короткое всплывающее уведомление
+  const answer = async (key, vars) => ctx.tg.call('answerCallbackQuery', { callback_query_id: cq.id, ...(key ? { text: (await msgText(ctx, key, vars)).text.slice(0, 190) } : {}) }).catch(() => {});
   const u = await getUser(ctx, id);
-  if (!u) return say(ctx, id, 'needStart');
-  // убрать кнопки у сообщения и (по желанию) ответить сообщением по ключу
+  if (!u) { await answer(); return say(ctx, id, 'needStart'); }
+  const mid = cq.message && cq.message.message_id;
+  // кнопка нажата — служебное сообщение больше не нужно: убираем его (Telegram растворяет с анимацией)
   const done = async (key, vars) => {
-    await ctx.tg.call('editMessageReplyMarkup', { chat_id: id, message_id: cq.message.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => {});
-    if (key) await say(ctx, id, key, vars);
+    await untech(ctx, id, mid);
+    if (key) { await pause(ctx, id, 500); await say(ctx, id, key, vars); }
   };
 
   if (d === 'c:pd') {
+    await answer('consentThanks');
     if (!u.consent_pd_at) { await ctx.db.run(`UPDATE users SET consent_pd_at = ? WHERE tg_id = ?`, [ctx.now, id]); await logConsent(ctx, id, 'pd', true); }
-    await done('consentThanks');
+    await done();
     return nextStep(ctx, await getUser(ctx, id));
   }
   if (d.startsWith('lv:')) {
+    await answer();
     const lv = d.slice(3) === 'start' ? 'start' : 'pro';
     await ctx.db.run(`UPDATE users SET level = ?, level_raw = COALESCE(level_raw, ?) WHERE tg_id = ?`, [lv, lv === 'start' ? 'start' : 'free', id]);
     if (u.consent_pd_at && u.consent_ads_at) { await done('levelChanged', { уровень: LEVELS[lv] }); return; }
@@ -136,6 +181,7 @@ export async function onUserCallback(ctx, cq) {
     return nextStep(ctx, await getUser(ctx, id));
   }
   if (d.startsWith('c:ads:')) {
+    await answer();
     const yes = d.endsWith(':1');
     await logConsent(ctx, id, 'ads', yes);
     if (yes) {
@@ -146,23 +192,28 @@ export async function onUserCallback(ctx, cq) {
     return done('adsNo');
   }
   if (d === 'del:yes') {
+    await answer();
+    await cleanAll(ctx, id); await delMsg(ctx, id, mid);
     for (const t of ['users', 'consents', 'deliveries', 'clicks', 'states']) await ctx.db.run(`DELETE FROM ${t} WHERE tg_id = ?`, [id]);
-    return done('deleted');
+    return say(ctx, id, 'deleted');
   }
-  if (d === 'del:no') return done('deleteCancel');
+  if (d === 'del:no') { await answer('deleteCancel'); return done(); }
+  await answer();
 }
 
 export async function onUserCommand(ctx, msg, cmd) {
   const id = msg.from.id;
   const u = await getUser(ctx, id);
+  // команды /level и /delete — служебные: саму команду убираем, вопрос уберётся после ответа
+  if (cmd === 'level' || cmd === 'delete') await delMsg(ctx, id, msg.message_id);
   if (cmd === 'stop') {
     if (u) { await ctx.db.run(`UPDATE users SET status = 'stopped', consent_ads_at = NULL WHERE tg_id = ?`, [id]); await logConsent(ctx, id, 'ads', false); }
     return say(ctx, id, 'stopped');
   }
-  if (cmd === 'level') return askLevel(ctx, id);
+  if (cmd === 'level') return u ? askLevel(ctx, id) : say(ctx, id, 'needStart');
   if (cmd === 'policy') return say(ctx, id, 'policy', docVars(ctx), { link_preview_options: { is_disabled: true } });
   if (cmd === 'delete') {
-    return say(ctx, id, 'deleteAsk', {}, { reply_markup: kb([[{ text: await btn(ctx, 'deleteYes'), callback_data: 'del:yes' }, { text: await btn(ctx, 'deleteNo'), callback_data: 'del:no' }]]) });
+    return tech(ctx, id, say(ctx, id, 'deleteAsk', {}, { reply_markup: kb([[{ text: await btn(ctx, 'deleteYes'), callback_data: 'del:yes' }, { text: await btn(ctx, 'deleteNo'), callback_data: 'del:no' }]]) }));
   }
   if (cmd === 'id') return ctx.tg.call('sendMessage', { chat_id: id, text: `Твой Telegram-id: ${id}` });
   return say(ctx, id, 'unknown');

@@ -35,9 +35,9 @@ export async function handleUpdate(ctx, upd) {
   }
   if (upd.callback_query) {
     const cq = upd.callback_query;
-    await ctx.tg.call('answerCallbackQuery', { callback_query_id: cq.id }).catch(() => {});
     const d = cq.data || '';
     if (/^(w:|p:|pl|h:|t:)/.test(d)) {
+      await ctx.tg.call('answerCallbackQuery', { callback_query_id: cq.id }).catch(() => {});
       if (!(await isAdmin(ctx, cq.from.id))) return;
       return onAdminCallback(ctx, cq);
     }
