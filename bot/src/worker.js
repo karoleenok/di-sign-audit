@@ -3,6 +3,7 @@ import { d1Adapter } from './db.js';
 import { makeCtx, handleUpdate, tick, setup, clickRedirect, exportAll } from './core.js';
 import { ensureSchema } from './schema.js';
 import { handlePanelApi } from './panel-api.js';
+import { stepRuns } from './testrun.js';
 import PANEL from './panel-html.js';
 
 const html = (body, status = 200) => new Response(`<!doctype html><meta charset="utf-8"><body style="font:16px system-ui;padding:24px;max-width:640px">${body}</body>`, { status, headers: { 'content-type': 'text/html; charset=utf-8' } });
@@ -16,7 +17,7 @@ export default {
 
     // панель админа (открывается кнопкой из бота) и её API
     if (url.pathname === '/admin' || url.pathname === '/admin/') return new Response(PANEL, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
-    if (url.pathname.startsWith('/api/panel/')) return handlePanelApi(ctx, request, url);
+    if (url.pathname.startsWith('/api/panel/')) { ctx.waitUntil = (p) => execCtx.waitUntil(p); return handlePanelApi(ctx, request, url); }
 
     if (url.pathname === '/tg' && request.method === 'POST') {
       if (env.WEBHOOK_SECRET && request.headers.get('x-telegram-bot-api-secret-token') !== env.WEBHOOK_SECRET) return new Response('forbidden', { status: 403 });
@@ -59,5 +60,7 @@ export default {
     await ensureSchema(ctx.db);
     // бесплатный Cloudflare: до 50 внешних запросов и до 50 запросов к базе за запуск — берём с запасом
     await tick(ctx, Number(env.TICK_BUDGET) || 30, Number(env.QUERY_BUDGET) || 40);
+    // ускоренные тесты ленты у админов (если запущены)
+    await stepRuns(ctx, 10).catch((e) => console.log('test run', e && e.stack));
   },
 };

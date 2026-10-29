@@ -29,7 +29,8 @@ await page.goto('http://localhost:8788/admin');
 await page.waitForSelector('.card');
 await page.screenshot({ path: OUT + '/panel-1-feed.png', fullPage: true });
 const days = await page.$$eval('.list', (ls) => ls.map((l) => [l.dataset.day, l.children.length]));
-assert.deepEqual(days.slice(0, 5), [['0', 1], ['1', 2], ['2', 2], ['3', 1], ['4', 1]]);
+assert.deepEqual(days.slice(0, 5), [['0', 2], ['1', 2], ['2', 2], ['3', 1], ['4', 1]]);
+assert.match(await page.textContent('.list[data-day="0"]'), /⏱ через 2 ч после входа/, 'пост по таймеру — в дне 0 с подписью');
 step('лента по дням: ' + JSON.stringify(days.slice(0, 5)));
 
 // 3. фильтр «как увидит человек»
@@ -96,6 +97,43 @@ await page.locator('.card', { hasText: 'Скрипты ответов' }).locato
 await page.click('#bClear'); await page.click('#bSave'); await page.waitForTimeout(400);
 assert.equal((await db.first(`SELECT buttons FROM posts WHERE title = 'Скрипты ответов'`)).buttons, null, '«без кнопок» убирает все');
 step('кнопки под постом: добавить, два в ряд, новый ряд, поменять ряды местами, проверка ссылки, убрать все');
+
+// 5в. когда отправлять: «после поста»
+await page.locator('.card', { hasText: 'Контент-план' }).locator('.ttl').click();
+await page.waitForSelector('.sheet.on'); await page.waitForTimeout(300);
+await page.click('#fMode button[data-v="after"]');
+await page.selectOption('#aPost', { label: await page.$eval('#aPost option', () => [...document.querySelectorAll('#aPost option')].find((o) => /Через 2 часа/.test(o.textContent)).textContent) });
+await page.fill('#aNum', '3'); await page.selectOption('#aUnit', '60');
+assert.match(await page.textContent('#aHint'), /Через 3 ч после того, как человек получил «Через 2 часа»/);
+await page.screenshot({ path: OUT + '/panel-11-after.png' });
+await page.click('#bSave'); await page.waitForTimeout(500);
+let mrow = await db.first(`SELECT mode, delay_min, after_id FROM posts WHERE text LIKE 'Контент-план%'`);
+const parentId = (await db.first(`SELECT id FROM posts WHERE title = 'Через 2 часа'`)).id;
+assert.deepEqual({ ...mrow }, { mode: 'after', delay_min: 180, after_id: parentId });
+assert.match(await page.textContent('.list[data-day="0"]'), /↳ через 3 ч после «Через 2 часа»/, 'в ленте встал сразу за родителем');
+// таймер
+await page.locator('.card .ttl', { hasText: /^Через 2 часа$/ }).click(); await page.waitForSelector('.sheet.on'); await page.waitForTimeout(300);
+await page.click('#fMode button[data-v="after"]');
+const opts = await page.$$eval('#aPost option', (os) => os.map((o) => o.textContent));
+await page.selectOption('#aPost', { label: opts.find((o) => /Контент-план/.test(o)) });
+await page.click('#bSave'); await page.waitForTimeout(400);
+assert.match(await page.textContent('#toast'), /круг/, 'круговая цепочка не сохраняется');
+await page.click('#fMode button[data-v="timer"]'); await page.fill('#tNum', '45'); await page.selectOption('#tUnit', '1');
+await page.click('#bSave'); await page.waitForTimeout(400);
+mrow = await db.first(`SELECT mode, delay_min FROM posts WHERE title = 'Через 2 часа'`);
+assert.deepEqual({ ...mrow }, { mode: 'timer', delay_min: 45 });
+step('когда отправлять в панели: «после поста» с подписью в ленте, защита от круга, таймер');
+
+// 5г. проверить на себе
+const s0 = sent.length;
+await page.click('#runPrev'); await page.waitForTimeout(700);
+assert.ok(sent.slice(s0).some((c) => /Предпросмотр ленты/.test(c.body.text || '')), 'предпросмотр ушёл в бот');
+await page.click('#runFast'); await page.waitForTimeout(600);
+assert.match(await page.textContent('.box:has(#runStop)'), /Идёт ускоренный тест/);
+await page.screenshot({ path: OUT + '/panel-12-run.png' });
+await page.click('#runStop'); await page.waitForTimeout(400);
+assert.ok(await page.$('#runFast'), 'после остановки снова можно запустить');
+step('проверить на себе: предпросмотр, ускоренный тест, остановка');
 
 // 6. «прислать мне»
 await page.locator('.card', { hasText: 'Про обучение' }).locator('.ttl').click();

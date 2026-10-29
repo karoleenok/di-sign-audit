@@ -73,6 +73,21 @@ export const MIGRATIONS = [
   [
     `ALTER TABLE users ADD COLUMN tech TEXT`,
   ],
+  // v4: когда отправлять пост ленты — в день и время / по таймеру после входа / после другого поста;
+  //     тестовые прогоны ленты для админа (1 день = 1 минута)
+  [
+    `ALTER TABLE posts ADD COLUMN mode TEXT NOT NULL DEFAULT 'day'`,
+    `ALTER TABLE posts ADD COLUMN delay_min INTEGER`,
+    `ALTER TABLE posts ADD COLUMN after_id INTEGER`,
+    `CREATE TABLE IF NOT EXISTS test_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      admin_id INTEGER NOT NULL, level TEXT, started_at INTEGER NOT NULL, scale INTEGER NOT NULL DEFAULT 1440,
+      status TEXT NOT NULL DEFAULT 'active'
+    )`,
+    `CREATE TABLE IF NOT EXISTS test_sent (
+      run_id INTEGER NOT NULL, post_id INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (run_id, post_id)
+    )`,
+  ],
 ];
 
 // Обновить базу при первом запуске после выкладки новой версии (один раз на процесс)

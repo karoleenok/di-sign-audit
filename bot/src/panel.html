@@ -145,6 +145,21 @@ const fmtRun = (t) => { if (!t) return 'дата не задана'; const d = n
 const toLocal = (t) => t ? new Date((t + 10800) * 1000).toISOString().slice(0, 16) : '';
 const fromLocal = (s) => { const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(s || ''); return m ? Date.UTC(+m[1], +m[2]-1, +m[3], +m[4], +m[5]) / 1000 - 10800 : null; };
 const dayLabel = (d) => d === 0 ? 'сразу после согласия на рассылку' : d === 1 ? 'на следующий день' : 'через ' + d + ' ' + (d % 10 === 1 && d % 100 !== 11 ? 'день' : (d % 10 >= 2 && d % 10 <= 4 && (d % 100 < 10 || d % 100 >= 20)) ? 'дня' : 'дней') + ' после входа';
+// когда уходит пост ленты: в день и время / по таймеру после входа / после другого поста
+const timeMin = (t) => { const m = /^(\d{1,2}):(\d{2})$/.exec(t || '11:00'); return m ? +m[1] * 60 + +m[2] : 660; };
+const fmtDelay = (min) => { const m = +min || 0; if (!m) return '0 мин'; const d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mm = m % 60; return [d ? d + ' дн' : '', h ? h + ' ч' : '', mm ? mm + ' мин' : ''].filter(Boolean).join(' '); };
+const byIdMap = () => Object.fromEntries(S.posts.map((p) => [p.id, p]));
+// смещение от входа (вход условно в 10:00), в минутах
+function offMin(p, ids, depth) { depth = depth || 0; if (!p || depth > 20) return 0;
+  if (p.mode === 'timer') return p.delay || 0;
+  if (p.mode === 'after') return offMin(ids[p.after], ids, depth + 1) + (p.delay || 0);
+  return p.day ? p.day * 1440 + timeMin(p.time) - 600 : 0; }
+const bucketDay = (p, ids) => p.mode === 'day' || !p.mode ? (p.day || 0) : Math.floor(Math.max(0, offMin(p, ids) + 600) / 1440);
+function whenShort(p, ids) {
+  if (p.mode === 'timer') return '⏱ через ' + fmtDelay(p.delay) + ' после входа';
+  if (p.mode === 'after') { const par = ids[p.after]; return '↳ через ' + fmtDelay(p.delay) + ' после «' + (par ? postName(par).slice(0, 26) : '#' + p.after) + '»'; }
+  return p.day === 0 ? 'сразу' : p.time;
+}
 // получит ли этот пост выбранный человек
 function gets(p) {
   return view.level === 'all' || p.audience === 'all' || p.audience === view.level;
@@ -163,7 +178,7 @@ function tags(p) {
 function cardHtml(p, opts) {
   opts = opts || {};
   const off = view.level !== 'all' && !gets(p);
-  const time = opts.time != null ? opts.time : (p.kind === 'drip' ? (p.day === 0 ? 'сразу' : p.time) : '');
+  const time = opts.time != null ? opts.time : (p.kind === 'drip' ? whenShort(p, byIdMap()) : '');
   return '<div class="card' + (off ? ' off' : '') + '" data-id="' + p.id + '">' +
     (opts.drag ? '<div class="handle" aria-label="перетащить">⋮⋮</div>' : '<div style="width:6px"></div>') +
     '<div class="cbody"><div class="ctop">' + (time ? '<span class="time">' + esc(time) + '</span>' : '') +
@@ -198,18 +213,19 @@ function bindView() {
 
 function renderFeed() {
   const drip = S.posts.filter((p) => p.kind === 'drip');
-  const maxDay = drip.reduce((m, p) => Math.max(m, p.day), 0);
+  const ids = byIdMap();
+  const maxDay = drip.reduce((m, p) => Math.max(m, bucketDay(p, ids)), 0);
   const last = Math.max(7, maxDay + 1);
   const filtered = (view.hide && view.level !== 'all') ? drip.filter(gets) : drip;
-  let h = viewBox();
+  let h = viewBox() + runBox();
   if (!drip.length) h += '<div class="empty">Постов по дням пока нет.<br>Создай первый в боте: <b>/new</b> → «Через N дней после входа».</div>';
   for (let d = 0; d <= last; d++) {
-    const items = filtered.filter((p) => p.day === d).sort((a, b) => (a.day === 0 ? 0 : a.time.localeCompare(b.time)) || a.pos - b.pos || a.id - b.id);
+    const items = filtered.filter((p) => bucketDay(p, ids) === d).sort((a, b) => offMin(a, ids) - offMin(b, ids) || a.pos - b.pos || a.id - b.id);
     h += '<section class="day"><div class="dayh"><b>День ' + d + '</b><span>' + dayLabel(d) + '</span></div><div class="list" data-day="' + d + '">' + items.map((p) => cardHtml(p, { drag: true })).join('') + '</div></section>';
   }
   h += '<div class="note" style="margin-top:22px">Новый пост создаётся в боте: <b>/new</b>. Там же меняются текст и картинки поста (<b>/posts</b> → пост → ✏️). Здесь — порядок, дни, время и кому.</div>';
   $('body').innerHTML = h;
-  bindView();
+  bindView(); bindRun();
   document.querySelectorAll('.list').forEach((el) => {
     Sortable.create(el, {
       group: 'drip', handle: '.handle', animation: 160, ghostClass: 'ghost', chosenClass: 'chosen', forceFallback: true, fallbackTolerance: 4, scroll: true, bubbleScroll: true,
@@ -227,24 +243,46 @@ async function onDrop(ev) {
   const ids = [...ev.to.children].map((c) => +c.dataset.id);
   const list = ids.map((i) => S.posts.find((p) => p.id === i));
   const k = ids.indexOf(id);
-  const old = { day: moved.day, time: moved.time };
+  const old = { day: moved.day, time: moved.time, mode: moved.mode };
   moved.day = toDay;
   let note = '';
+  if (moved.mode && moved.mode !== 'day') { moved.mode = 'day'; moved.time = moved.time && moved.time !== '00:00' ? moved.time : '11:00'; note = 'теперь «в день и время»'; }
   if (toDay > 0) {
-    const prev = list[k - 1], next = list[k + 1];
+    const isDay = (p) => p && (!p.mode || p.mode === 'day');
+    let prev = null, next = null;
+    for (let i = k - 1; i >= 0; i--) if (isDay(list[i])) { prev = list[i]; break; }
+    for (let i = k + 1; i < list.length; i++) if (isDay(list[i])) { next = list[i]; break; }
     if (prev && moved.time < prev.time) { moved.time = prev.time; note = 'время подстроено: ' + moved.time; }
     else if (next && moved.time > next.time) { moved.time = next.time; note = 'время подстроено: ' + moved.time; }
     if (old.day === 0 && !prev && !next) { moved.time = moved.time && moved.time !== '00:00' ? moved.time : '11:00'; }
   }
-  const items = list.map((p, i) => ({ id: p.id, day: toDay, time: p.time || '11:00', pos: i }));
-  if (ev.from !== ev.to) [...ev.from.children].forEach((c, i) => { const p = S.posts.find((x) => x.id === +c.dataset.id); items.push({ id: p.id, day: p.day, time: p.time || '11:00', pos: i }); });
+  // сохраняем только посты «в день и время» (таймеры и цепочки остаются как были) + перенесённый
+  const dayOnly = (p) => p === moved || !p.mode || p.mode === 'day';
+  const items = list.map((p, i) => ({ p, i })).filter((x) => dayOnly(x.p)).map(({ p, i }) => ({ id: p.id, day: toDay, time: p.time || '11:00', pos: i }));
+  if (ev.from !== ev.to) [...ev.from.children].forEach((c, i) => { const p = S.posts.find((x) => x.id === +c.dataset.id); if (dayOnly(p)) items.push({ id: p.id, day: p.day, time: p.time || '11:00', pos: i }); });
   list.forEach((p, i) => { p.pos = i; });
   haptic('medium');
   try {
     await api('/reorder', { items });
     toast(old.day !== toDay ? 'Перенесено на день ' + toDay + (note ? ' · ' + note : '') : 'Порядок сохранён' + (note ? ' · ' + note : ''));
-  } catch (e) { moved.day = old.day; moved.time = old.time; toast('Не сохранилось: ' + e.message); }
+  } catch (e) { moved.day = old.day; moved.time = old.time; moved.mode = old.mode; toast('Не сохранилось: ' + e.message); }
   renderFeed();
+}
+
+// ---------- проверить ленту на себе ----------
+function runBox() {
+  const who = view.level === 'start' ? 'начинающего' : view.level === 'pro' ? 'продолжающего' : 'любого ученика';
+  const r = S.run;
+  return '<div class="box"><h3>Проверить на себе</h3><p class="small muted" style="margin:0 0 10px">Лента придёт тебе в бот — как её получит ' + who + ' (выбирается выше). Включённые посты, с подписью «когда».</p>' +
+    '<div class="btns" style="margin-top:0"><button class="btn" id="runPrev" type="button">▶️ Посмотреть ленту сейчас</button>' +
+    (r ? '<div class="note" style="margin:0">⏩ Идёт ускоренный тест (1 день = 1 минута) · уже пришло: ' + r.sent + '</div><button class="btn danger" id="runStop" type="button">⏹ Остановить тест</button>'
+       : '<button class="btn ghost" id="runFast" type="button">⏩ Ускоренный тест: 1 день = 1 минута</button>') + '</div></div>';
+}
+function bindRun() {
+  const lvl = view.level;
+  if ($('runPrev')) $('runPrev').onclick = async () => { try { await api('/run/preview', { level: lvl }); haptic('medium'); toast('Отправляю ленту тебе в бот 👀'); } catch (e) { toast(e.message); } };
+  if ($('runFast')) $('runFast').onclick = async () => { try { const r = await api('/run/fast', { level: lvl }); S.run = r.run; haptic('medium'); toast('Тест пошёл — смотри в боте ⏩'); renderFeed(); } catch (e) { toast(e.message); } };
+  if ($('runStop')) $('runStop').onclick = async () => { try { await api('/run/stop', {}); S.run = null; toast('Тест остановлен'); renderFeed(); } catch (e) { toast(e.message); } };
 }
 
 function renderDates() {
@@ -301,15 +339,23 @@ function segBind(id, on) { $(id).onclick = (e) => { const b = e.target.closest('
 
 function openPost(id) {
   const p = S.posts.find((x) => x.id === id); if (!p) return;
-  const st = { day: p.day, time: p.time, audience: p.audience, status: p.status, catchup: p.catchup, run_at: p.run_at };
+  const st = { day: p.day, time: p.time, audience: p.audience, status: p.status, catchup: p.catchup, run_at: p.run_at, mode: p.mode || 'day', delay: p.delay || 0, after: p.after };
+  const unitOf = (m) => (m >= 1440 && m % 1440 === 0 ? 1440 : m >= 60 && m % 60 === 0 ? 60 : 1);
+  const unitSel = (id, m) => '<select id="' + id + '" style="width:auto;flex:none">' + [[1, 'минут'], [60, 'часов'], [1440, 'дней']].map(([v, t]) => '<option value="' + v + '"' + (unitOf(m) === v ? ' selected' : '') + '>' + t + '</option>').join('') + '</select>';
+  const others = S.posts.filter((x) => x.kind === 'drip' && x.id !== p.id);
   const kindName = { drip: 'Пост ленты', date: 'Пост на дату', gift: 'Подарок после теста' }[p.kind];
   let h = '<span class="pill">' + kindName + ' · #' + p.id + '</span><h2>' + esc(postName(p)) + '</h2>' +
     '<div class="preview">' + esc(p.text || '(без текста)') + '</div>' +
     (p.media.length ? '<p class="small muted" style="margin:6px 2px 0">🖼 вложений: ' + p.media.length + '</p>' : '') +
     '<label class="f">Название для себя</label><input type="text" id="fTitle" maxlength="80" placeholder="Например: «Чек-лист, день 1»" value="' + esc(p.title) + '">';
   if (p.kind === 'drip') {
-    h += '<label class="f">Когда</label><div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:12px"><div class="step"><button type="button" id="dMinus">−</button><b id="dVal">' + st.day + '</b><button type="button" id="dPlus">+</button></div>' +
-      '<div id="tWrap" style="flex:1;min-width:140px"><input type="time" id="fTime" value="' + esc(st.time) + '"></div></div><p class="small muted" id="dHint" style="margin:6px 2px 0"></p>' +
+    h += '<label class="f">Когда отправлять</label>' + segHtml('fMode', [['day', '📅 В день'], ['timer', '⏱ Таймер'], ['after', '↳ После поста']], st.mode) +
+      '<div id="pDay" style="margin-top:10px"><div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:12px"><div class="step"><button type="button" id="dMinus">−</button><b id="dVal">' + st.day + '</b><button type="button" id="dPlus">+</button></div>' +
+      '<div id="tWrap" style="flex:1;min-width:140px"><input type="time" id="fTime" value="' + esc(st.time) + '"></div></div><p class="small muted" id="dHint" style="margin:6px 2px 0"></p></div>' +
+      '<div id="pTimer" style="margin-top:10px"><div class="row"><span>через</span><input type="number" id="tNum" min="0" step="1" style="width:90px" value="' + (st.mode === 'timer' ? st.delay / unitOf(st.delay) : 30) + '">' + unitSel('tUnit', st.mode === 'timer' ? st.delay : 1) + '</div><p class="small muted" id="tHint" style="margin:6px 2px 0"></p></div>' +
+      '<div id="pAfter" style="margin-top:10px">' + (others.length ? '<select id="aPost">' + others.map((x) => '<option value="' + x.id + '"' + (st.after === x.id ? ' selected' : '') + '>' + esc(postName(x).slice(0, 40)) + ' — ' + esc(whenShort(x, byIdMap())) + '</option>').join('') + '</select>' +
+        '<div class="row" style="margin-top:8px"><span>через</span><input type="number" id="aNum" min="0" step="1" style="width:90px" value="' + (st.mode === 'after' ? st.delay / unitOf(st.delay) : 1) + '">' + unitSel('aUnit', st.mode === 'after' ? st.delay : 60) + '</div><p class="small muted" id="aHint" style="margin:6px 2px 0"></p>'
+        : '<p class="small muted">Других постов ленты пока нет.</p>') + '</div>' +
       '<div class="toggle"><span><b>Догонять опоздавших</b><br><span class="small muted">Пост получат и те, у кого этот день уже прошёл</span></span><label class="sw"><input type="checkbox" id="fCatch" ' + (st.catchup ? 'checked' : '') + '><span></span></label></div>';
   }
   if (p.kind === 'date') h += '<label class="f">Дата и время (по Москве)</label><input type="datetime-local" id="fRun" value="' + toLocal(st.run_at) + '">';
@@ -321,6 +367,13 @@ function openPost(id) {
   h += '<div class="btns"><button class="btn" id="bSave">Сохранить</button><div class="btns two" style="margin:0"><button class="btn ghost" id="bPrev">👁 Прислать мне</button><button class="btn ghost" id="bClose">Закрыть</button></div><button class="btn danger" id="bArch">🗄 Убрать в архив</button></div>' +
     '<div class="note">Текст и картинки меняются в боте: <b>/posts</b> → этот пост → ✏️ «Текст и картинки».</div>';
   sheet(h);
+  const showMode = () => { if (!$('pDay')) return; $('pDay').style.display = st.mode === 'day' ? '' : 'none'; $('pTimer').style.display = st.mode === 'timer' ? '' : 'none'; $('pAfter').style.display = st.mode === 'after' ? '' : 'none'; hints(); };
+  const delayOf = (n, u) => Math.max(0, Math.round((+$(n).value || 0) * +$(u).value));
+  const hints = () => {
+    if ($('tHint')) $('tHint').textContent = 'Через ' + fmtDelay(delayOf('tNum', 'tUnit')) + ' после того, как человек согласился на рассылку (в любое время суток).';
+    if ($('aHint')) { const par = S.posts.find((x) => x.id === +$('aPost').value); $('aHint').textContent = 'Через ' + fmtDelay(delayOf('aNum', 'aUnit')) + ' после того, как человек получил «' + (par ? postName(par).slice(0, 40) : '') + '». Пока тот пост не ушёл — этот не уйдёт.'; }
+  };
+  if ($('fMode')) { segBind('fMode', (v) => { st.mode = v; haptic(); showMode(); }); ['tNum', 'tUnit', 'aNum', 'aUnit', 'aPost'].forEach((i) => { if ($(i)) $(i).oninput = hints; }); showMode(); }
   const upd = () => { if (!$('dVal')) return; $('dVal').textContent = st.day; $('tWrap').style.display = st.day === 0 ? 'none' : ''; $('dHint').textContent = 'День ' + st.day + ' — ' + dayLabel(st.day) + (st.day ? ', в ' + ($('fTime').value || st.time) + ' по Москве' : ''); };
   if ($('dMinus')) { $('dMinus').onclick = () => { st.day = Math.max(0, st.day - 1); haptic(); upd(); }; $('dPlus').onclick = () => { st.day = Math.min(365, st.day + 1); haptic(); upd(); }; $('fTime').oninput = upd; upd(); }
   segBind('fAud', (v) => st.audience = v); segBind('fSt', (v) => st.status = v);
@@ -354,7 +407,12 @@ function openPost(id) {
   $('bSave').onclick = async () => {
     syncRows();
     const body = { title: $('fTitle').value.trim(), audience: st.audience, status: st.status, rows };
-    if (p.kind === 'drip') { body.day = st.day; if (st.day > 0) body.time = $('fTime').value || st.time; body.catchup = $('fCatch').checked; }
+    if (p.kind === 'drip') {
+      body.mode = st.mode; body.catchup = $('fCatch').checked;
+      if (st.mode === 'day') { body.day = st.day; if (st.day > 0) body.time = $('fTime').value || st.time; }
+      if (st.mode === 'timer') body.delay_min = delayOf('tNum', 'tUnit');
+      if (st.mode === 'after') { if (!$('aPost')) return toast('Нет поста, после которого отправлять'); body.after_id = +$('aPost').value; body.delay_min = delayOf('aNum', 'aUnit'); }
+    }
     if (p.kind === 'date') { const t = fromLocal($('fRun').value); if (!t) return toast('Выбери дату и время'); body.run_at = t; }
     try {
       const r = await api('/post/' + p.id, body);

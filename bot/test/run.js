@@ -382,4 +382,56 @@ step('без дублей: двойной «Старт» игнорируетс�
 }
 step('«печатает…» в чате: пузырёк • → • • → • • • перед каждым сообщением, без пустых пауз');
 
+// ---------- таймер и «после поста» ----------
+{
+  await db.run(`UPDATE posts SET status = 'paused' WHERE kind IN ('drip', 'date')`);
+  const ins = async (o) => { await db.run(`INSERT INTO posts (title, kind, audience, mode, delay_min, after_id, day, send_time, status, text, created_at) VALUES (?, 'drip', 'all', ?, ?, ?, 0, '11:00', 'active', ?, ?)`, [o.title, o.mode, o.delay, o.after || null, o.title, NOW - 10]); return (await db.first('SELECT MAX(id) AS id FROM posts')).id; };
+  const tA = await ins({ title: 'Таймер 2ч', mode: 'timer', delay: 120 });
+  const tB = await ins({ title: 'После таймера +1ч', mode: 'after', delay: 60, after: tA });
+  // новый ученик подписался сейчас
+  await msg(1100, '/start'); await cb(1100, 'c:pd'); await cb(1100, 'lv:start'); await cb(1100, 'c:ads:1');
+  const base = NOW;
+  const got = () => calls.filter((c) => c.body.chat_id === 1100 && c.method === 'sendMessage' && /Таймер 2ч|После таймера/.test(c.body.text || '')).map((c) => c.body.text);
+  NOW = base + 119 * 60; await tick(C(), 40);
+  assert.deepEqual(got(), [], 'за минуту до таймера — ничего');
+  NOW = base + 121 * 60; await tick(C(), 40);
+  assert.deepEqual(got(), ['Таймер 2ч'], 'через 2 часа после входа — пост по таймеру');
+  NOW = base + 170 * 60; await tick(C(), 40);
+  assert.deepEqual(got(), ['Таймер 2ч'], 'цепочка ждёт час после предыдущего поста');
+  NOW = base + 182 * 60; await tick(C(), 40);
+  assert.deepEqual(got(), ['Таймер 2ч', 'После таймера +1ч'], 'через час после первого — второй');
+  NOW = base + 300 * 60; await tick(C(), 40);
+  assert.equal(got().length, 2, 'без повторов');
+  // ---------- тест на себе ----------
+  const { runPreview, startFastRun, stepRuns } = await import('../src/testrun.js');
+  await db.run(`UPDATE posts SET status = 'active' WHERE kind = 'drip' AND mode = 'day' AND day > 0`);
+  const p0 = calls.length;
+  await runPreview(C(), 100, 'start', 0);
+  const pv = calls.slice(p0).filter((c) => c.body.chat_id === 100 && c.method === 'sendMessage').map((c) => c.body.text || '');
+  assert.match(pv[0], /Предпросмотр ленты — как её получит начинающий/);
+  const labels = pv.filter((t) => t.startsWith('🧪 ') && !/Конец/.test(t));
+  assert.ok(labels.some((t) => /⏱ через 2 ч после входа/.test(t)) && labels.some((t) => /↳ через 1 ч после «Таймер 2ч»/.test(t)), 'подписи «когда»: ' + labels.join(' | '));
+  assert.ok(labels.findIndex((t) => /Таймер 2ч/.test(t)) < labels.findIndex((t) => /После таймера/.test(t)), 'порядок по времени');
+  assert.ok(!labels.some((t) => /19:30/.test(t)), 'пост для продолжающих в ленту начинающего не попал');
+  // ускоренный: 1 день = 1 минута
+  const f0 = calls.length;
+  await startFastRun(C(), 100, 'start'); const st0 = NOW;
+  await stepRuns(C(), 30);
+  const after0 = calls.slice(f0).filter((c) => c.body.chat_id === 100 && /^🧪 /.test(c.body.text || '')).map((c) => c.body.text);
+  assert.ok(after0.some((t) => /подарок/.test(t)) && !after0.some((t) => /день 1/.test(t)), 'сначала подарок, день 1 ещё не пришёл: ' + after0.join(' | '));
+  NOW = st0 + 10; await stepRuns(C(), 30);
+  const after10 = calls.slice(f0).filter((c) => c.body.chat_id === 100 && /^🧪 /.test(c.body.text || '')).map((c) => c.body.text);
+  assert.ok(after10.some((t) => /через 2 ч/.test(t)), 'через 10 секунд (= 4 часа ленты) пришёл пост «через 2 ч»');
+  NOW = st0 + 170; await stepRuns(C(), 30);
+  let got3 = calls.slice(f0).filter((c) => c.body.chat_id === 100 && /^🧪 /.test(c.body.text || '')).map((c) => c.body.text);
+  assert.ok(!got3.some((t) => /день 3 · 10:15/.test(t)), 'день 3 ещё рано (прошло меньше 3 минут)');
+  NOW = st0 + 190; await stepRuns(C(), 30);
+  got3 = calls.slice(f0).filter((c) => c.body.chat_id === 100 && /^🧪 /.test(c.body.text || '')).map((c) => c.body.text);
+  assert.ok(got3.some((t) => /день 3 · 10:15/.test(t)), 'через ~3 минуты (= 3 дня) — пост дня 3: ' + got3.join(' | '));
+  NOW = st0 + 400; await stepRuns(C(), 30);
+  assert.ok(calls.slice(f0).some((c) => c.body.chat_id === 100 && /тест закончен/.test(c.body.text || '')), 'тест сам заканчивается');
+  await db.run(`UPDATE posts SET status = 'paused' WHERE id IN (?, ?)`, [tA, tB]);
+}
+step('когда отправлять: по таймеру после входа и «после поста»; проверка на себе — предпросмотр и ускоренный тест');
+
 console.log('\nВсе сценарии прошли. Запросов к фейковому Telegram:', calls.length);

@@ -80,6 +80,11 @@ const NOT_SENT = `NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.post_id = ? AND
 //   день 0  -> сразу после входа
 //   день N  -> полночь по Москве дня входа + N дней + время отправки
 export function dueSql(post) {
+  const delay = (Number(post.delay_min) || 0) * 60;
+  // по таймеру: через N минут после входа
+  if (post.mode === 'timer') return `(u.joined_at + ${delay})`;
+  // после другого поста: через N минут после того, как этот человек получил тот пост
+  if (post.mode === 'after') return `((SELECT d2.sent_at FROM deliveries d2 WHERE d2.post_id = ${Number(post.after_id) || 0} AND d2.tg_id = u.tg_id AND d2.ok = 1) + ${delay})`;
   const tod = timeSec(post.send_time);
   return Number(post.day) === 0
     ? `u.joined_at`
@@ -135,6 +140,8 @@ export function postLabel(p) {
 export function postWhen(p) {
   if (p.kind === 'gift') return 'подарок после теста';
   if (p.kind === 'date') return p.run_at ? `дата ${fmtWhen(p.run_at)}` : 'дата не задана';
+  if (p.mode === 'timer') return `через ${fmtDelay(p.delay_min)} после входа`;
+  if (p.mode === 'after') return `через ${fmtDelay(p.delay_min)} после поста #${p.after_id}`;
   return Number(p.day) === 0 ? 'день 0 · сразу' : `день ${p.day} · ${p.send_time}`;
 }
 export function postSummary(p) {
@@ -148,3 +155,23 @@ export function postSummary(p) {
   ].join('\n');
 }
 export { fmtTime };
+
+// «через 30 мин», «через 2 ч», «через 3 дн», «через 1 дн 4 ч»
+export function fmtDelay(min) {
+  const m = Number(min) || 0;
+  if (m === 0) return '0 мин (сразу)';
+  const d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mm = m % 60;
+  return [d ? d + ' дн' : '', h ? h + ' ч' : '', mm ? mm + ' мин' : ''].filter(Boolean).join(' ');
+}
+
+// Смещение поста от входа человека, в минутах — для порядка в ленте и для тестового прогона.
+// Вход считаем в 10:00 по Москве (как средний случай). Цепочки «после поста» разворачиваем.
+export function offsetMin(p, byId, depth = 0) {
+  if (!p || depth > 20) return 0;
+  if (p.mode === 'timer') return Number(p.delay_min) || 0;
+  if (p.mode === 'after') return offsetMin(byId[p.after_id], byId, depth + 1) + (Number(p.delay_min) || 0);
+  const day = Number(p.day) || 0;
+  if (day === 0) return 0;
+  const t = timeSec(p.send_time) / 60;
+  return day * 1440 + t - 600;
+}

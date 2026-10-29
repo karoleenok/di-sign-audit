@@ -89,6 +89,21 @@ var MIGRATIONS = [
   // v3: служебные сообщения бота (согласия, вопросы), которые убираются, когда уже не нужны
   [
     `ALTER TABLE users ADD COLUMN tech TEXT`
+  ],
+  // v4: когда отправлять пост ленты — в день и время / по таймеру после входа / после другого поста;
+  //     тестовые прогоны ленты для админа (1 день = 1 минута)
+  [
+    `ALTER TABLE posts ADD COLUMN mode TEXT NOT NULL DEFAULT 'day'`,
+    `ALTER TABLE posts ADD COLUMN delay_min INTEGER`,
+    `ALTER TABLE posts ADD COLUMN after_id INTEGER`,
+    `CREATE TABLE IF NOT EXISTS test_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      admin_id INTEGER NOT NULL, level TEXT, started_at INTEGER NOT NULL, scale INTEGER NOT NULL DEFAULT 1440,
+      status TEXT NOT NULL DEFAULT 'active'
+    )`,
+    `CREATE TABLE IF NOT EXISTS test_sent (
+      run_id INTEGER NOT NULL, post_id INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (run_id, post_id)
+    )`
   ]
 ];
 var checked = false;
@@ -605,6 +620,9 @@ function audienceSql(post) {
 var BASE = `u.status = 'active' AND u.consent_ads_at IS NOT NULL AND u.joined_at IS NOT NULL AND u.paid_at IS NULL`;
 var NOT_SENT = `NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.post_id = ? AND d.tg_id = u.tg_id)`;
 function dueSql(post) {
+  const delay = (Number(post.delay_min) || 0) * 60;
+  if (post.mode === "timer") return `(u.joined_at + ${delay})`;
+  if (post.mode === "after") return `((SELECT d2.sent_at FROM deliveries d2 WHERE d2.post_id = ${Number(post.after_id) || 0} AND d2.tg_id = u.tg_id AND d2.ok = 1) + ${delay})`;
   const tod = timeSec(post.send_time);
   return Number(post.day) === 0 ? `u.joined_at` : `(((u.joined_at + ${MSK}) / ${DAY}) * ${DAY} - ${MSK} + ${Number(post.day) * DAY} + ${tod})`;
 }
@@ -650,6 +668,8 @@ function postLabel(p) {
 function postWhen(p) {
   if (p.kind === "gift") return "подарок после теста";
   if (p.kind === "date") return p.run_at ? `дата ${fmtWhen(p.run_at)}` : "дата не задана";
+  if (p.mode === "timer") return `через ${fmtDelay(p.delay_min)} после входа`;
+  if (p.mode === "after") return `через ${fmtDelay(p.delay_min)} после поста #${p.after_id}`;
   return Number(p.day) === 0 ? "день 0 · сразу" : `день ${p.day} · ${p.send_time}`;
 }
 function postSummary(p) {
@@ -661,6 +681,21 @@ function postSummary(p) {
     `Кому: ${AUD[p.audience] || p.audience}`,
     `Кнопок: ${btns}${p.kind === "drip" ? ` · догонять опоздавших: ${p.catchup ? "да" : "нет"}` : ""}`
   ].join("\n");
+}
+function fmtDelay(min) {
+  const m = Number(min) || 0;
+  if (m === 0) return "0 мин (сразу)";
+  const d = Math.floor(m / 1440), h = Math.floor(m % 1440 / 60), mm = m % 60;
+  return [d ? d + " дн" : "", h ? h + " ч" : "", mm ? mm + " мин" : ""].filter(Boolean).join(" ");
+}
+function offsetMin(p, byId, depth = 0) {
+  if (!p || depth > 20) return 0;
+  if (p.mode === "timer") return Number(p.delay_min) || 0;
+  if (p.mode === "after") return offsetMin(byId[p.after_id], byId, depth + 1) + (Number(p.delay_min) || 0);
+  const day = Number(p.day) || 0;
+  if (day === 0) return 0;
+  const t = timeSec(p.send_time) / 60;
+  return day * 1440 + t - 600;
 }
 
 // src/users.js
@@ -1032,6 +1067,10 @@ var GUIDE = {
 <b>Поменять день, время, кнопки, кому, паузу</b>: нажми на карточку → в окне кнопки − и + для дня, поле времени, кнопки под постом (текст + ссылка, «＋ Кнопка в этот ряд», «＋ Новый ряд», ↑ ↓, ✕), «Всем / Начинающим / Продолжающим», статус → «Сохранить». Внизу покажет, скольким людям пост подходит сейчас.
 
 <b>Проверить, что получит человек</b>: наверху «Как увидит человек» — выбери начинающего или продолжающего. Посты, которые он не получит, станут бледными с пометкой «не получит». Переключатель прячет их совсем.
+
+<b>Когда отправлять</b> (в окне поста): 📅 <b>В день</b> — день и время по Москве; ⏱ <b>Таймер</b> — через N минут / часов / дней после того, как человек подписался; ↳ <b>После поста</b> — через N после того, как человек получил выбранный пост (цепочка: пока тот не ушёл, этот ждёт). В ленте на карточке видно, почему пост стоит здесь.
+
+<b>Проверить на себе</b> (наверху ленты): ▶️ «Посмотреть ленту сейчас» — все включённые посты придут тебе подряд с подписью «когда»; ⏩ «Ускоренный тест» — по-настоящему, с паузами, но 1 день = 1 минута, есть «⏹ Остановить». Для кого — выбери выше в «Как увидит человек».
 
 <b>👁 Прислать мне</b> — пост придёт тебе в бот, как ученику.
 
@@ -1949,6 +1988,105 @@ async function exportAll(db) {
   return out;
 }
 
+// src/testrun.js
+var sleep2 = (ms) => new Promise((r) => setTimeout(r, ms));
+var fitsLevel = (p, level) => !level || level === "all" || p.audience === "all" || p.audience === level;
+async function feedOrder(db, level, { withDrafts = false } = {}) {
+  const all = await db.all(`SELECT * FROM posts WHERE kind IN ('drip', 'gift') AND status IN (${withDrafts ? "'active','paused','draft'" : "'active'"})`);
+  const byId = Object.fromEntries(all.map((p) => [p.id, p]));
+  const gifts = all.filter((p) => p.kind === "gift" && fitsLevel(p, level)).sort((a, b) => a.id - b.id);
+  const drip = all.filter((p) => p.kind === "drip" && fitsLevel(p, level)).map((p) => ({ p, off: offsetMin(p, byId) })).sort((a, b) => a.off - b.off || (a.p.pos || 0) - (b.p.pos || 0) || a.p.id - b.p.id);
+  return { gifts, drip, byId };
+}
+function whenLabel(p, off, byId) {
+  if (p.kind === "gift") return "🎁 подарок после теста";
+  if (p.mode === "timer") return `⏱ через ${fmtDelay(p.delay_min)} после входа`;
+  if (p.mode === "after") {
+    const par = byId && byId[p.after_id];
+    return `↳ через ${fmtDelay(p.delay_min)} после «${par ? (par.title || (par.text || "").split("\n")[0]).slice(0, 30) : "#" + p.after_id}»`;
+  }
+  return Number(p.day) === 0 ? "день 0 · сразу после входа" : `день ${p.day} · ${p.send_time}`;
+}
+async function sendLabeled(ctx, chatId, p, label, arrow) {
+  await ctx.tg.call("sendMessage", { chat_id: chatId, text: "🧪 " + label + (p.title ? ` · «${p.title}»` : ""), disable_notification: true });
+  await sendPost(ctx.tg, chatId, p, { uid: chatId, publicUrl: ctx.publicUrl, arrow });
+}
+async function runPreview(ctx, adminId, level, pauseMs = 900) {
+  const { gifts, drip, byId } = await feedOrder(ctx.db, level);
+  const items = [...gifts.map((p) => ({ p, off: -1 })), ...drip];
+  const MAX = 14;
+  const arrow = await btn(ctx, "buttonsArrow");
+  await ctx.tg.call("sendMessage", { chat_id: adminId, text: `🧪 Предпросмотр ленты — как её получит ${level && level !== "all" ? AUD[level].replace(/им$/, "ий") : "любой ученик"}.
+Постов: ${items.length}${items.length > MAX ? ` (покажу первые ${MAX})` : ""}. Подпись над каждым — когда он придёт.` });
+  let n = 0;
+  for (const it of items.slice(0, MAX)) {
+    const k = ctx.env.DELAY_FACTOR === void 0 ? 1 : Number(ctx.env.DELAY_FACTOR);
+    if (pauseMs && k > 0) await sleep2(pauseMs * k);
+    try {
+      await sendLabeled(ctx, adminId, it.p, whenLabel(it.p, it.off, byId), arrow);
+      n++;
+    } catch (e) {
+      await ctx.tg.call("sendMessage", { chat_id: adminId, text: `⚠️ Пост #${it.p.id} не отправился: ${e.message}` }).catch(() => {
+      });
+    }
+  }
+  if (!items.length) await ctx.tg.call("sendMessage", { chat_id: adminId, text: "Включённых постов пока нет — создай в боте: /new" });
+  else await ctx.tg.call("sendMessage", { chat_id: adminId, text: `🧪 Конец предпросмотра · показано ${n}` });
+  return n;
+}
+async function startFastRun(ctx, adminId, level) {
+  await ctx.db.run(`UPDATE test_runs SET status = 'stopped' WHERE admin_id = ? AND status = 'active'`, [adminId]);
+  await ctx.db.run(`INSERT INTO test_runs (admin_id, level, started_at, scale, status) VALUES (?, ?, ?, 1440, 'active')`, [adminId, level || "all", ctx.now]);
+  const run = await ctx.db.first(`SELECT * FROM test_runs WHERE admin_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1`, [adminId]);
+  const { drip } = await feedOrder(ctx.db, level);
+  const last = drip.length ? Math.max(...drip.map((x) => x.off)) : 0;
+  await ctx.tg.call("sendMessage", { chat_id: adminId, text: `⏩ Ускоренный тест начался: 1 день = 1 минута.
+Лента придёт тебе в реальном порядке и с паузами, примерно за ${Math.max(1, Math.ceil(last / 1440) + 1)} мин. Остановить — в панели «⏹ Остановить».` });
+  return run;
+}
+async function stopRuns(ctx, adminId) {
+  await ctx.db.run(`UPDATE test_runs SET status = 'stopped' WHERE admin_id = ? AND status = 'active'`, [adminId]);
+}
+async function stepRuns(ctx, budget = 10) {
+  const runs = await ctx.db.all(`SELECT * FROM test_runs WHERE status = 'active' ORDER BY id LIMIT 3`);
+  let left = budget;
+  for (const run of runs) {
+    if (ctx.now - run.started_at > 3 * 3600) {
+      await ctx.db.run(`UPDATE test_runs SET status = 'done' WHERE id = ?`, [run.id]);
+      continue;
+    }
+    const vmin = (ctx.now - run.started_at) * (run.scale || 1440) / 60;
+    const { gifts, drip, byId } = await feedOrder(ctx.db, run.level);
+    const sent = new Set((await ctx.db.all(`SELECT post_id FROM test_sent WHERE run_id = ?`, [run.id])).map((r) => r.post_id));
+    const queue = [...gifts.map((p) => ({ p, off: -1 })), ...drip].filter((x) => !sent.has(x.p.id));
+    const due = queue.filter((x) => x.off <= vmin);
+    const arrow = due.length ? await btn(ctx, "buttonsArrow") : "";
+    for (const it of due) {
+      if (left < 3) break;
+      try {
+        await sendLabeled(ctx, run.admin_id, it.p, whenLabel(it.p, it.off, byId), arrow);
+      } catch (e) {
+        await ctx.tg.call("sendMessage", { chat_id: run.admin_id, text: `⚠️ Пост #${it.p.id} не отправился: ${e.message}` }).catch(() => {
+        });
+      }
+      left -= 3;
+      await ctx.db.run(`INSERT OR IGNORE INTO test_sent (run_id, post_id, at) VALUES (?, ?, ?)`, [run.id, it.p.id, ctx.now]);
+      sent.add(it.p.id);
+    }
+    if (queue.every((x) => sent.has(x.p.id))) {
+      await ctx.db.run(`UPDATE test_runs SET status = 'done' WHERE id = ?`, [run.id]);
+      await ctx.tg.call("sendMessage", { chat_id: run.admin_id, text: "⏩ Ускоренный тест закончен — это вся лента 🐾" }).catch(() => {
+      });
+    }
+  }
+}
+async function activeRun(db, adminId) {
+  const r = await db.first(`SELECT * FROM test_runs WHERE admin_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1`, [adminId]);
+  if (!r) return null;
+  const sent = await db.first(`SELECT COUNT(*) AS n FROM test_sent WHERE run_id = ?`, [r.id]);
+  return { id: r.id, level: r.level, started_at: r.started_at, sent: sent.n };
+}
+
 // src/panel-api.js
 var enc = new TextEncoder();
 async function hmac(key, data) {
@@ -2000,6 +2138,9 @@ function postOut(p, sent, clicks) {
     text: (p.text || "").slice(0, 400),
     day: p.day,
     time: p.send_time,
+    mode: p.mode || "day",
+    delay: p.delay_min || 0,
+    after: p.after_id || null,
     run_at: p.run_at,
     audience: p.audience,
     catchup: !!p.catchup,
@@ -2075,7 +2216,8 @@ async function handlePanelApi(ctx, request, url) {
       levels: LEVELS,
       posts: posts.map((p) => postOut(p, sent[p.id], clicks[p.id])),
       msgs: await listMsgs(ctx),
-      people: { all: people.n || 0, active: people.active || 0 }
+      people: { all: people.n || 0, active: people.active || 0 },
+      run: await activeRun(ctx.db, user.id)
     });
   }
   let m = /^\/post\/(\d+)$/.exec(path);
@@ -2088,6 +2230,26 @@ async function handlePanelApi(ctx, request, url) {
       set.push(`${col} = ?`);
       val.push(v);
     };
+    if (body.mode !== void 0 && p.kind === "drip") {
+      if (!["day", "timer", "after"].includes(body.mode)) return json({ error: "Неизвестный способ отправки" }, 400);
+      put("mode", body.mode);
+      if (body.mode !== "day") {
+        const dm = parseInt(body.delay_min, 10);
+        if (!(dm >= 0 && dm <= 365 * 1440)) return json({ error: "Время — от 0 минут до 365 дней" }, 400);
+        put("delay_min", dm);
+      }
+      if (body.mode === "after") {
+        const aid = parseInt(body.after_id, 10);
+        if (!aid || aid === p.id) return json({ error: "Выбери пост, после которого отправлять" }, 400);
+        let cur = await ctx.db.first(`SELECT id, kind, mode, after_id FROM posts WHERE id = ?`, [aid]);
+        if (!cur || cur.kind !== "drip") return json({ error: "Такого поста ленты нет" }, 400);
+        for (let i = 0; cur && cur.mode === "after" && i < 50; i++) {
+          if (cur.after_id === p.id) return json({ error: "Получится круг: тот пост уже идёт после этого" }, 400);
+          cur = await ctx.db.first(`SELECT id, kind, mode, after_id FROM posts WHERE id = ?`, [cur.after_id]);
+        }
+        put("after_id", aid);
+      }
+    }
     if (body.day !== void 0 && p.kind === "drip") {
       const d = parseInt(body.day, 10);
       if (!(d >= 0 && d <= 365)) return json({ error: "День — от 0 до 365" }, 400);
@@ -2145,9 +2307,30 @@ async function handlePanelApi(ctx, request, url) {
       if (!(d >= 0 && d <= 365) || !t) return json({ error: "Неверный день или время" }, 400);
     }
     for (const it of items) {
-      await ctx.db.run(`UPDATE posts SET day = ?, send_time = ?, pos = ? WHERE id = ? AND kind = 'drip'`, [parseInt(it.day, 10), pad(it.time), parseInt(it.pos, 10) || 0, +it.id]);
+      await ctx.db.run(`UPDATE posts SET day = ?, send_time = ?, pos = ?, mode = 'day' WHERE id = ? AND kind = 'drip'`, [parseInt(it.day, 10), pad(it.time), parseInt(it.pos, 10) || 0, +it.id]);
     }
     return json({ ok: true, n: items.length });
+  }
+  if (path === "/run/preview" && request.method === "POST") {
+    const level = ["start", "pro"].includes(body.level) ? body.level : "all";
+    const job = runPreview(ctx, user.id, level).catch((e) => console.log("preview", e && e.stack));
+    if (ctx.waitUntil) ctx.waitUntil(job);
+    else await job;
+    return json({ ok: true });
+  }
+  if (path === "/run/fast" && request.method === "POST") {
+    const level = ["start", "pro"].includes(body.level) ? body.level : "all";
+    await startFastRun(ctx, user.id, level);
+    const job = stepRuns(ctx, 12).catch((e) => console.log("run", e && e.stack));
+    if (ctx.waitUntil) ctx.waitUntil(job);
+    else await job;
+    return json({ ok: true, run: await activeRun(ctx.db, user.id) });
+  }
+  if (path === "/run/stop" && request.method === "POST") {
+    await stopRuns(ctx, user.id);
+    await ctx.tg.call("sendMessage", { chat_id: user.id, text: "⏹ Ускоренный тест остановлен" }).catch(() => {
+    });
+    return json({ ok: true });
   }
   m = /^\/post\/(\d+)\/preview$/.exec(path);
   if (m && request.method === "POST") {
@@ -2333,6 +2516,21 @@ const fmtRun = (t) => { if (!t) return 'дата не задана'; const d = n
 const toLocal = (t) => t ? new Date((t + 10800) * 1000).toISOString().slice(0, 16) : '';
 const fromLocal = (s) => { const m = /^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2})$/.exec(s || ''); return m ? Date.UTC(+m[1], +m[2]-1, +m[3], +m[4], +m[5]) / 1000 - 10800 : null; };
 const dayLabel = (d) => d === 0 ? 'сразу после согласия на рассылку' : d === 1 ? 'на следующий день' : 'через ' + d + ' ' + (d % 10 === 1 && d % 100 !== 11 ? 'день' : (d % 10 >= 2 && d % 10 <= 4 && (d % 100 < 10 || d % 100 >= 20)) ? 'дня' : 'дней') + ' после входа';
+// когда уходит пост ленты: в день и время / по таймеру после входа / после другого поста
+const timeMin = (t) => { const m = /^(\\d{1,2}):(\\d{2})$/.exec(t || '11:00'); return m ? +m[1] * 60 + +m[2] : 660; };
+const fmtDelay = (min) => { const m = +min || 0; if (!m) return '0 мин'; const d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mm = m % 60; return [d ? d + ' дн' : '', h ? h + ' ч' : '', mm ? mm + ' мин' : ''].filter(Boolean).join(' '); };
+const byIdMap = () => Object.fromEntries(S.posts.map((p) => [p.id, p]));
+// смещение от входа (вход условно в 10:00), в минутах
+function offMin(p, ids, depth) { depth = depth || 0; if (!p || depth > 20) return 0;
+  if (p.mode === 'timer') return p.delay || 0;
+  if (p.mode === 'after') return offMin(ids[p.after], ids, depth + 1) + (p.delay || 0);
+  return p.day ? p.day * 1440 + timeMin(p.time) - 600 : 0; }
+const bucketDay = (p, ids) => p.mode === 'day' || !p.mode ? (p.day || 0) : Math.floor(Math.max(0, offMin(p, ids) + 600) / 1440);
+function whenShort(p, ids) {
+  if (p.mode === 'timer') return '⏱ через ' + fmtDelay(p.delay) + ' после входа';
+  if (p.mode === 'after') { const par = ids[p.after]; return '↳ через ' + fmtDelay(p.delay) + ' после «' + (par ? postName(par).slice(0, 26) : '#' + p.after) + '»'; }
+  return p.day === 0 ? 'сразу' : p.time;
+}
 // получит ли этот пост выбранный человек
 function gets(p) {
   return view.level === 'all' || p.audience === 'all' || p.audience === view.level;
@@ -2351,7 +2549,7 @@ function tags(p) {
 function cardHtml(p, opts) {
   opts = opts || {};
   const off = view.level !== 'all' && !gets(p);
-  const time = opts.time != null ? opts.time : (p.kind === 'drip' ? (p.day === 0 ? 'сразу' : p.time) : '');
+  const time = opts.time != null ? opts.time : (p.kind === 'drip' ? whenShort(p, byIdMap()) : '');
   return '<div class="card' + (off ? ' off' : '') + '" data-id="' + p.id + '">' +
     (opts.drag ? '<div class="handle" aria-label="перетащить">⋮⋮</div>' : '<div style="width:6px"></div>') +
     '<div class="cbody"><div class="ctop">' + (time ? '<span class="time">' + esc(time) + '</span>' : '') +
@@ -2386,18 +2584,19 @@ function bindView() {
 
 function renderFeed() {
   const drip = S.posts.filter((p) => p.kind === 'drip');
-  const maxDay = drip.reduce((m, p) => Math.max(m, p.day), 0);
+  const ids = byIdMap();
+  const maxDay = drip.reduce((m, p) => Math.max(m, bucketDay(p, ids)), 0);
   const last = Math.max(7, maxDay + 1);
   const filtered = (view.hide && view.level !== 'all') ? drip.filter(gets) : drip;
-  let h = viewBox();
+  let h = viewBox() + runBox();
   if (!drip.length) h += '<div class="empty">Постов по дням пока нет.<br>Создай первый в боте: <b>/new</b> → «Через N дней после входа».</div>';
   for (let d = 0; d <= last; d++) {
-    const items = filtered.filter((p) => p.day === d).sort((a, b) => (a.day === 0 ? 0 : a.time.localeCompare(b.time)) || a.pos - b.pos || a.id - b.id);
+    const items = filtered.filter((p) => bucketDay(p, ids) === d).sort((a, b) => offMin(a, ids) - offMin(b, ids) || a.pos - b.pos || a.id - b.id);
     h += '<section class="day"><div class="dayh"><b>День ' + d + '</b><span>' + dayLabel(d) + '</span></div><div class="list" data-day="' + d + '">' + items.map((p) => cardHtml(p, { drag: true })).join('') + '</div></section>';
   }
   h += '<div class="note" style="margin-top:22px">Новый пост создаётся в боте: <b>/new</b>. Там же меняются текст и картинки поста (<b>/posts</b> → пост → ✏️). Здесь — порядок, дни, время и кому.</div>';
   $('body').innerHTML = h;
-  bindView();
+  bindView(); bindRun();
   document.querySelectorAll('.list').forEach((el) => {
     Sortable.create(el, {
       group: 'drip', handle: '.handle', animation: 160, ghostClass: 'ghost', chosenClass: 'chosen', forceFallback: true, fallbackTolerance: 4, scroll: true, bubbleScroll: true,
@@ -2415,24 +2614,46 @@ async function onDrop(ev) {
   const ids = [...ev.to.children].map((c) => +c.dataset.id);
   const list = ids.map((i) => S.posts.find((p) => p.id === i));
   const k = ids.indexOf(id);
-  const old = { day: moved.day, time: moved.time };
+  const old = { day: moved.day, time: moved.time, mode: moved.mode };
   moved.day = toDay;
   let note = '';
+  if (moved.mode && moved.mode !== 'day') { moved.mode = 'day'; moved.time = moved.time && moved.time !== '00:00' ? moved.time : '11:00'; note = 'теперь «в день и время»'; }
   if (toDay > 0) {
-    const prev = list[k - 1], next = list[k + 1];
+    const isDay = (p) => p && (!p.mode || p.mode === 'day');
+    let prev = null, next = null;
+    for (let i = k - 1; i >= 0; i--) if (isDay(list[i])) { prev = list[i]; break; }
+    for (let i = k + 1; i < list.length; i++) if (isDay(list[i])) { next = list[i]; break; }
     if (prev && moved.time < prev.time) { moved.time = prev.time; note = 'время подстроено: ' + moved.time; }
     else if (next && moved.time > next.time) { moved.time = next.time; note = 'время подстроено: ' + moved.time; }
     if (old.day === 0 && !prev && !next) { moved.time = moved.time && moved.time !== '00:00' ? moved.time : '11:00'; }
   }
-  const items = list.map((p, i) => ({ id: p.id, day: toDay, time: p.time || '11:00', pos: i }));
-  if (ev.from !== ev.to) [...ev.from.children].forEach((c, i) => { const p = S.posts.find((x) => x.id === +c.dataset.id); items.push({ id: p.id, day: p.day, time: p.time || '11:00', pos: i }); });
+  // сохраняем только посты «в день и время» (таймеры и цепочки остаются как были) + перенесённый
+  const dayOnly = (p) => p === moved || !p.mode || p.mode === 'day';
+  const items = list.map((p, i) => ({ p, i })).filter((x) => dayOnly(x.p)).map(({ p, i }) => ({ id: p.id, day: toDay, time: p.time || '11:00', pos: i }));
+  if (ev.from !== ev.to) [...ev.from.children].forEach((c, i) => { const p = S.posts.find((x) => x.id === +c.dataset.id); if (dayOnly(p)) items.push({ id: p.id, day: p.day, time: p.time || '11:00', pos: i }); });
   list.forEach((p, i) => { p.pos = i; });
   haptic('medium');
   try {
     await api('/reorder', { items });
     toast(old.day !== toDay ? 'Перенесено на день ' + toDay + (note ? ' · ' + note : '') : 'Порядок сохранён' + (note ? ' · ' + note : ''));
-  } catch (e) { moved.day = old.day; moved.time = old.time; toast('Не сохранилось: ' + e.message); }
+  } catch (e) { moved.day = old.day; moved.time = old.time; moved.mode = old.mode; toast('Не сохранилось: ' + e.message); }
   renderFeed();
+}
+
+// ---------- проверить ленту на себе ----------
+function runBox() {
+  const who = view.level === 'start' ? 'начинающего' : view.level === 'pro' ? 'продолжающего' : 'любого ученика';
+  const r = S.run;
+  return '<div class="box"><h3>Проверить на себе</h3><p class="small muted" style="margin:0 0 10px">Лента придёт тебе в бот — как её получит ' + who + ' (выбирается выше). Включённые посты, с подписью «когда».</p>' +
+    '<div class="btns" style="margin-top:0"><button class="btn" id="runPrev" type="button">▶️ Посмотреть ленту сейчас</button>' +
+    (r ? '<div class="note" style="margin:0">⏩ Идёт ускоренный тест (1 день = 1 минута) · уже пришло: ' + r.sent + '</div><button class="btn danger" id="runStop" type="button">⏹ Остановить тест</button>'
+       : '<button class="btn ghost" id="runFast" type="button">⏩ Ускоренный тест: 1 день = 1 минута</button>') + '</div></div>';
+}
+function bindRun() {
+  const lvl = view.level;
+  if ($('runPrev')) $('runPrev').onclick = async () => { try { await api('/run/preview', { level: lvl }); haptic('medium'); toast('Отправляю ленту тебе в бот 👀'); } catch (e) { toast(e.message); } };
+  if ($('runFast')) $('runFast').onclick = async () => { try { const r = await api('/run/fast', { level: lvl }); S.run = r.run; haptic('medium'); toast('Тест пошёл — смотри в боте ⏩'); renderFeed(); } catch (e) { toast(e.message); } };
+  if ($('runStop')) $('runStop').onclick = async () => { try { await api('/run/stop', {}); S.run = null; toast('Тест остановлен'); renderFeed(); } catch (e) { toast(e.message); } };
 }
 
 function renderDates() {
@@ -2489,15 +2710,23 @@ function segBind(id, on) { $(id).onclick = (e) => { const b = e.target.closest('
 
 function openPost(id) {
   const p = S.posts.find((x) => x.id === id); if (!p) return;
-  const st = { day: p.day, time: p.time, audience: p.audience, status: p.status, catchup: p.catchup, run_at: p.run_at };
+  const st = { day: p.day, time: p.time, audience: p.audience, status: p.status, catchup: p.catchup, run_at: p.run_at, mode: p.mode || 'day', delay: p.delay || 0, after: p.after };
+  const unitOf = (m) => (m >= 1440 && m % 1440 === 0 ? 1440 : m >= 60 && m % 60 === 0 ? 60 : 1);
+  const unitSel = (id, m) => '<select id="' + id + '" style="width:auto;flex:none">' + [[1, 'минут'], [60, 'часов'], [1440, 'дней']].map(([v, t]) => '<option value="' + v + '"' + (unitOf(m) === v ? ' selected' : '') + '>' + t + '</option>').join('') + '</select>';
+  const others = S.posts.filter((x) => x.kind === 'drip' && x.id !== p.id);
   const kindName = { drip: 'Пост ленты', date: 'Пост на дату', gift: 'Подарок после теста' }[p.kind];
   let h = '<span class="pill">' + kindName + ' · #' + p.id + '</span><h2>' + esc(postName(p)) + '</h2>' +
     '<div class="preview">' + esc(p.text || '(без текста)') + '</div>' +
     (p.media.length ? '<p class="small muted" style="margin:6px 2px 0">🖼 вложений: ' + p.media.length + '</p>' : '') +
     '<label class="f">Название для себя</label><input type="text" id="fTitle" maxlength="80" placeholder="Например: «Чек-лист, день 1»" value="' + esc(p.title) + '">';
   if (p.kind === 'drip') {
-    h += '<label class="f">Когда</label><div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:12px"><div class="step"><button type="button" id="dMinus">−</button><b id="dVal">' + st.day + '</b><button type="button" id="dPlus">+</button></div>' +
-      '<div id="tWrap" style="flex:1;min-width:140px"><input type="time" id="fTime" value="' + esc(st.time) + '"></div></div><p class="small muted" id="dHint" style="margin:6px 2px 0"></p>' +
+    h += '<label class="f">Когда отправлять</label>' + segHtml('fMode', [['day', '📅 В день'], ['timer', '⏱ Таймер'], ['after', '↳ После поста']], st.mode) +
+      '<div id="pDay" style="margin-top:10px"><div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:12px"><div class="step"><button type="button" id="dMinus">−</button><b id="dVal">' + st.day + '</b><button type="button" id="dPlus">+</button></div>' +
+      '<div id="tWrap" style="flex:1;min-width:140px"><input type="time" id="fTime" value="' + esc(st.time) + '"></div></div><p class="small muted" id="dHint" style="margin:6px 2px 0"></p></div>' +
+      '<div id="pTimer" style="margin-top:10px"><div class="row"><span>через</span><input type="number" id="tNum" min="0" step="1" style="width:90px" value="' + (st.mode === 'timer' ? st.delay / unitOf(st.delay) : 30) + '">' + unitSel('tUnit', st.mode === 'timer' ? st.delay : 1) + '</div><p class="small muted" id="tHint" style="margin:6px 2px 0"></p></div>' +
+      '<div id="pAfter" style="margin-top:10px">' + (others.length ? '<select id="aPost">' + others.map((x) => '<option value="' + x.id + '"' + (st.after === x.id ? ' selected' : '') + '>' + esc(postName(x).slice(0, 40)) + ' — ' + esc(whenShort(x, byIdMap())) + '</option>').join('') + '</select>' +
+        '<div class="row" style="margin-top:8px"><span>через</span><input type="number" id="aNum" min="0" step="1" style="width:90px" value="' + (st.mode === 'after' ? st.delay / unitOf(st.delay) : 1) + '">' + unitSel('aUnit', st.mode === 'after' ? st.delay : 60) + '</div><p class="small muted" id="aHint" style="margin:6px 2px 0"></p>'
+        : '<p class="small muted">Других постов ленты пока нет.</p>') + '</div>' +
       '<div class="toggle"><span><b>Догонять опоздавших</b><br><span class="small muted">Пост получат и те, у кого этот день уже прошёл</span></span><label class="sw"><input type="checkbox" id="fCatch" ' + (st.catchup ? 'checked' : '') + '><span></span></label></div>';
   }
   if (p.kind === 'date') h += '<label class="f">Дата и время (по Москве)</label><input type="datetime-local" id="fRun" value="' + toLocal(st.run_at) + '">';
@@ -2509,6 +2738,13 @@ function openPost(id) {
   h += '<div class="btns"><button class="btn" id="bSave">Сохранить</button><div class="btns two" style="margin:0"><button class="btn ghost" id="bPrev">👁 Прислать мне</button><button class="btn ghost" id="bClose">Закрыть</button></div><button class="btn danger" id="bArch">🗄 Убрать в архив</button></div>' +
     '<div class="note">Текст и картинки меняются в боте: <b>/posts</b> → этот пост → ✏️ «Текст и картинки».</div>';
   sheet(h);
+  const showMode = () => { if (!$('pDay')) return; $('pDay').style.display = st.mode === 'day' ? '' : 'none'; $('pTimer').style.display = st.mode === 'timer' ? '' : 'none'; $('pAfter').style.display = st.mode === 'after' ? '' : 'none'; hints(); };
+  const delayOf = (n, u) => Math.max(0, Math.round((+$(n).value || 0) * +$(u).value));
+  const hints = () => {
+    if ($('tHint')) $('tHint').textContent = 'Через ' + fmtDelay(delayOf('tNum', 'tUnit')) + ' после того, как человек согласился на рассылку (в любое время суток).';
+    if ($('aHint')) { const par = S.posts.find((x) => x.id === +$('aPost').value); $('aHint').textContent = 'Через ' + fmtDelay(delayOf('aNum', 'aUnit')) + ' после того, как человек получил «' + (par ? postName(par).slice(0, 40) : '') + '». Пока тот пост не ушёл — этот не уйдёт.'; }
+  };
+  if ($('fMode')) { segBind('fMode', (v) => { st.mode = v; haptic(); showMode(); }); ['tNum', 'tUnit', 'aNum', 'aUnit', 'aPost'].forEach((i) => { if ($(i)) $(i).oninput = hints; }); showMode(); }
   const upd = () => { if (!$('dVal')) return; $('dVal').textContent = st.day; $('tWrap').style.display = st.day === 0 ? 'none' : ''; $('dHint').textContent = 'День ' + st.day + ' — ' + dayLabel(st.day) + (st.day ? ', в ' + ($('fTime').value || st.time) + ' по Москве' : ''); };
   if ($('dMinus')) { $('dMinus').onclick = () => { st.day = Math.max(0, st.day - 1); haptic(); upd(); }; $('dPlus').onclick = () => { st.day = Math.min(365, st.day + 1); haptic(); upd(); }; $('fTime').oninput = upd; upd(); }
   segBind('fAud', (v) => st.audience = v); segBind('fSt', (v) => st.status = v);
@@ -2542,7 +2778,12 @@ function openPost(id) {
   $('bSave').onclick = async () => {
     syncRows();
     const body = { title: $('fTitle').value.trim(), audience: st.audience, status: st.status, rows };
-    if (p.kind === 'drip') { body.day = st.day; if (st.day > 0) body.time = $('fTime').value || st.time; body.catchup = $('fCatch').checked; }
+    if (p.kind === 'drip') {
+      body.mode = st.mode; body.catchup = $('fCatch').checked;
+      if (st.mode === 'day') { body.day = st.day; if (st.day > 0) body.time = $('fTime').value || st.time; }
+      if (st.mode === 'timer') body.delay_min = delayOf('tNum', 'tUnit');
+      if (st.mode === 'after') { if (!$('aPost')) return toast('Нет поста, после которого отправлять'); body.after_id = +$('aPost').value; body.delay_min = delayOf('aNum', 'aUnit'); }
+    }
     if (p.kind === 'date') { const t = fromLocal($('fRun').value); if (!t) return toast('Выбери дату и время'); body.run_at = t; }
     try {
       const r = await api('/post/' + p.id, body);
@@ -2624,7 +2865,10 @@ var worker_default = {
     const ctx = makeCtx({ db, env, publicUrl: url.origin });
     if (url.pathname === "/tg" || url.pathname.startsWith("/api/")) await ensureSchema(db);
     if (url.pathname === "/admin" || url.pathname === "/admin/") return new Response(panel_html_default, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
-    if (url.pathname.startsWith("/api/panel/")) return handlePanelApi(ctx, request, url);
+    if (url.pathname.startsWith("/api/panel/")) {
+      ctx.waitUntil = (p) => execCtx.waitUntil(p);
+      return handlePanelApi(ctx, request, url);
+    }
     if (url.pathname === "/tg" && request.method === "POST") {
       if (env.WEBHOOK_SECRET && request.headers.get("x-telegram-bot-api-secret-token") !== env.WEBHOOK_SECRET) return new Response("forbidden", { status: 403 });
       const upd = await request.json().catch(() => null);
@@ -2665,6 +2909,7 @@ var worker_default = {
     const ctx = makeCtx({ db: d1Adapter(env.DB), env });
     await ensureSchema(ctx.db);
     await tick(ctx, Number(env.TICK_BUDGET) || 30, Number(env.QUERY_BUDGET) || 40);
+    await stepRuns(ctx, 10).catch((e) => console.log("test run", e && e.stack));
   }
 };
 export {

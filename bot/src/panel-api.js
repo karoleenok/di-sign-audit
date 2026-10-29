@@ -4,6 +4,7 @@
 import { isAdmin } from './admin.js';
 import { AUD, LEVELS } from './texts.js';
 import { sendPost, audienceCount } from './posts.js';
+import { runPreview, startFastRun, stopRuns, stepRuns, activeRun } from './testrun.js';
 import { listMsgs, saveMsg, resetMsg, btn, say, setMsgMedia, canMedia, msgInfo, loadMsgs } from './msgs.js';
 
 const enc = new TextEncoder();
@@ -41,7 +42,7 @@ function postOut(p, sent, clicks) {
   const media = j(p.media, []);
   return {
     id: p.id, kind: p.kind, status: p.status, title: p.title || '', text: (p.text || '').slice(0, 400),
-    day: p.day, time: p.send_time, run_at: p.run_at, audience: p.audience, catchup: !!p.catchup, pos: p.pos || 0,
+    day: p.day, time: p.send_time, mode: p.mode || 'day', delay: p.delay_min || 0, after: p.after_id || null, run_at: p.run_at, audience: p.audience, catchup: !!p.catchup, pos: p.pos || 0,
     media: media.map((m) => m.type), buttons: j(p.buttons, []).flat().map((b) => b.text), rows: j(p.buttons, []),
     emoji: j(p.entities, []).some((e) => e.type === 'custom_emoji'), sent: sent || 0, clicks: clicks || 0,
   };
@@ -105,6 +106,7 @@ export async function handlePanelApi(ctx, request, url) {
       posts: posts.map((p) => postOut(p, sent[p.id], clicks[p.id])),
       msgs: await listMsgs(ctx),
       people: { all: people.n || 0, active: people.active || 0 },
+      run: await activeRun(ctx.db, user.id),
     });
   }
 
@@ -116,6 +118,27 @@ export async function handlePanelApi(ctx, request, url) {
     if (!p) return json({ error: 'Пост не найден' }, 404);
     const set = [], val = [];
     const put = (col, v) => { set.push(`${col} = ?`); val.push(v); };
+    if (body.mode !== undefined && p.kind === 'drip') {
+      if (!['day', 'timer', 'after'].includes(body.mode)) return json({ error: 'Неизвестный способ отправки' }, 400);
+      put('mode', body.mode);
+      if (body.mode !== 'day') {
+        const dm = parseInt(body.delay_min, 10);
+        if (!(dm >= 0 && dm <= 365 * 1440)) return json({ error: 'Время — от 0 минут до 365 дней' }, 400);
+        put('delay_min', dm);
+      }
+      if (body.mode === 'after') {
+        const aid = parseInt(body.after_id, 10);
+        if (!aid || aid === p.id) return json({ error: 'Выбери пост, после которого отправлять' }, 400);
+        // не даём сделать круг: A после B, B после A
+        let cur = await ctx.db.first(`SELECT id, kind, mode, after_id FROM posts WHERE id = ?`, [aid]);
+        if (!cur || cur.kind !== 'drip') return json({ error: 'Такого поста ленты нет' }, 400);
+        for (let i = 0; cur && cur.mode === 'after' && i < 50; i++) {
+          if (cur.after_id === p.id) return json({ error: 'Получится круг: тот пост уже идёт после этого' }, 400);
+          cur = await ctx.db.first(`SELECT id, kind, mode, after_id FROM posts WHERE id = ?`, [cur.after_id]);
+        }
+        put('after_id', aid);
+      }
+    }
     if (body.day !== undefined && p.kind === 'drip') { const d = parseInt(body.day, 10); if (!(d >= 0 && d <= 365)) return json({ error: 'День — от 0 до 365' }, 400); put('day', d); }
     if (body.time !== undefined) { const t = pad(body.time); if (!t) return json({ error: 'Время в формате 11:00' }, 400); put('send_time', t); }
     if (body.audience !== undefined) { if (!AUD[body.audience]) return json({ error: 'Неизвестная аудитория' }, 400); put('audience', body.audience); }
@@ -161,9 +184,30 @@ export async function handlePanelApi(ctx, request, url) {
       if (!(d >= 0 && d <= 365) || !t) return json({ error: 'Неверный день или время' }, 400);
     }
     for (const it of items) {
-      await ctx.db.run(`UPDATE posts SET day = ?, send_time = ?, pos = ? WHERE id = ? AND kind = 'drip'`, [parseInt(it.day, 10), pad(it.time), parseInt(it.pos, 10) || 0, +it.id]);
+      // перетаскивание = «в этот день»: пост по таймеру или «после поста» становится постом «в день и время»
+      await ctx.db.run(`UPDATE posts SET day = ?, send_time = ?, pos = ?, mode = 'day' WHERE id = ? AND kind = 'drip'`, [parseInt(it.day, 10), pad(it.time), parseInt(it.pos, 10) || 0, +it.id]);
     }
     return json({ ok: true, n: items.length });
+  }
+
+  // проверка ленты на себе
+  if (path === '/run/preview' && request.method === 'POST') {
+    const level = ['start', 'pro'].includes(body.level) ? body.level : 'all';
+    const job = runPreview(ctx, user.id, level).catch((e) => console.log('preview', e && e.stack));
+    if (ctx.waitUntil) ctx.waitUntil(job); else await job;
+    return json({ ok: true });
+  }
+  if (path === '/run/fast' && request.method === 'POST') {
+    const level = ['start', 'pro'].includes(body.level) ? body.level : 'all';
+    await startFastRun(ctx, user.id, level);
+    const job = stepRuns(ctx, 12).catch((e) => console.log('run', e && e.stack));
+    if (ctx.waitUntil) ctx.waitUntil(job); else await job;
+    return json({ ok: true, run: await activeRun(ctx.db, user.id) });
+  }
+  if (path === '/run/stop' && request.method === 'POST') {
+    await stopRuns(ctx, user.id);
+    await ctx.tg.call('sendMessage', { chat_id: user.id, text: '⏹ Ускоренный тест остановлен' }).catch(() => {});
+    return json({ ok: true });
   }
 
   m = /^\/post\/(\d+)\/preview$/.exec(path);

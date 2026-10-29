@@ -38,6 +38,7 @@ await P({ kind: 'drip', day: 2, time: '11:00', text: '20 промптов для
 await P({ kind: 'drip', day: 2, time: '19:00', zone: 'P', title: 'Про обучение · портфолио', text: 'Почему красивые картинки не продают? Клиент смотрит портфолио 30 секунд…', media: '[{"type":"photo","file_id":"a"},{"type":"photo","file_id":"b"},{"type":"photo","file_id":"c"}]' });
 await P({ kind: 'drip', day: 3, time: '11:00', st: 'paused', text: 'Контент-план для дизайнера на месяц' });
 await P({ kind: 'drip', day: 4, time: '19:00', st: 'draft', text: 'История ученицы: было / стало' });
+await db.run(`INSERT INTO posts (title, kind, audience, mode, delay_min, day, send_time, status, text, created_at) VALUES ('Через 2 часа', 'drip', 'all', 'timer', 120, 0, '11:00', 'active', 'Как пользоваться материалами', ${now()})`);
 await P({ kind: 'date', run: now() + 5 * 86400, title: 'Эфир: разбор работ', text: 'В четверг в 19:00 разбираем работы в прямом эфире' });
 await db.run(`INSERT INTO users (tg_id, first_name, status, level, zone, consent_ads_at, joined_at, created_at) VALUES (1,'A','active','start','P',1,1,1),(2,'B','active','pro','B',1,1,1),(3,'C','stopped','start',NULL,NULL,NULL,1)`);
 await db.run(`INSERT INTO deliveries (post_id, tg_id, sent_at) VALUES (4,1,1),(3,1,1),(3,2,1)`);
@@ -50,7 +51,7 @@ export function initData(user = { id: 100, first_name: 'Каролина' }, tok
   p.set('hash', createHmac('sha256', secret).update(dcs).digest('hex'));
   return p.toString();
 }
-const env = { BOT_TOKEN: TOKEN, ADMIN_IDS: '100' };
+const env = { BOT_TOKEN: TOKEN, ADMIN_IDS: '100', DELAY_FACTOR: '0' };
 export const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost:8788');
   if (url.pathname === '/admin') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); return res.end(PANEL); }
