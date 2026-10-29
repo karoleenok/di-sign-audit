@@ -42,7 +42,7 @@ function postOut(p, sent, clicks) {
   return {
     id: p.id, kind: p.kind, status: p.status, title: p.title || '', text: (p.text || '').slice(0, 400),
     day: p.day, time: p.send_time, run_at: p.run_at, audience: p.audience, catchup: !!p.catchup, pos: p.pos || 0,
-    media: media.map((m) => m.type), buttons: j(p.buttons, []).flat().map((b) => b.text),
+    media: media.map((m) => m.type), buttons: j(p.buttons, []).flat().map((b) => b.text), rows: j(p.buttons, []),
     emoji: j(p.entities, []).some((e) => e.type === 'custom_emoji'), sent: sent || 0, clicks: clicks || 0,
   };
 }
@@ -125,6 +125,27 @@ export async function handlePanelApi(ctx, request, url) {
       put('status', body.status);
     }
     if (body.title !== undefined) put('title', String(body.title).slice(0, 80) || null);
+    if (body.rows !== undefined) {
+      // кнопки под постом: [[{text, url}], ...] — до 4 в ряд, текст до 60 знаков, ссылка https://
+      if (!Array.isArray(body.rows) || body.rows.length > 10) return json({ error: 'Слишком много рядов (до 10)' }, 400);
+      const rows = [];
+      for (const row of body.rows) {
+        if (!Array.isArray(row)) return json({ error: 'Неверные кнопки' }, 400);
+        const r = [];
+        for (const b of row) {
+          const text = String((b && b.text) || '').trim().slice(0, 60);
+          let link = String((b && b.url) || '').trim();
+          if (!text && !link) continue;
+          if (!text) return json({ error: 'У кнопки нет текста' }, 400);
+          if (/^t\.me\//i.test(link)) link = 'https://' + link;
+          if (!/^https?:\/\/\S+$/i.test(link)) return json({ error: `Ссылка у кнопки «${text}» должна начинаться с https://` }, 400);
+          r.push({ text, url: link });
+        }
+        if (r.length > 4) return json({ error: 'В одном ряду не больше 4 кнопок' }, 400);
+        if (r.length) rows.push(r);
+      }
+      put('buttons', rows.length ? JSON.stringify(rows) : null);
+    }
     if (body.catchup !== undefined) put('catchup', body.catchup ? 1 : 0);
     if (body.run_at !== undefined && p.kind === 'date') { const t = Number(body.run_at); if (!(t > 0)) return json({ error: 'Неверная дата' }, 400); put('run_at', t); }
     if (set.length) await ctx.db.run(`UPDATE posts SET ${set.join(', ')} WHERE id = ?`, [...val, id]);

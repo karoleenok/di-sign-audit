@@ -1029,7 +1029,7 @@ var GUIDE = {
 
 <b>Поменять порядок в одном дне</b>: так же тяни выше или ниже. Если поставишь пост между постами в 11:00 и 19:00, а у него время 21:00 — время подстроится само, бот напишет об этом.
 
-<b>Поменять день, время, кому, паузу</b>: нажми на карточку → в окне кнопки − и + для дня, поле времени, «Всем / Начинающим / Продолжающим», статус → «Сохранить». Внизу покажет, скольким людям пост подходит сейчас.
+<b>Поменять день, время, кнопки, кому, паузу</b>: нажми на карточку → в окне кнопки − и + для дня, поле времени, кнопки под постом (текст + ссылка, «＋ Кнопка в этот ряд», «＋ Новый ряд», ↑ ↓, ✕), «Всем / Начинающим / Продолжающим», статус → «Сохранить». Внизу покажет, скольким людям пост подходит сейчас.
 
 <b>Проверить, что получит человек</b>: наверху «Как увидит человек» — выбери начинающего или продолжающего. Посты, которые он не получит, станут бледными с пометкой «не получит». Переключатель прячет их совсем.
 
@@ -2006,6 +2006,7 @@ function postOut(p, sent, clicks) {
     pos: p.pos || 0,
     media: media.map((m) => m.type),
     buttons: j2(p.buttons, []).flat().map((b) => b.text),
+    rows: j2(p.buttons, []),
     emoji: j2(p.entities, []).some((e) => e.type === "custom_emoji"),
     sent: sent || 0,
     clicks: clicks || 0
@@ -2107,6 +2108,26 @@ async function handlePanelApi(ctx, request, url) {
       put("status", body.status);
     }
     if (body.title !== void 0) put("title", String(body.title).slice(0, 80) || null);
+    if (body.rows !== void 0) {
+      if (!Array.isArray(body.rows) || body.rows.length > 10) return json({ error: "Слишком много рядов (до 10)" }, 400);
+      const rows = [];
+      for (const row of body.rows) {
+        if (!Array.isArray(row)) return json({ error: "Неверные кнопки" }, 400);
+        const r = [];
+        for (const b of row) {
+          const text = String(b && b.text || "").trim().slice(0, 60);
+          let link = String(b && b.url || "").trim();
+          if (!text && !link) continue;
+          if (!text) return json({ error: "У кнопки нет текста" }, 400);
+          if (/^t\.me\//i.test(link)) link = "https://" + link;
+          if (!/^https?:\/\/\S+$/i.test(link)) return json({ error: `Ссылка у кнопки «${text}» должна начинаться с https://` }, 400);
+          r.push({ text, url: link });
+        }
+        if (r.length > 4) return json({ error: "В одном ряду не больше 4 кнопок" }, 400);
+        if (r.length) rows.push(r);
+      }
+      put("buttons", rows.length ? JSON.stringify(rows) : null);
+    }
     if (body.catchup !== void 0) put("catchup", body.catchup ? 1 : 0);
     if (body.run_at !== void 0 && p.kind === "date") {
       const t = Number(body.run_at);
@@ -2472,7 +2493,7 @@ function openPost(id) {
   const kindName = { drip: 'Пост ленты', date: 'Пост на дату', gift: 'Подарок после теста' }[p.kind];
   let h = '<span class="pill">' + kindName + ' · #' + p.id + '</span><h2>' + esc(postName(p)) + '</h2>' +
     '<div class="preview">' + esc(p.text || '(без текста)') + '</div>' +
-    '<p class="small muted" style="margin:6px 2px 0">' + (p.media.length ? '🖼 вложений: ' + p.media.length + ' · ' : '') + (p.buttons.length ? 'кнопки: ' + esc(p.buttons.join(', ')) : 'без кнопок') + '</p>' +
+    (p.media.length ? '<p class="small muted" style="margin:6px 2px 0">🖼 вложений: ' + p.media.length + '</p>' : '') +
     '<label class="f">Название для себя</label><input type="text" id="fTitle" maxlength="80" placeholder="Например: «Чек-лист, день 1»" value="' + esc(p.title) + '">';
   if (p.kind === 'drip') {
     h += '<label class="f">Когда</label><div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:12px"><div class="step"><button type="button" id="dMinus">−</button><b id="dVal">' + st.day + '</b><button type="button" id="dPlus">+</button></div>' +
@@ -2480,6 +2501,9 @@ function openPost(id) {
       '<div class="toggle"><span><b>Догонять опоздавших</b><br><span class="small muted">Пост получат и те, у кого этот день уже прошёл</span></span><label class="sw"><input type="checkbox" id="fCatch" ' + (st.catchup ? 'checked' : '') + '><span></span></label></div>';
   }
   if (p.kind === 'date') h += '<label class="f">Дата и время (по Москве)</label><input type="datetime-local" id="fRun" value="' + toLocal(st.run_at) + '">';
+  h += '<label class="f">Кнопки под постом</label><div id="bEd"></div>' +
+    '<div class="btns two" style="margin-top:8px"><button class="btn ghost" type="button" id="bRow">＋ Новый ряд</button><button class="btn ghost" type="button" id="bClear">Без кнопок</button></div>' +
+    '<p class="small muted" style="margin:6px 2px 0">До 4 кнопок в ряд. Ссылка — https://… или t.me/…. Бот считает нажатия.' + (p.media.length > 1 ? ' У альбома кнопки придут следующим сообщением сразу под ним.' : '') + '</p>';
   h += '<label class="f">Кому</label>' + segHtml('fAud', [['all','Всем'],['start','Начинающим'],['pro','Продолжающим']], st.audience);
   h += '<label class="f">Статус</label>' + segHtml('fSt', [['active','✅ Включён'],['paused','⏸ Пауза'],['draft','📝 Черновик']], st.status);
   h += '<div class="btns"><button class="btn" id="bSave">Сохранить</button><div class="btns two" style="margin:0"><button class="btn ghost" id="bPrev">👁 Прислать мне</button><button class="btn ghost" id="bClose">Закрыть</button></div><button class="btn danger" id="bArch">🗄 Убрать в архив</button></div>' +
@@ -2488,11 +2512,36 @@ function openPost(id) {
   const upd = () => { if (!$('dVal')) return; $('dVal').textContent = st.day; $('tWrap').style.display = st.day === 0 ? 'none' : ''; $('dHint').textContent = 'День ' + st.day + ' — ' + dayLabel(st.day) + (st.day ? ', в ' + ($('fTime').value || st.time) + ' по Москве' : ''); };
   if ($('dMinus')) { $('dMinus').onclick = () => { st.day = Math.max(0, st.day - 1); haptic(); upd(); }; $('dPlus').onclick = () => { st.day = Math.min(365, st.day + 1); haptic(); upd(); }; $('fTime').oninput = upd; upd(); }
   segBind('fAud', (v) => st.audience = v); segBind('fSt', (v) => st.status = v);
+  // редактор кнопок
+  let rows = JSON.parse(JSON.stringify(p.rows || []));
+  const syncRows = () => { document.querySelectorAll('#bEd [data-r]').forEach((el) => { const r = +el.dataset.r, i = +el.dataset.i; if (rows[r] && rows[r][i]) rows[r][i][el.dataset.f] = el.value; }); };
+  const drawRows = () => {
+    $('bEd').innerHTML = rows.length ? rows.map((row, r) =>
+      '<div class="box" style="margin:8px 0;padding:10px"><div class="row" style="justify-content:space-between;margin-bottom:6px"><span class="small muted">Ряд ' + (r + 1) + '</span><span>' +
+      (r > 0 ? '<button type="button" class="chip" data-up="' + r + '">↑</button> ' : '') + (r < rows.length - 1 ? '<button type="button" class="chip" data-down="' + r + '">↓</button>' : '') + '</span></div>' +
+      row.map((b, i) => '<div style="display:grid;grid-template-columns:1fr auto;gap:6px;margin-bottom:6px"><input type="text" placeholder="Текст кнопки" maxlength="60" data-r="' + r + '" data-i="' + i + '" data-f="text" value="' + esc(b.text) + '"><button type="button" class="chip" data-del="' + r + ':' + i + '" aria-label="убрать">✕</button>' +
+        '<input type="text" placeholder="https://ссылка" inputmode="url" data-r="' + r + '" data-i="' + i + '" data-f="url" value="' + esc(b.url) + '" style="grid-column:1/-1"></div>').join('') +
+      (row.length < 4 ? '<button type="button" class="chip" data-add="' + r + '">＋ Кнопка в этот ряд</button>' : '') + '</div>').join('')
+      : '<p class="small muted" style="margin:2px">Кнопок нет.</p>';
+  };
+  $('bEd').addEventListener('input', syncRows);
+  $('bEd').addEventListener('click', (e) => {
+    const t = e.target.closest('button'); if (!t) return; syncRows();
+    if (t.dataset.add !== undefined) rows[+t.dataset.add].push({ text: '', url: '' });
+    if (t.dataset.del) { const [r, i] = t.dataset.del.split(':').map(Number); rows[r].splice(i, 1); if (!rows[r].length) rows.splice(r, 1); }
+    if (t.dataset.up) { const r = +t.dataset.up; [rows[r - 1], rows[r]] = [rows[r], rows[r - 1]]; }
+    if (t.dataset.down) { const r = +t.dataset.down; [rows[r + 1], rows[r]] = [rows[r], rows[r + 1]]; }
+    haptic(); drawRows();
+  });
+  $('bRow').onclick = () => { syncRows(); rows.push([{ text: '', url: '' }]); drawRows(); };
+  $('bClear').onclick = () => { rows = []; drawRows(); };
+  drawRows();
   $('bClose').onclick = closeSheet;
   $('bPrev').onclick = async () => { try { const r = await api('/post/' + p.id + '/preview', {}); toast(r.warn ? '⚠️ ' + r.warn : 'Отправила тебе в бот 👀'); } catch (e) { toast(e.message); } };
   $('bArch').onclick = async () => { try { await api('/post/' + p.id, { status: 'archived' }); S.posts = S.posts.filter((x) => x.id !== p.id); closeSheet(); toast('В архиве. Вернуть можно в боте: /posts → 🗄 Архив'); render(); } catch (e) { toast(e.message); } };
   $('bSave').onclick = async () => {
-    const body = { title: $('fTitle').value.trim(), audience: st.audience, status: st.status };
+    syncRows();
+    const body = { title: $('fTitle').value.trim(), audience: st.audience, status: st.status, rows };
     if (p.kind === 'drip') { body.day = st.day; if (st.day > 0) body.time = $('fTime').value || st.time; body.catchup = $('fCatch').checked; }
     if (p.kind === 'date') { const t = fromLocal($('fRun').value); if (!t) return toast('Выбери дату и время'); body.run_at = t; }
     try {

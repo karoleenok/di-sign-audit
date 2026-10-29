@@ -72,6 +72,31 @@ row = await db.first(`SELECT day, send_time, audience, zone, status FROM posts W
 assert.deepEqual({ ...row }, { day: 3, send_time: '19:30', audience: 'all', zone: null, status: 'paused' });
 step('шторка: день +2, время, кому, пауза — сохранено');
 
+// 5б. кнопки под постом
+await page.locator('.card', { hasText: 'Скрипты ответов' }).locator('.ttl').click();
+await page.waitForSelector('.sheet.on'); await page.waitForTimeout(300);
+await page.click('#bRow');
+await page.fill('#bEd input[data-r="0"][data-i="0"][data-f="text"]', 'Скачать скрипты');
+await page.fill('#bEd input[data-r="0"][data-i="0"][data-f="url"]', 'ссылка без https');
+await page.click('#bSave'); await page.waitForTimeout(400);
+assert.match(await page.textContent('#toast'), /https/, 'неправильная ссылка не сохраняется');
+await page.fill('#bEd input[data-r="0"][data-i="0"][data-f="url"]', 'https://disign.ru/scripts');
+await page.click('#bEd button[data-add="0"]');
+await page.fill('#bEd input[data-r="0"][data-i="1"][data-f="text"]', 'Эфир');
+await page.fill('#bEd input[data-r="0"][data-i="1"][data-f="url"]', 't.me/diuuupin');
+await page.click('#bRow');
+await page.fill('#bEd input[data-r="1"][data-i="0"][data-f="text"]', 'Программа курса');
+await page.fill('#bEd input[data-r="1"][data-i="0"][data-f="url"]', 'https://disign.ru/program');
+await page.click('#bEd button[data-up="1"]');
+await page.screenshot({ path: OUT + '/panel-10-buttons.png', fullPage: false });
+await page.click('#bSave'); await page.waitForTimeout(500);
+let br = JSON.parse((await db.first(`SELECT buttons FROM posts WHERE title = 'Скрипты ответов'`)).buttons);
+assert.deepEqual(br, [[{ text: 'Программа курса', url: 'https://disign.ru/program' }], [{ text: 'Скачать скрипты', url: 'https://disign.ru/scripts' }, { text: 'Эфир', url: 'https://t.me/diuuupin' }]]);
+await page.locator('.card', { hasText: 'Скрипты ответов' }).locator('.ttl').click(); await page.waitForSelector('.sheet.on'); await page.waitForTimeout(300);
+await page.click('#bClear'); await page.click('#bSave'); await page.waitForTimeout(400);
+assert.equal((await db.first(`SELECT buttons FROM posts WHERE title = 'Скрипты ответов'`)).buttons, null, '«без кнопок» убирает все');
+step('кнопки под постом: добавить, два в ряд, новый ряд, поменять ряды местами, проверка ссылки, убрать все');
+
 // 6. «прислать мне»
 await page.locator('.card', { hasText: 'Про обучение' }).locator('.ttl').click();
 await page.waitForSelector('.sheet.on'); await page.click('#bPrev'); await page.waitForTimeout(400);
