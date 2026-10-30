@@ -2763,6 +2763,12 @@ button.ks-row:hover b{color:#33507F}
 /* меньше прыжков при загрузке */
 #dogImg{aspect-ratio:1/1}
 @media (min-width:48em){ #wkIntro{min-height:220px;align-content:center} }
+/* v51: лёгкий курсор */
+.wk-cursor{will-change:transform;contain:layout style}
+.wk-cur-ring{-webkit-backdrop-filter:none!important;backdrop-filter:none!important;background:rgba(255,250,245,.26)!important;box-shadow:0 2px 14px rgba(0,0,0,.18)}
+.wk-cursor.act .wk-cur-ring{background:rgba(255,246,236,.32)!important}
+.wk-cur-lbl{-webkit-backdrop-filter:none!important;backdrop-filter:none!important;background:rgba(20,12,18,.62)!important}
+.wk-cur-ring{transition:width .2s,height .2s,margin .2s,background .2s,transform .15s!important}
 </style>
 </head><body>
 <div class="app" id="appRoot">
@@ -6138,12 +6144,16 @@ var WFINE=window.matchMedia("(hover:hover) and (pointer:fine)").matches;
 (function(){
   var walk=$("walk"), cur=$("wkCursor"), lbl=$("wkCurLbl"), cam=$("wkCam"), mx=0,my=0,pend=false;
   if(WFINE) walk.classList.add("fine");
-  walk.addEventListener("pointermove",function(ev){ if(ev.pointerType!=="mouse") return; mx=ev.clientX; my=ev.clientY; if(pend) return; pend=true;
-    requestAnimationFrame(function(){ pend=false; cur.style.transform="translate3d("+mx+"px,"+my+"px,0)";
-      if(!WRM&&!W.busy){ var dx=(mx/innerWidth-.5), dy=(my/innerHeight-.5); cam.style.transform="translate3d("+(-dx*18)+"px,"+(-dy*12)+"px,0)"; }
-      var t=document.elementFromPoint(mx,my), sp=t&&t.closest?t.closest(".wk-spot"):null;
+  var lastSp=null;
+  walk.addEventListener("pointermove",function(ev){ if(ev.pointerType!=="mouse") return; mx=ev.clientX; my=ev.clientY;
+    cur.style.transform="translate3d("+mx+"px,"+my+"px,0)";
+    var sp=ev.target&&ev.target.closest?ev.target.closest(".wk-spot"):null;
+    if(sp!==lastSp){ lastSp=sp;
       if(sp){ cur.classList.add("act"); lbl.textContent=sp.dataset.l; var sv=cur.querySelector("svg"); sv.innerHTML= sp.dataset.d==="back" ? '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>' : '<path d="M12 19V5M6 11l6-6 6 6"/>'; sv.style.transform= sp.dataset.d==="back" ? "none" : "rotate("+WARROW[sp.dataset.d]+"deg)"; }
-      else cur.classList.remove("act"); }); });
+      else cur.classList.remove("act"); }
+    if(pend) return; pend=true;
+    requestAnimationFrame(function(){ pend=false;
+      if(!WRM&&!W.busy){ var dx=(mx/innerWidth-.5), dy=(my/innerHeight-.5); cam.style.transform="translate3d("+(-dx*18)+"px,"+(-dy*12)+"px,0)"; } }); });
   walk.addEventListener("pointerdown",function(){ cur.classList.add("press"); });
   walk.addEventListener("pointerup",function(){ cur.classList.remove("press"); });
 })();
