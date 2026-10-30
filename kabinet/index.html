@@ -2753,6 +2753,16 @@ button.ks-row:hover b{color:#33507F}
 .dm-card.dm-les{background:#EEF3FC!important}
 .dm-card.dm-les .kind.les{background:#fff!important}
 .dm-card.dm-les input,.dm-card.dm-les textarea{background:#fff!important}
+/* v50 */
+.wk-cur-l,.wk-cur-r{transition-duration:1.25s!important}
+.wk-curtain.open .wk-valance{transition-delay:.4s!important}
+@media (prefers-reduced-motion:reduce){ .wk-cur-l,.wk-cur-r{transition-duration:.01s!important} }
+/* подвал: новые холмы */
+.meadow{background-image:url(img/ui/podval-16x9.webp)!important;background-position:center 55%!important}
+@media (max-width:47.99em){ .meadow{background-image:url(img/ui/podval-9x16.webp)!important;background-position:center 60%!important} }
+/* меньше прыжков при загрузке */
+#dogImg{aspect-ratio:1/1}
+@media (min-width:48em){ #wkIntro{min-height:220px;align-content:center} }
 </style>
 </head><body>
 <div class="app" id="appRoot">
@@ -5635,7 +5645,7 @@ showMenu("Такса-приключение","собирайте сердечк�
 
 /* ===================== ДЕМО: день открытых дверей ===================== */
 /* замените на ссылку своего бота предзаписи */
-var BOT_URL="https://t.me/your_bot";
+var BOT_URL="https://t.me/di_sign_university_bot";
 function botLink(tag){ return BOT_URL+"?start="+tag; }
 var FREE={"0-0":1,"1-1":1};
 function isFree(pid,i){ return MODE!=="demo" || !!FREE[pid+"-"+i]; }
@@ -6153,13 +6163,13 @@ function openWalk(){
   var opened=false, t0=Date.now();
   function enter(){ if(opened||wk.hidden) return; opened=true; cu.onclick=null;
     cu.classList.add("open"); if(!WRM){ $("wkBob").animate([{transform:"scale(1.12)"},{transform:"none"}],{duration:2200,easing:"cubic-bezier(.2,.7,.2,1)"}); }
-    setTimeout(function(){ cu.classList.add("gone"); $("wkDlg").classList.remove("hide"); startWalk(); }, WRM?50:1500);
+    setTimeout(function(){ cu.classList.add("gone"); $("wkDlg").classList.remove("hide"); startWalk(); }, WRM?50:1050);
   }
   cu.onclick=enter;
   var curImg=getComputedStyle(cu.querySelector(".wk-cur-l")).backgroundImage.replace(/^url\(["']?|["']?\)$/g,"");
   var curReady=new Promise(function(res){ if(!curImg||curImg==="none") return res(); var i=new Image(); i.onload=i.onerror=res; i.src=curImg; setTimeout(res,2500); });
-  Promise.all([curReady, new Promise(function(r){ setTimeout(r,1200); })]).then(function(){
-    var wait=Math.max(0,(WRM?900:1700)-(Date.now()-t0)); setTimeout(enter, wait); });
+  Promise.all([curReady, new Promise(function(r){ setTimeout(r,350); })]).then(function(){
+    var wait=Math.max(0,(WRM?300:650)-(Date.now()-t0)); setTimeout(enter, wait); });
 }
 function closeWalk(){ document.documentElement.classList.remove("wk-pending"); $("walk").hidden=true; document.body.style.overflow=""; cancelAnimationFrame(W.raf); W.raf=0; W.dust=false; S.tourDone=true; save(); go("home"); }
 $("wkClose").onclick=closeWalk;
