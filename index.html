@@ -171,6 +171,46 @@
   .map .stop .n{font-weight:600;font-size:13px}
   .map .stop{opacity:.55;transition:opacity .3s}.map .stop.on{opacity:1}.map .stop.on .d{color:#c04f74;font-weight:600}
   .map .me{position:absolute;left:0;top:0;width:46px;height:auto;will-change:transform;pointer-events:none;filter:drop-shadow(0 3px 3px rgba(44,13,2,.15))}
+
+/* блоки в стиле кабинета Di Sign University */
+.kb{--k-ink:#1D1B19;--k-body:#4A4640;--k-soft:#8C867D;--k-line:#EEEBE6;--k-pr:#6C8CE0;--k-deep:#33507F;--k-tint:#EEF3FC;
+  font-family:"Inter Tight",system-ui,sans-serif;color:var(--k-ink);background:#fff;border:1px solid var(--k-line);border-radius:22px;padding:20px}
+.kb h3{font-size:20px;font-weight:500;letter-spacing:-.01em;line-height:1.2;margin:2px 0 8px}
+.kb h3 em{font-family:"Instrument Serif",serif;font-style:italic;font-weight:400;font-size:1.18em;color:var(--k-deep)}
+.kb-l{font-size:12.5px;color:var(--k-soft)}
+.kb-lead{font-size:14px;color:var(--k-body);line-height:1.45;margin:0 0 14px}
+.kb-bar{display:flex;gap:4px}.kb-bar i{height:8px;border-radius:5px;background:#D8E2F6}.kb-bar i.on{background:var(--k-pr)}
+.kb-barl{display:flex;justify-content:space-between;font-size:11.5px;color:var(--k-soft);margin:6px 0 14px}
+.kb-works{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.kb-w{border:1.5px solid var(--k-line);border-radius:16px;padding:8px;display:flex;flex-direction:column;gap:5px;background:#fff}
+.kb-w.hot{border-color:#9DB5EC;box-shadow:0 8px 22px rgba(80,110,180,.14)}
+.kb-th{height:72px;border-radius:10px;display:grid;place-items:center;font-family:"Instrument Serif",serif;font-style:italic;font-size:22px;line-height:.85;text-align:center}
+.kw1{background:#F3D6E1;color:#8A4B63}.kw2{background:#EEF3FC}.kw3{background:#E3DAF4;color:#6A55A8}.kw4{background:#F7F5F2;border:1px solid var(--k-line)}.kw5{background:#FBEFD9;color:var(--k-body);font-family:"Inter Tight";font-style:normal;font-size:12px}.kw6{background:linear-gradient(135deg,#C9DAF5,#F3D6E1)}
+.kb-w b{font-size:13.5px;font-weight:500;line-height:1.2}.kb-w small{font-size:11.5px;color:var(--k-soft)}
+.kb-tag{align-self:flex-start;font-size:11px;color:var(--k-deep);background:var(--k-tint);border-radius:999px;padding:3px 8px;margin-top:2px}
+.kb-outs{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.kb-outs div{background:#F7F9FD;border-radius:14px;padding:12px;font-size:13.5px;line-height:1.3;color:var(--k-body)}
+.kb-outs b{display:block;font-size:30px;font-weight:500;letter-spacing:-.02em;color:var(--k-ink);line-height:1;margin-bottom:6px}
+.kb-meta{font-size:13px;color:var(--k-soft);margin-top:10px}
+.kb-team{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center;font-size:11.5px;color:var(--k-soft);line-height:1.25}
+.kb-team i{display:grid;place-items:center;width:44px;height:44px;margin:0 auto 6px;border-radius:50%;background:var(--k-tint);color:var(--k-deep);font-family:"Instrument Serif",serif;font-size:21px}
+.kb-team b{display:block;color:var(--k-ink);font-weight:500;font-size:13px}
+.kb-facts{margin-top:14px;border-top:1px solid var(--k-line)}
+.kb-facts div{display:grid;gap:2px;padding:10px 0;border-bottom:1px solid var(--k-line)}
+.kb-facts b{font-weight:500;font-size:14.5px}.kb-facts span{font-size:13px;color:var(--k-body)}
+.kb-tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:#F4F4F3;border-radius:14px;padding:4px;margin:4px 0 14px}
+.kb-tabs button{border:0;background:none;border-radius:11px;padding:10px 6px;font:500 14px "Inter Tight",sans-serif;color:var(--k-soft)}
+.kb-tabs button.on{background:#fff;color:var(--k-ink);box-shadow:0 2px 8px rgba(40,50,80,.08)}
+.kb-k{font-size:12px;color:var(--k-soft)}
+.kb-t{font-size:17px;font-weight:500;margin:2px 0 10px;line-height:1.25}
+.kb-road{display:flex;gap:4px;margin-bottom:10px}.kb-road i{flex:1;height:8px;border-radius:5px;background:#D8E2F6}.kb-road i:first-child{background:var(--k-pr)}
+.kb-mods{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.kb-mods div{background:#F7F9FD;border-radius:12px;padding:9px 10px;font-size:13px;line-height:1.3}.kb-mods b{display:block;font-size:11px;color:var(--k-soft);font-weight:500;margin-bottom:2px}
+.kb-weeks{display:grid;gap:7px}.kb-weeks div{display:grid;grid-template-columns:78px 1fr;gap:10px;align-items:center;font-size:13.5px}
+.kb-weeks b{font-size:11.5px;font-weight:500;color:var(--k-deep);background:var(--k-tint);border-radius:999px;padding:4px 8px;text-align:center;white-space:nowrap}
+.kb-out{font-size:13.5px;color:var(--k-body);line-height:1.45;margin:12px 0 0}.kb-out b{color:var(--k-ink);font-weight:500}
+.kb-btn{display:block;text-align:center;text-decoration:none;background:var(--k-pr);color:#fff;border-radius:14px;padding:15px;font-weight:500;font-size:15.5px;margin-top:14px}
+.kb-btn:hover{background:#5B7BD1}
 </style>
 </head>
 <body>
@@ -226,33 +266,38 @@
       <ul class="lessons" id="lessons"></ul>
     </div>
 
-    <div class="block">
-      <h3>Твой путь: 6 глав, каждая — шаг</h3>
-      <p class="pathlead">Курс собран как цепочка: главы открываются по порядку, и каждая опирается на предыдущую. Особенно важные для тебя отмечены ниже: они закроют то, что аудит показал слабым местом. Остальные превращают это в стабильный поток клиентов.</p>
-      <div class="path" id="path"></div>
-      <p class="meta">Аудит показывает, на что тебе обратить особое внимание, а не что пропустить. Навыки дают отдельные главы, а кейсы, сайт и документы для клиента — только весь путь. 43 урока · около 15 недель · в своём темпе.</p>
+    <div class="block kb">
+      <span class="kb-l">программа · 57 уроков · ~20 недель</span>
+      <h3>Что будет в твоём <em>портфолио</em></h3>
+      <p class="kb-lead">6 работ, и у каждой — свои главы курса. Отмечена та, что закроет твою слабую зону.</p>
+      <div class="kb-bar"><i style="flex:3"></i><i style="flex:11"></i><i style="flex:4"></i><i style="flex:2"></i></div>
+      <div class="kb-barl"><span>база</span><span>первые кейсы</span><span>клиенты</span><span>выпуск</span></div>
+      <div class="kb-works" id="works"></div>
     </div>
 
-    <div class="block">
+    <div class="block kb">
       <h3>Что будет у тебя на выходе</h3>
-      <ul class="outs">
-        <li><b>4</b>кейса в портфолио: брендинг, сайт, ИИ-кейс и живой сайт</li>
-        <li><b>1</b>свой сайт-портфолио на Tilda с формой заявки</li>
-        <li><b>3</b>документа для клиента: бриф, КП и договор</li>
-        <li><b>6</b>разборов твоих работ с преподавателем</li>
-      </ul>
-      <p class="meta">Плюс библиотеки скиллов, промптов и плагинов для Figma, которые остаются с тобой.</p>
+      <div class="kb-outs">
+        <div><b>6</b>работ в портфолио: от постеров до диплома</div>
+        <div><b>2+</b>кейса и свой сайт-портфолио</div>
+        <div><b>100%</b>домашек с личным разбором куратора</div>
+        <div><b>150+</b>часов практики за ~20 недель</div>
+      </div>
+      <p class="kb-meta">Плюс бриф, расчёт цены часа, свои скиллы и плагины для Figma.</p>
     </div>
 
-    <div class="block">
+    <div class="block kb">
       <h3>Почему нам можно доверять</h3>
-      <ul class="why">
-        <li><strong>Курс ведут практики, а не теоретики.</strong>Диана — дизайнер, создатель Di Sign University и автор программы: обучает веб- и бренд-дизайну с нуля и упаковывает бренды. Каролина — дизайнер, отвечает в курсе за нейросети и ИИ-инструменты. Всё, чему учим, мы каждый день делаем в своих проектах.</li>
-        <li><strong>Программа собрана по рынку.</strong>Мы разобрали, что сейчас требуют вакансии, что чаще всего заказывают клиенты и чему учат сильные школы, — и оставили только то, что приводит к заказам.</li>
-        <li><strong>Честные сроки.</strong>Около 15 недель и много практики, а не «дизайнер за 30 дней». Зато на выходе работы, с которыми не стыдно идти к клиенту.</li>
-        <li><strong>Результат — портфолио, а не сертификат.</strong>4 кейса, свой сайт и документы для клиента. Их можно показать заказчику уже на следующий день после выпуска.</li>
-        <li><strong>Можно попробовать до покупки.</strong>Материалы в боте, мини-интенсив и открытый эфир с разбором работ — посмотри, как мы учим, прежде чем решать.</li>
-      </ul>
+      <div class="kb-team">
+        <div><i>Д</i><b>Диана</b>брендинг и сайты</div><div><i>К</i><b>Каролина</b>нейросети</div>
+        <div><i>А</i><b>Артём</b>менеджмент</div><div><i>Н</i><b>Наташа</b>кейсы, буст-эфир</div>
+      </div>
+      <div class="kb-facts">
+        <div><b>Практики, а не теоретики</b><span>всё, чему учим, делаем в своих проектах</span></div>
+        <div><b>Честные сроки</b><span>~20 недель, а не «дизайнер за 30 дней»</span></div>
+        <div><b>Разбор каждой домашки</b><span>текстом, голосом и правками в Figma</span></div>
+        <div><b>Можно попробовать</b><span>бесплатный мини-курс в боте</span></div>
+      </div>
     </div>
 
     <div class="block gift">
@@ -261,14 +306,34 @@
       <p id="giftText"></p>
     </div>
 
-    <div class="block week">
+    <div class="block kb" id="botGift">
+      <h3>Забери материалы в боте — и выбери подарок</h3>
+      <p class="kb-lead">Твой материал по результату придёт сразу, а дальше — на выбор:</p>
+      <div class="kb-tabs" role="tablist"><button type="button" class="on" data-t="course" role="tab" aria-selected="true">мини-курс</button><button type="button" data-t="month" role="tab" aria-selected="false">месяц материалов</button></div>
+      <div class="kb-pane" data-p="course">
+        <div class="kb-k">бесплатно · 12 материалов</div>
+        <div class="kb-t">Серия постеров для кофейни в кампусе</div>
+        <div class="kb-road"><i></i><i></i><i></i><i></i></div>
+        <div class="kb-mods"><div><b>блок 1</b>Добро пожаловать в мир дизайна</div><div><b>блок 2</b>Уверенно сразу к делу</div><div><b>блок 3</b>Повяжите бантик и готово!</div><div><b>блок 4</b>Сикрет-бокс</div></div>
+        <p class="kb-out"><b>На выходе:</b> серия постеров по ТЗ от таксы-клиента, пост-кейс и разбор «первый постер против финального».</p>
+        <a class="kb-btn" id="botCourse" href="#" target="_blank" rel="noopener">Начать мини-курс в Telegram</a>
+      </div>
+      <div class="kb-pane" data-p="month" hidden>
+        <div class="kb-k">бесплатно · месяц</div>
+        <div class="kb-t">Полезные материалы: от шрифтов до продаж</div>
+        <div class="kb-weeks"><div><b>неделя 1</b>шрифты и композиция</div><div><b>неделя 2</b>Figma и нейросети</div><div><b>неделя 3</b>портфолио и кейсы</div><div><b>неделя 4</b>клиенты, цена и продажи</div></div>
+        <p class="kb-out">Гайды, чек-листы и шаблоны — новый материал каждые пару дней.</p>
+        <a class="kb-btn" id="botMonth" href="#" target="_blank" rel="noopener">Получать материалы в Telegram</a>
+      </div>
+    </div>
+
+    <div class="block week" hidden>
       <h3>И ещё 6 материалов за неделю</h3>
-      <p class="weeksub">Подпишись на бота — каждый день будет открываться новый полезный файл.</p>
       <div class="map" id="vC"></div>
     </div>
 
     <div class="actions">
-      <a class="btn" id="botLink" href="#" target="_blank" rel="noopener" style="text-decoration:none;text-align:center">Забрать материал и открыть неделю в Telegram</a>
+      <a class="btn" id="botLink" href="#" target="_blank" rel="noopener" style="text-decoration:none;text-align:center" hidden>Забрать материал в Telegram</a>
       <button class="btn ghost" id="share">Поделиться результатом</button>
       <button class="btn ghost" id="again">Пройти заново</button>
     </div>
@@ -291,23 +356,23 @@ const Z = {
      gift:'Чек-лист «10 ошибок новичка»', giftText:'Проверяй по нему каждую работу перед сдачей — половина правок исчезнет.'},
   P:{name:'Портфолио', dog:5, title:'Сильный без витрины',
      text:'Ты умеешь больше, чем показывает портфолио. Клиент видит картинки, а не то, как ты решаешь задачи, — и уходит к тому, кто это объяснил.',
-     step:'Перепакуй одну работу в кейс: задача → процесс → решение → результат. Начни с той, где была настоящая задача.', ch:'упаковка кейсов — главы 03–04',
+     step:'Перепакуй одну работу в кейс: задача → процесс → решение → результат. Начни с той, где была настоящая задача.', ch:'упаковка кейсов — глава 08',
      gift:'Шаблон кейса в Figma', giftText:'Готовая структура кейса для Behance, Dprofile или сайта — вставляешь свою работу и текст.'},
   V:{name:'Видимость', dog:1, title:'Невидимый профи',
      text:'Работы могут быть хорошими, но клиентам негде их увидеть. Заказы получает не лучший дизайнер, а тот, кого заметили.',
-     step:'Два поста в неделю: один про процесс, один про результат. И одна страница-портфолио, на которую можно дать ссылку.', ch:'свой сайт-портфолио — глава 05',
+     step:'Два поста в неделю: один про процесс, один про результат. И одна страница-портфолио, на которую можно дать ссылку.', ch:'сайт-портфолио и блог — главы 08–09',
      gift:'Контент-план для дизайнера на месяц', giftText:'8 тем для постов, которые показывают твой подход и приводят заказчиков.'},
   S:{name:'Цена и продажа', dog:3, title:'Работаю за спасибо',
      text:'Работаешь ты хорошо, но деньги не те. Чаще всего дело не в рынке, а в том, как ты называешь цену и объясняете ценность.',
-     step:'Посчитай цену от задачи клиента, а не от часов. Пропиши в КП, что входит и сколько кругов правок.', ch:'КП, цена и договор — глава 05',
+     step:'Посчитай цену от задачи клиента, а не от часов. Пропиши в КП, что входит и сколько кругов правок.', ch:'цена и переговоры — главы 06–07',
      gift:'Калькулятор цены и шаблон КП', giftText:'Посчитаешь стоимость проекта и отправишь клиенту понятное предложение.'},
   C:{name:'Работа с клиентом', dog:4, title:'Заложник правок',
      text:'Проекты затягиваются и выматывают, потому что правила игры не заданы с самого начала. Это лечится процессом, а не терпением.',
-     step:'Бриф до старта, презентация с логикой решений, два круга правок в договоре. Начни с брифа на следующем проекте.', ch:'бриф, презентация, договор — главы 03 и 05',
+     step:'Бриф до старта, презентация с логикой решений, два круга правок в договоре. Начни с брифа на следующем проекте.', ch:'клиенты и бриф — глава 06',
      gift:'Шаблон брифа', giftText:'Вопросы, после которых клиент сам понимает, чего хочет, а ты — что делать.'},
   I:{name:'Внутренние блоки', dog:0, title:'Сам себе тормоз',
      text:'Навыков у тебя хватает. Но «ещё не готов(а)», «вдруг не справлюсь» и «покажу, когда будет идеально» забирают заказы раньше конкурентов.',
-     step:'На этой неделе откликнись на 3 заказа, которые кажутся «чуть сложнее» твоего уровня.', ch:'сквозной проект и разборы с преподавателем',
+     step:'На этой неделе откликнись на 3 заказа, которые кажутся «чуть сложнее» твоего уровня.', ch:'менеджмент проекта и диплом — главы 07 и 10',
      gift:'Скрипты ответов клиенту', giftText:'Готовые фразы для цены, правок и «а нейросеть сделает дешевле» — говорить уверенно становится проще.'},
   T:{name:'Скорость: Figma и ИИ', dog:2, title:'Всё вручную',
      text:'Качество есть, но на каждый проект уходит в разы больше времени, чем у тех, кто автоматизировал рутину. Значит, меньше проектов и меньше денег.',
@@ -386,17 +451,18 @@ const Q = [
 ];
 
 const LESSONS = {
-  B:[['01.1.2','Золотые правила композиции','баланс, контраст, ритм, иерархия'],['01.1.3','Сетка','модульная и колоночная, в печати и вебе'],['01.2.2','Как сочетать шрифты','пары, иерархия, читаемость']],
-  P:[['03.12','Презентация проекта','логика кейса: задача → решение → результат'],['03.11','Визуализация проекта','мокапы и подача на носителях'],['04.11','Кейс сайта','как показать пользу для бизнеса']],
-  V:[['05.6','Свой сайт на Claude и Tilda','домен, форма заявки, проверка безопасности'],['05.4','Шоурил и скринкаст для кейса','динамичная подача работ'],['05.5','Презентации в PPTX','брендбук и кейс в одном стиле']],
-  S:[['05.7','Бриф, КП и договор','шаблоны и промпты для быстрого заполнения'],['03.2','Анализ ниши и конкурентов','аргументы, которые обосновывают цену'],['03.5','Ценности и концепция','как говорить о ценности, а не о часах']],
-  C:[['03.3','Постановка задач','бриф и ТЗ, которые снимают лишние правки'],['03.12','Презентация проекта','защита решений перед клиентом'],['05.7','Инструменты для работы с клиентом','КП с кругами правок и договор']],
-  I:[['00.1','Карта пути','понятно, что делать на каждом шаге'],['03','Сквозной проект с клиентом','первый настоящий кейс уже в середине курса'],['×6','Разборы с преподавателем','обратная связь вместо гаданий «достаточно ли я хорош»']],
-  T:[['02.3','Auto Layout','макеты, которые подстраиваются сами'],['05.3','Скиллы и плагины для Figma','автоматизация рутины под себя'],['05.4','Мокапы с нейросетями','Nano Banana, GPT, Seedream, Recraft']]
+  B:[['01.1.2','Золотые правила','баланс, контраст, ритм, иерархия'],['01.1.3','Сетка','как строить и где применять'],['01.2.2','Как сочетать шрифты','пары, контраст, иерархия']],
+  P:[['08.1','Структура кейсов','задача → исследование → концепция → результат'],['08.2','Собственный сайт-портфолио','структура и сборка с Claude'],['03.12','Презентация проекта','как объяснить логику работы']],
+  V:[['09','Блог: клиенты приходят сами','темы, процесс работы, путь клиента'],['08.3','Кейс, который продаёт','буст-эфир с Наташей'],['08.2','Сайт-портфолио','одна ссылка для всех заказчиков']],
+  S:[['07.1','Рынок, деньги, метрики','стоимость часа и точка безубыточности'],['07.4.1','Логика переговоров','аргументация цены и сроков'],['06.3','Как себя позиционировать','ценность работы, а не часы']],
+  C:[['06.1','Искусство коммуникации','вопросы, ожидания, этапы'],['06.2','Брифинг','вводные до начала работы'],['06.4','Боли и возвращение клиента','возражения и повторные заказы']],
+  I:[['07.3','Антикризисное управление','правки, сроки, выгорание'],['10.2','Проект за неделю','работа по ТЗ от начала до конца'],['100%','Разбор каждой домашки','обратная связь вместо гаданий «достаточно ли я хорош»']],
+  T:[['02.3','Auto Layout','макеты, которые подстраиваются сами'],['05.4','Сайты с помощью Claude','от задачи до живой страницы'],['05.3','Мокапы нейросетями','подача работ без фотостудии']]
 };
 const CHAPTERS=[['00','Введение'],['01','Основы дизайна'],['02','Figma'],['03','Брендинг'],['04','Сайты'],['05','Нейросети и вёрстка']];
 const CHDESC=['Карта пути: что делать на каждом шаге и что получишь на выходе','Композиция, типографика, цвет: фундамент, на котором держатся и цена, и кейсы','Макеты быстро и аккуратно: Auto Layout, компоненты, сдача работ без правок','Сквозной проект с клиентом: бриф, концепция, презентация. Первый настоящий кейс','Сайты для бизнеса: кейс, который объясняет пользу и оправдывает цену','ИИ в работе, свой сайт-портфолио, бриф, КП и договор: всё, чтобы брать заказы'];
 const ZCH={B:[1],P:[3,4],V:[5],S:[5],C:[3,5],I:[0,3],T:[2,5]};
+const ZW={B:[0],P:[4],V:[4],S:[4],C:[4],I:[5],T:[1,3]};
 
 const WEEK_POOL=[
   {n:'Чек-лист «10 ошибок новичка»',f:'PDF',x:'Проверка любой работы перед сдачей'},
@@ -523,7 +589,13 @@ function finish(){
     const li=document.createElement('li'); li.innerHTML='<em></em><div><strong></strong><span></span></div>';
     li.querySelector('em').textContent=l[0]; li.querySelector('strong').textContent=l[1]; li.querySelector('span').textContent=l[2]; ul.appendChild(li); }));
   const hits=new Set(); focus.forEach(k=>ZCH[k].forEach(c=>hits.add(c)));
-  const path=$('path'); path.innerHTML='';
+  const WORKS=[['Серия постеров','неделя 2 · главы 00–01','kw1','my<br>rule'],['UI-кит в Figma','неделя 3 · глава 02','kw2',''],['Фирменный стиль','неделя 9 · главы 03, 05','kw3','K'],['Сайт для бренда','неделя 14 · главы 04, 05','kw4',''],['Кейсы и сайт-портфолио','неделя 18 · главы 06–09','kw5','кейс'],['Дипломный проект','неделя 20 · главы 10–11','kw6','✦']];
+  const wh={}; focus.forEach(k=>(ZW[k]||[]).forEach(w=>{ (wh[w]=wh[w]||[]).push(Z[k].name); }));
+  $('works').innerHTML=WORKS.map((w,n)=>'<div class="kb-w'+(wh[n]?' hot':'')+'"><span class="kb-th '+w[2]+'">'+w[3]+'</span><b>'+w[0]+'</b><small>'+w[1]+'</small>'+(wh[n]?'<span class="kb-tag">закроет: '+wh[n].join(', ').toLowerCase()+'</span>':'')+'</div>').join('');
+  const stg=[0,0,1,1,2,3]; const hotSt=new Set(Object.keys(wh).map(n=>stg[n])); document.querySelectorAll('.kb-bar i').forEach((e,n)=>e.classList.toggle('on',hotSt.has(n)));
+  const tagB='start=audit_'+(allGood?'top':leak)+'_'+(answers.stage||'x');
+  $('botCourse').href=BOT_URL+'?'+tagB+'_course'; $('botMonth').href=BOT_URL+'?'+tagB+'_month';
+  const path=$('path')||document.createElement('div'); path.innerHTML='';
   CHAPTERS.forEach((c,n)=>{ const d=document.createElement('div'); d.className='ch'+(hits.has(n)?' hit':'');
     d.innerHTML='<b></b><div><div class="nm"></div><div class="ds"></div><span class="bd"></span></div>';
     d.querySelector('b').textContent=c[0]; d.querySelector('.nm').textContent=c[1]; d.querySelector('.ds').textContent=CHDESC[n];
@@ -537,6 +609,7 @@ function finish(){
 $('start').onclick=()=>{ i=0; pts={}; answers={}; render(); show('quiz'); };
 $('next').onclick=advance;
 $('again').onclick=()=>show('intro');
+document.querySelectorAll('.kb-tabs button').forEach(b=>b.onclick=()=>{ document.querySelectorAll('.kb-tabs button').forEach(x=>{ x.classList.toggle('on',x===b); x.setAttribute('aria-selected',String(x===b)); }); document.querySelectorAll('.kb-pane').forEach(p=>p.hidden=p.dataset.p!==b.dataset.t); });
 $('share').onclick=async()=>{
   const r=window._result||{}; const text=r.leak?('Прошла аудит: моя главная утечка заказов — «'+r.leak.toLowerCase()+'». Я — «'+r.title+'». А у тебя?'):('Прошла аудит дизайнера: «'+r.title+'». А ты?');
   try{ if(navigator.share){ await navigator.share({text,url:location.href}); return; } await navigator.clipboard.writeText(text+' '+location.href); $('shared').textContent='Текст скопирован — вставь в сторис или чат'; }
