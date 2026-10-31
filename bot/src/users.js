@@ -132,51 +132,107 @@ export async function onStart(ctx, msg, payload) {
 //   согласие на данные -> согласие на рассылку -> уровень (если не пришёл из аудита) -> имя -> контакт (Telegram / телефон / почта)
 //   -> отзыв о прототипе кабинета (по желанию, за бонус) -> мини-курс или материалы (если не выбрал в аудите)
 //   -> (тест, если не проходил) -> подарок -> пост-расписание по треку -> дальше лента
-export async function nextStep(ctx, u) {
-  const id = u.tg_id;
-  if (!u.consent_pd_at) {
-    await pauseFor(ctx, id, 'consentPd');
-    return tech(ctx, id, say(ctx, id, 'consentPd', await docVars(ctx), {
+// ---------- порядок шагов входа (меняется в панели: Сценарий → Вход в бот) ----------
+export const FLOW_STEPS = ['consentPd', 'consentAds', 'askLevel', 'askName', 'askContact', 'fbOffer', 'askTrack', 'testOffer'];
+export const FLOW_OPTIONAL = ['askName', 'askContact', 'fbOffer', 'askTrack', 'testOffer']; // эти можно выключить
+export function normFlow(order, off) {
+  const seen = [];
+  for (const k of Array.isArray(order) ? order : []) if (FLOW_STEPS.includes(k) && !seen.includes(k)) seen.push(k);
+  for (const k of FLOW_STEPS) if (!seen.includes(k)) seen.push(k);
+  // согласие на данные всегда первое: без него ничего не собираем
+  const o = ['consentPd', ...seen.filter((k) => k !== 'consentPd')];
+  const f = (Array.isArray(off) ? off : []).filter((k) => FLOW_OPTIONAL.includes(k));
+  return { order: o, off: [...new Set(f)] };
+}
+export async function loadFlow(ctx) {
+  const rows = await ctx.db.all(`SELECT key, value FROM settings WHERE key IN ('flow:order', 'flow:off')`);
+  const m = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  const j = (v) => { try { return JSON.parse(v); } catch { return null; } };
+  return normFlow(j(m['flow:order']), j(m['flow:off']));
+}
+
+// каждый шаг: если он ещё не пройден и включён — отправляет сообщение и возвращает true (ждём ответ)
+const STEP_RUN = {
+  async consentPd(ctx, u) {
+    if (u.consent_pd_at) return false;
+    await pauseFor(ctx, u.tg_id, 'consentPd');
+    await tech(ctx, u.tg_id, say(ctx, u.tg_id, 'consentPd', await docVars(ctx), {
       link_preview_options: { is_disabled: true },
       reply_markup: kb([[{ text: await btn(ctx, 'consentPdBtn'), callback_data: 'c:pd' }]]),
     }));
-  }
-  if (!u.consent_ads_at) {
-    if (u.status === 'stopped') return;
-    await pauseFor(ctx, id, 'consentAds');
-    return tech(ctx, id, say(ctx, id, 'consentAds', {}, {
+    return true;
+  },
+  async consentAds(ctx, u) {
+    if (u.consent_ads_at || u.status === 'stopped') return false;
+    await pauseFor(ctx, u.tg_id, 'consentAds');
+    await tech(ctx, u.tg_id, say(ctx, u.tg_id, 'consentAds', {}, {
       reply_markup: kb([[{ text: await btn(ctx, 'consentAdsYes'), callback_data: 'c:ads:1' }, { text: await btn(ctx, 'consentAdsNo'), callback_data: 'c:ads:0' }]]),
     }));
-  }
-  if (!u.level) { await pauseFor(ctx, id, 'askLevel'); return askLevel(ctx, id); }
-  if (!u.contact_name) {
+    return true;
+  },
+  async askLevel(ctx, u) {
+    if (u.level) return false;
+    await pauseFor(ctx, u.tg_id, 'askLevel');
+    await askLevel(ctx, u.tg_id);
+    return true;
+  },
+  async askName(ctx, u) {
+    if (u.contact_name) return false;
+    const id = u.tg_id;
     await pauseFor(ctx, id, 'askName');
     await setUState(ctx, id, 'u:name');
-    return tech(ctx, id, say(ctx, id, 'askName', { имя: u.first_name || 'друг' }, { reply_markup: kb([[{ text: await btn(ctx, 'nameOk'), callback_data: 'n:ok' }]]) }));
-  }
-  if (!u.contact_at) return askContact(ctx, u);
-  if (!u.fb_at && !u.fb_skip) {
+    await tech(ctx, id, say(ctx, id, 'askName', { имя: u.first_name || 'друг' }, { reply_markup: kb([[{ text: await btn(ctx, 'nameOk'), callback_data: 'n:ok' }]]) }));
+    return true;
+  },
+  async askContact(ctx, u) {
+    if (u.contact_at) return false;
+    await askContact(ctx, u);
+    return true;
+  },
+  async fbOffer(ctx, u) {
+    if (u.fb_at || u.fb_skip) return false;
+    const id = u.tg_id;
     await pauseFor(ctx, id, 'fbOffer');
-    return tech(ctx, id, say(ctx, id, 'fbOffer', { кабинет: ctx.env.KABINET_URL || 'https://karoleenok.github.io/di-sign-audit/kabinet/' }, {
+    await tech(ctx, id, say(ctx, id, 'fbOffer', { кабинет: ctx.env.KABINET_URL || 'https://karoleenok.github.io/di-sign-audit/kabinet/' }, {
       reply_markup: kb([[{ text: await btn(ctx, 'fbYes'), callback_data: 'fb:yes' }], [{ text: await btn(ctx, 'fbNo'), callback_data: 'fb:no' }]]),
     }));
-  }
-  if (!u.track) {
+    return true;
+  },
+  async askTrack(ctx, u) {
+    if (u.track) return false;
+    const id = u.tg_id;
     await pauseFor(ctx, id, 'askTrack');
-    return tech(ctx, id, say(ctx, id, 'askTrack', {}, {
+    await tech(ctx, id, say(ctx, id, 'askTrack', {}, {
       reply_markup: kb([[{ text: await btn(ctx, 'trackCourse'), callback_data: 'tr:course' }], [{ text: await btn(ctx, 'trackMat'), callback_data: 'tr:mat' }]]),
     }));
-  }
-  if (!u.zone) {
-    // не проходил тест: один раз предлагаем (по кнопке в конце теста он вернётся в бот — тогда придёт подарок)
-    const url = ctx.env.TEST_URL;
-    if (!u.test_offered) {
-      await ctx.db.run(`UPDATE users SET test_offered = 1 WHERE tg_id = ?`, [id]);
-      await pauseFor(ctx, id, 'testOffer');
-      await tech(ctx, id, say(ctx, id, 'testOffer', {}, url ? { reply_markup: kb([[{ text: await btn(ctx, 'testBtn'), url }]]) } : {}));
+    return true;
+  },
+  async testOffer(ctx, u) {
+    const id = u.tg_id;
+    if (!u.zone) {
+      // не проходил тест: один раз предлагаем (по кнопке в конце теста он вернётся в бот — тогда придёт подарок)
+      const url = ctx.env.TEST_URL;
+      if (!u.test_offered) {
+        await ctx.db.run(`UPDATE users SET test_offered = 1 WHERE tg_id = ?`, [id]);
+        await pauseFor(ctx, id, 'testOffer');
+        await tech(ctx, id, say(ctx, id, 'testOffer', {}, url ? { reply_markup: kb([[{ text: await btn(ctx, 'testBtn'), url }]]) } : {}));
+      }
+    } else {
+      await sendGift(ctx, u, (await delayOf(ctx, 'noGift')) * 1000);
     }
-  } else {
-    await sendGift(ctx, u, (await delayOf(ctx, 'noGift')) * 1000);
+    return false; // на ответ не ждём
+  },
+};
+
+export async function nextStep(ctx, u) {
+  const id = u.tg_id;
+  const { order, off } = await loadFlow(ctx);
+  for (const k of order) {
+    if (off.includes(k)) {
+      if (k === 'testOffer' && u.zone) await sendGift(ctx, u, (await delayOf(ctx, 'noGift')) * 1000); // подарок после теста не теряем
+      continue;
+    }
+    if (await STEP_RUN[k](ctx, u)) return;
   }
   if (!u.sched_at) {
     const key = u.track === 'course' ? 'schedCourse' : 'schedMat';

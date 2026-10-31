@@ -574,8 +574,22 @@ step('путь ученика: пауза перед шагом и свои кн
   const saved = await db.first(`SELECT * FROM posts ORDER BY id DESC LIMIT 1`);
   assert.equal(saved.kind, 'node'); assert.equal(JSON.parse(saved.buttons)[0][0].go, a1.id);
   await db.run(`UPDATE posts SET status = 'archived' WHERE id IN (?, ?, ?, ?, ?)`, [a1.id, a2.id, q.id, fol.id, saved.id]);
+  // порядок шагов входа меняется из панели
+  {
+  const rr = await api('/flow', { order: ['consentAds', 'askName', 'askContact', 'askLevel', 'fbOffer', 'askTrack', 'testOffer'], off: ['fbOffer', 'consentPd'] });
+  assert.deepEqual(rr.flow.order.slice(0, 3), ['consentPd', 'consentAds', 'askName'], 'согласие на данные всегда первое');
+  assert.deepEqual(rr.flow.off, ['fbOffer'], 'обязательный шаг выключить нельзя');
+  const W = 1500;
+  await msg(W, '/start audit_P_start_course'); await cb(W, 'c:pd'); await cb(W, 'c:ads:1');
+  assert.match(lastText(W), /имя|зовут|называть/i, 'после согласий сначала имя');
+  await cb(W, 'n:ok'); await cb(W, 'ct:email'); await msg(W, 'w@mail.ru');
+  const w = await db.first('SELECT * FROM users WHERE tg_id = ?', [W]);
+  assert.equal(w.status, 'active', 'вход пройден без выключенного отзыва'); assert.equal(w.fb_at, null);
+  assert.ok(!calls.some((c) => c.body.chat_id === W && /прототип/.test(c.body.text || '')), 'отзыв пропущен');
+  await api('/flow', { order: [], off: [] });
+  }
 }
-step('конструктор сценариев: посты-ответы, кнопки-выбор, цепочка после ответа, документы из панели, оплата-заглушка, #номер в чате');
+step('конструктор сценариев: порядок и выключатели шагов входа, посты-ответы, кнопки-выбор, цепочка после ответа, документы из панели, оплата-заглушка, #номер в чате');
 
 // ---------- вход: выбор из аудита, телефон, отзыв с бонусом, лента по треку ----------
 {
@@ -639,5 +653,6 @@ step('конструктор сценариев: посты-ответы, кно
   await db.run(`UPDATE posts SET status = 'archived' WHERE id IN (?, ?, ?, ?)`, [pc, pm, pa, fbp]);
 }
 step('вход: выбор из аудита (мини-курс/материалы), имя, телефон кнопкой или почта, отзыв о кабинете → бонус и уведомление админу, лента по треку');
+
 
 console.log('\nВсе сценарии прошли. Запросов к фейковому Telegram:', calls.length);

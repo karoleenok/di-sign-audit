@@ -1875,53 +1875,107 @@ async function onStart(ctx, msg2, payload) {
   await tech(ctx, from.id, say(ctx, from.id, st.zone ? "helloTest" : "hello", { имя: name }));
   return nextStep(ctx, u);
 }
-async function nextStep(ctx, u) {
-  const id = u.tg_id;
-  if (!u.consent_pd_at) {
-    await pauseFor(ctx, id, "consentPd");
-    return tech(ctx, id, say(ctx, id, "consentPd", await docVars(ctx), {
+var FLOW_STEPS = ["consentPd", "consentAds", "askLevel", "askName", "askContact", "fbOffer", "askTrack", "testOffer"];
+var FLOW_OPTIONAL = ["askName", "askContact", "fbOffer", "askTrack", "testOffer"];
+function normFlow(order, off) {
+  const seen = [];
+  for (const k of Array.isArray(order) ? order : []) if (FLOW_STEPS.includes(k) && !seen.includes(k)) seen.push(k);
+  for (const k of FLOW_STEPS) if (!seen.includes(k)) seen.push(k);
+  const o = ["consentPd", ...seen.filter((k) => k !== "consentPd")];
+  const f = (Array.isArray(off) ? off : []).filter((k) => FLOW_OPTIONAL.includes(k));
+  return { order: o, off: [...new Set(f)] };
+}
+async function loadFlow(ctx) {
+  const rows = await ctx.db.all(`SELECT key, value FROM settings WHERE key IN ('flow:order', 'flow:off')`);
+  const m = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  const j3 = (v) => {
+    try {
+      return JSON.parse(v);
+    } catch {
+      return null;
+    }
+  };
+  return normFlow(j3(m["flow:order"]), j3(m["flow:off"]));
+}
+var STEP_RUN = {
+  async consentPd(ctx, u) {
+    if (u.consent_pd_at) return false;
+    await pauseFor(ctx, u.tg_id, "consentPd");
+    await tech(ctx, u.tg_id, say(ctx, u.tg_id, "consentPd", await docVars(ctx), {
       link_preview_options: { is_disabled: true },
       reply_markup: kb2([[{ text: await btn(ctx, "consentPdBtn"), callback_data: "c:pd" }]])
     }));
-  }
-  if (!u.consent_ads_at) {
-    if (u.status === "stopped") return;
-    await pauseFor(ctx, id, "consentAds");
-    return tech(ctx, id, say(ctx, id, "consentAds", {}, {
+    return true;
+  },
+  async consentAds(ctx, u) {
+    if (u.consent_ads_at || u.status === "stopped") return false;
+    await pauseFor(ctx, u.tg_id, "consentAds");
+    await tech(ctx, u.tg_id, say(ctx, u.tg_id, "consentAds", {}, {
       reply_markup: kb2([[{ text: await btn(ctx, "consentAdsYes"), callback_data: "c:ads:1" }, { text: await btn(ctx, "consentAdsNo"), callback_data: "c:ads:0" }]])
     }));
-  }
-  if (!u.level) {
-    await pauseFor(ctx, id, "askLevel");
-    return askLevel(ctx, id);
-  }
-  if (!u.contact_name) {
+    return true;
+  },
+  async askLevel(ctx, u) {
+    if (u.level) return false;
+    await pauseFor(ctx, u.tg_id, "askLevel");
+    await askLevel(ctx, u.tg_id);
+    return true;
+  },
+  async askName(ctx, u) {
+    if (u.contact_name) return false;
+    const id = u.tg_id;
     await pauseFor(ctx, id, "askName");
     await setUState(ctx, id, "u:name");
-    return tech(ctx, id, say(ctx, id, "askName", { имя: u.first_name || "друг" }, { reply_markup: kb2([[{ text: await btn(ctx, "nameOk"), callback_data: "n:ok" }]]) }));
-  }
-  if (!u.contact_at) return askContact(ctx, u);
-  if (!u.fb_at && !u.fb_skip) {
+    await tech(ctx, id, say(ctx, id, "askName", { имя: u.first_name || "друг" }, { reply_markup: kb2([[{ text: await btn(ctx, "nameOk"), callback_data: "n:ok" }]]) }));
+    return true;
+  },
+  async askContact(ctx, u) {
+    if (u.contact_at) return false;
+    await askContact(ctx, u);
+    return true;
+  },
+  async fbOffer(ctx, u) {
+    if (u.fb_at || u.fb_skip) return false;
+    const id = u.tg_id;
     await pauseFor(ctx, id, "fbOffer");
-    return tech(ctx, id, say(ctx, id, "fbOffer", { кабинет: ctx.env.KABINET_URL || "https://karoleenok.github.io/di-sign-audit/kabinet/" }, {
+    await tech(ctx, id, say(ctx, id, "fbOffer", { кабинет: ctx.env.KABINET_URL || "https://karoleenok.github.io/di-sign-audit/kabinet/" }, {
       reply_markup: kb2([[{ text: await btn(ctx, "fbYes"), callback_data: "fb:yes" }], [{ text: await btn(ctx, "fbNo"), callback_data: "fb:no" }]])
     }));
-  }
-  if (!u.track) {
+    return true;
+  },
+  async askTrack(ctx, u) {
+    if (u.track) return false;
+    const id = u.tg_id;
     await pauseFor(ctx, id, "askTrack");
-    return tech(ctx, id, say(ctx, id, "askTrack", {}, {
+    await tech(ctx, id, say(ctx, id, "askTrack", {}, {
       reply_markup: kb2([[{ text: await btn(ctx, "trackCourse"), callback_data: "tr:course" }], [{ text: await btn(ctx, "trackMat"), callback_data: "tr:mat" }]])
     }));
-  }
-  if (!u.zone) {
-    const url = ctx.env.TEST_URL;
-    if (!u.test_offered) {
-      await ctx.db.run(`UPDATE users SET test_offered = 1 WHERE tg_id = ?`, [id]);
-      await pauseFor(ctx, id, "testOffer");
-      await tech(ctx, id, say(ctx, id, "testOffer", {}, url ? { reply_markup: kb2([[{ text: await btn(ctx, "testBtn"), url }]]) } : {}));
+    return true;
+  },
+  async testOffer(ctx, u) {
+    const id = u.tg_id;
+    if (!u.zone) {
+      const url = ctx.env.TEST_URL;
+      if (!u.test_offered) {
+        await ctx.db.run(`UPDATE users SET test_offered = 1 WHERE tg_id = ?`, [id]);
+        await pauseFor(ctx, id, "testOffer");
+        await tech(ctx, id, say(ctx, id, "testOffer", {}, url ? { reply_markup: kb2([[{ text: await btn(ctx, "testBtn"), url }]]) } : {}));
+      }
+    } else {
+      await sendGift(ctx, u, await delayOf(ctx, "noGift") * 1e3);
     }
-  } else {
-    await sendGift(ctx, u, await delayOf(ctx, "noGift") * 1e3);
+    return false;
+  }
+};
+async function nextStep(ctx, u) {
+  const id = u.tg_id;
+  const { order, off } = await loadFlow(ctx);
+  for (const k of order) {
+    if (off.includes(k)) {
+      if (k === "testOffer" && u.zone) await sendGift(ctx, u, await delayOf(ctx, "noGift") * 1e3);
+      continue;
+    }
+    if (await STEP_RUN[k](ctx, u)) return;
   }
   if (!u.sched_at) {
     const key = u.track === "course" ? "schedCourse" : "schedMat";
@@ -2739,6 +2793,8 @@ async function handlePanelApi(ctx, request, url) {
       docs: await loadDocs(ctx),
       docNames: DOCS,
       tracks: TRACKS,
+      flow: await loadFlow(ctx),
+      flowOptional: FLOW_OPTIONAL,
       fbCount: (await ctx.db.first(`SELECT COUNT(*) AS n FROM users WHERE fb_at IS NOT NULL`) || {}).n || 0,
       people: { all: people.n || 0, active: people.active || 0 },
       run: await activeRun(ctx.db, user.id)
@@ -2883,6 +2939,13 @@ async function handlePanelApi(ctx, request, url) {
     const rows = await ctx.db.all(`SELECT tg_id, first_name, username, contact_name, phone, email, level, zone, track, status, fb_like, fb_improve, fb_at, created_at, sched_at FROM users ORDER BY COALESCE(fb_at, 0) DESC, created_at DESC LIMIT 200`);
     const n = await ctx.db.first(`SELECT COUNT(*) AS all_n, SUM(CASE WHEN sched_at IS NOT NULL THEN 1 ELSE 0 END) AS done, SUM(CASE WHEN track = 'course' THEN 1 ELSE 0 END) AS course, SUM(CASE WHEN track = 'mat' THEN 1 ELSE 0 END) AS mat, SUM(CASE WHEN fb_at IS NOT NULL THEN 1 ELSE 0 END) AS fb FROM users`);
     return json({ people: rows, totals: n });
+  }
+  if (path === "/flow" && request.method === "POST") {
+    const f = normFlow(body.order, body.off);
+    const put = (k, v) => ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [k, JSON.stringify(v)]);
+    await put("flow:order", f.order);
+    await put("flow:off", f.off);
+    return json({ ok: true, flow: f });
   }
   if (path === "/docs" && request.method === "POST") {
     for (const k of ["policy", "consent", "offer", "owner"]) {
@@ -3179,6 +3242,8 @@ textarea{min-height:120px;resize:vertical;line-height:1.45}
 .stp b{flex:none;width:24px;height:24px;border-radius:50%;background:var(--pill);display:grid;place-items:center;font-size:12px}
 .stp .st-t{display:flex;flex-direction:column;font-size:14px;min-width:0}.stp .st-t i{display:block;font-style:normal;font-size:12px;color:var(--soft);margin-top:2px}
 .stp.last{cursor:default;border-style:dashed}
+#flowList{display:flex;flex-direction:column;gap:6px}
+.stp .st-t{flex:1}.stp.off{opacity:.55}.stp .lock{flex:none;width:22px;text-align:center;font-size:13px}.stp .mv{display:flex;gap:4px}.chip.sw{min-width:46px}.chip.sw.on{background:var(--ink,#2c0d02);color:#fff}
 .arr{text-align:center;color:var(--faint);font-size:12px;line-height:1;padding:3px 0}
 .docs-row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 .kinds{display:grid;gap:8px;margin-top:10px}
@@ -3564,31 +3629,72 @@ function renderFlow() {
 }
 
 // вход в бот: служебные шаги по порядку + документы
+const ENTRY = {
+  consentPd: ['✅ Согласие на данные', () => { const d = S.docs || {}; return 'политика ' + (d.policy ? '✓' : 'не задана') + ' · согласие ' + (d.consent ? '✓' : 'не задана'); }],
+  consentAds: ['📬 Согласие на рассылку', () => 'без него рассылку не отправляем'],
+  askLevel: ['🎚 Уровень', () => 'спрашиваем, если не пришёл из аудита'],
+  askName: ['📇 Имя', () => 'человек жмёт «Всё верно» или пишет имя'],
+  askContact: ['📱 Контакт', () => 'Telegram, телефон или почта'],
+  fbOffer: ['💬 Отзыв о кабинете — по желанию', () => 'бонусов за отзыв включено: ' + S.posts.filter((p) => p.kind === 'fb' && p.status === 'active').length],
+  askTrack: ['🎓 Мини-курс или материалы', () => 'спрашиваем, если не выбрал в аудите'],
+  testOffer: ['🧪 Тест → 🎁 подарок', () => 'подарков включено: ' + S.posts.filter((p) => p.kind === 'gift' && p.status === 'active').length + ' · если выключить, подарок всё равно придёт'],
+};
 function entryBox() {
   const d = S.docs || {};
   const ok = (k) => d[k] ? '<span class="ok-t">✓</span>' : '<span class="warn-t">не задана</span>';
-  const on = (k) => S.posts.filter((p) => p.kind === k && p.status === 'active').length;
-  const steps = [
-    ['hello', '👋 Приветствие', 'из аудита приходит выбор: мини-курс или материалы'],
-    ['consentPd', '✅ Согласие на данные', 'политика ' + ok('policy') + ' · согласие ' + ok('consent')],
-    ['consentAds', '📬 Согласие на рассылку'],
-    ['askLevel', '🎚 Уровень', 'если пришёл не из аудита'],
-    ['askName', '📇 Имя и контакт', 'Telegram, телефон или почта'],
-    ['fbOffer', '💬 Отзыв о кабинете — по желанию', 'бонусов за отзыв включено: ' + on('fb')],
-    ['askTrack', '🎓 Мини-курс или материалы', 'если не выбрал в аудите'],
-    ['testOffer', '🧪 Тест → 🎁 подарок', 'подарков включено: ' + on('gift')],
-    ['schedCourse', '🗓 Пост-расписание по треку'],
-  ];
+  const fl = S.flow || { order: Object.keys(ENTRY), off: [] };
+  const opt = S.flowOptional || [];
+  const row = (k, t, sub, i, o) => '<div class="stp' + (o.off ? ' off' : '') + '" role="button" tabindex="0" data-k="' + k + '"' + (o.mv ? ' data-mv="1"' : '') + '>' +
+    (o.mv ? '<div class="handle" aria-label="перетащить">⋮⋮</div>' : '<div class="lock" title="это место менять нельзя">🔒</div>') +
+    '<b>' + i + '</b><span class="st-t">' + t + (sub ? '<i>' + sub + '</i>' : '') + '</span>' +
+    (o.mv && !window.Sortable ? '<span class="mv"><button type="button" class="chip" data-up="' + k + '" aria-label="выше">▲</button><button type="button" class="chip" data-down="' + k + '" aria-label="ниже">▼</button></span>' : '') +
+    (o.sw ? '<button type="button" class="chip sw' + (o.off ? '' : ' on') + '" data-sw="' + k + '">' + (o.off ? 'выкл' : 'вкл') + '</button>' : '') + '</div>';
+  let n = 1;
+  let h = row('hello', '👋 Приветствие', 'из аудита приходит выбор: мини-курс или материалы', n++, {});
+  fl.order.forEach((k) => { h += row(k, ENTRY[k][0], ENTRY[k][1](), n++, { mv: k !== 'consentPd', sw: opt.includes(k), off: fl.off.includes(k) }); });
+  h += row('schedCourse', '🗓 Пост-расписание по треку', 'последний шаг: отсюда считается лента', n++, {});
   const miss = !d.policy || !d.consent;
-  return '<div class="box"><h3>Вход в бот</h3><p class="small muted" style="margin:0 0 10px">Так бот встречает нового человека. Порядок фиксированный: по закону сначала согласие. Нажми на шаг — поменять текст.</p><div class="steps">' +
-    steps.map(([k, t, sub], i) => '<button type="button" class="stp" data-k="' + k + '"><b>' + (i + 1) + '</b><span class="st-t">' + t + (sub ? '<i>' + sub + '</i>' : '') + '</span></button>').join('<div class="arr">↓</div>') +
-    '<div class="arr">↓</div><div class="stp last"><b>→</b><span class="st-t">дальше — лента по треку и посты ниже</span></div></div>' +
+  return '<div class="box"><h3>Вход в бот</h3><p class="small muted" style="margin:0 0 10px">Так бот встречает нового человека. Тяни за ⋮⋮, чтобы поменять порядок; «вкл/выкл» — показывать шаг или пропускать. Нажми на шаг — поменять текст, паузу и кнопки-ссылки. Первым всегда стоит согласие на данные — по закону сначала оно.</p><div class="steps" id="flowList">' + h + '</div>' +
+    '<div class="arr">↓</div><div class="stp last"><b>→</b><span class="st-t">дальше — лента по треку и посты ниже</span></div>' +
     '<div class="docs-row"><div><b>Люди и отзывы</b><div class="small muted">контакты, выбор из аудита, отзывы о кабинете: ' + (S.fbCount || 0) + '</div></div><button type="button" class="chip" id="peopleBtn">открыть</button></div>' +
     '<div class="docs-row"><div><b>Документы</b><div class="small muted">политика ' + ok('policy') + ' · согласие ' + ok('consent') + ' · оферта ' + ok('offer') + '</div></div><button type="button" class="chip" id="docsBtn">изменить</button></div>' +
     (miss ? '<div class="note warn">Без ссылок на политику и согласие бот нельзя открывать для всех (152-ФЗ). Пока бот только для своих.</div>' : '') + '</div>';
 }
+async function saveFlow(order, off) {
+  const prev = S.flow;
+  S.flow = { order, off };
+  try { const r = await api('/flow', { order, off }); S.flow = r.flow; toast('Порядок сохранён'); }
+  catch (e) { S.flow = prev; toast('Не сохранилось: ' + e.message); }
+  render();
+}
 function bindEntry() {
-  document.querySelectorAll('.stp[data-k]').forEach((el) => el.onclick = () => { if (el.dataset.k === 'testOffer') { tab = 'gifts'; render(); window.scrollTo(0, 0); return; } openMsg(el.dataset.k); });
+  const list = $('flowList');
+  const cur = () => (S.flow || { order: Object.keys(ENTRY), off: [] });
+  list.querySelectorAll('.stp[data-k]').forEach((el) => {
+    const open = () => { const k = el.dataset.k; if (k === 'testOffer') { openMsg('testOffer'); return; } openMsg(k); };
+    el.onclick = (e) => { if (e.target.closest('.handle,[data-sw],[data-up],[data-down]')) return; open(); };
+    el.onkeydown = (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === el) { e.preventDefault(); open(); } };
+  });
+  list.querySelectorAll('[data-sw]').forEach((b) => b.onclick = () => {
+    const f = cur(), k = b.dataset.sw;
+    saveFlow(f.order.slice(), f.off.includes(k) ? f.off.filter((x) => x !== k) : [...f.off, k]);
+  });
+  const move = (k, dir) => {
+    const f = cur(), o = f.order.slice(), i = o.indexOf(k), j = i + dir;
+    if (i < 0 || j < 1 || j >= o.length) return; // на место согласия — нельзя
+    [o[i], o[j]] = [o[j], o[i]];
+    saveFlow(o, f.off);
+  };
+  list.querySelectorAll('[data-up]').forEach((b) => b.onclick = () => move(b.dataset.up, -1));
+  list.querySelectorAll('[data-down]').forEach((b) => b.onclick = () => move(b.dataset.down, 1));
+  if (window.Sortable) Sortable.create(list, {
+    handle: '.handle', draggable: '.stp[data-mv]', animation: 160, ghostClass: 'ghost', chosenClass: 'chosen', forceFallback: true, fallbackTolerance: 4, scroll: true, bubbleScroll: true,
+    onMove: (ev) => !ev.related || !!ev.related.dataset.mv, // выше согласия и ниже последнего шага — нельзя
+    onEnd: () => {
+      const o = ['consentPd', ...[...list.querySelectorAll('.stp[data-mv]')].map((x) => x.dataset.k)];
+      saveFlow(o, cur().off);
+    },
+  });
   $('docsBtn').onclick = openDocs;
   $('peopleBtn').onclick = openPeople;
 }

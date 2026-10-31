@@ -261,6 +261,25 @@ await page.locator('.grp', { hasText: 'В дату' }).scrollIntoViewIfNeeded();
 await page.screenshot({ path: OUT + '/panel-12-tree.png', fullPage: true });
 step('конструктор: развилка с нуля, пост-ответ из кнопки, документ и оплата, дерево');
 
+// 8б. порядок шагов входа: ▲▼ (без Sortable), выключатель, согласие всегда первое
+await page.click('#tabs button[data-t="flow"]'); await page.waitForSelector('#flowList');
+const keys = () => page.$$eval('#flowList .stp[data-k]', (els) => els.map((e) => e.dataset.k));
+assert.deepEqual((await keys()).slice(0, 3), ['hello', 'consentPd', 'consentAds']);
+await page.click('[data-up="askName"]'); await page.waitForTimeout(500);
+assert.equal(JSON.parse((await db.first(`SELECT value FROM settings WHERE key = 'flow:order'`)).value).indexOf('askName'), 2, 'имя поднялось выше уровня');
+await page.click('[data-up="consentAds"]'); await page.waitForTimeout(300); // выше согласия на данные нельзя
+assert.equal((await keys())[1], 'consentPd');
+await page.click('[data-sw="fbOffer"]'); await page.waitForTimeout(500);
+assert.deepEqual(JSON.parse((await db.first(`SELECT value FROM settings WHERE key = 'flow:off'`)).value), ['fbOffer']);
+assert.ok(await page.$('.stp.off[data-k="fbOffer"]'), 'выключенный шаг виден приглушённым');
+assert.equal(await page.$('[data-sw="consentAds"]'), null, 'обязательные шаги выключить нельзя');
+await page.click('.stp[data-k="askName"] .st-t'); await page.waitForSelector('.sheet.on');
+assert.match(await page.textContent('.sheet h2'), /имя|Имя|Как/i, 'по нажатию на шаг открывается его текст');
+await page.click('#mClose');
+await page.click('[data-sw="fbOffer"]'); await page.waitForTimeout(400);
+await page.click('[data-down="askName"]'); await page.waitForTimeout(400); // вернули как было
+step('шаги входа: порядок ▲▼, выключатель, согласие всегда первое, нажатие открывает текст');
+
 // 9. открыть не из Telegram
 INIT = '';
 const p2 = await b.newPage(); await p2.route('**/telegram-web-app.js', (r) => r.fulfill({ contentType: 'application/javascript', body: stub('') }));

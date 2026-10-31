@@ -121,6 +121,8 @@ textarea{min-height:120px;resize:vertical;line-height:1.45}
 .stp b{flex:none;width:24px;height:24px;border-radius:50%;background:var(--pill);display:grid;place-items:center;font-size:12px}
 .stp .st-t{display:flex;flex-direction:column;font-size:14px;min-width:0}.stp .st-t i{display:block;font-style:normal;font-size:12px;color:var(--soft);margin-top:2px}
 .stp.last{cursor:default;border-style:dashed}
+#flowList{display:flex;flex-direction:column;gap:6px}
+.stp .st-t{flex:1}.stp.off{opacity:.55}.stp .lock{flex:none;width:22px;text-align:center;font-size:13px}.stp .mv{display:flex;gap:4px}.chip.sw{min-width:46px}.chip.sw.on{background:var(--ink,#2c0d02);color:#fff}
 .arr{text-align:center;color:var(--faint);font-size:12px;line-height:1;padding:3px 0}
 .docs-row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 .kinds{display:grid;gap:8px;margin-top:10px}
@@ -506,31 +508,72 @@ function renderFlow() {
 }
 
 // вход в бот: служебные шаги по порядку + документы
+const ENTRY = {
+  consentPd: ['✅ Согласие на данные', () => { const d = S.docs || {}; return 'политика ' + (d.policy ? '✓' : 'не задана') + ' · согласие ' + (d.consent ? '✓' : 'не задана'); }],
+  consentAds: ['📬 Согласие на рассылку', () => 'без него рассылку не отправляем'],
+  askLevel: ['🎚 Уровень', () => 'спрашиваем, если не пришёл из аудита'],
+  askName: ['📇 Имя', () => 'человек жмёт «Всё верно» или пишет имя'],
+  askContact: ['📱 Контакт', () => 'Telegram, телефон или почта'],
+  fbOffer: ['💬 Отзыв о кабинете — по желанию', () => 'бонусов за отзыв включено: ' + S.posts.filter((p) => p.kind === 'fb' && p.status === 'active').length],
+  askTrack: ['🎓 Мини-курс или материалы', () => 'спрашиваем, если не выбрал в аудите'],
+  testOffer: ['🧪 Тест → 🎁 подарок', () => 'подарков включено: ' + S.posts.filter((p) => p.kind === 'gift' && p.status === 'active').length + ' · если выключить, подарок всё равно придёт'],
+};
 function entryBox() {
   const d = S.docs || {};
   const ok = (k) => d[k] ? '<span class="ok-t">✓</span>' : '<span class="warn-t">не задана</span>';
-  const on = (k) => S.posts.filter((p) => p.kind === k && p.status === 'active').length;
-  const steps = [
-    ['hello', '👋 Приветствие', 'из аудита приходит выбор: мини-курс или материалы'],
-    ['consentPd', '✅ Согласие на данные', 'политика ' + ok('policy') + ' · согласие ' + ok('consent')],
-    ['consentAds', '📬 Согласие на рассылку'],
-    ['askLevel', '🎚 Уровень', 'если пришёл не из аудита'],
-    ['askName', '📇 Имя и контакт', 'Telegram, телефон или почта'],
-    ['fbOffer', '💬 Отзыв о кабинете — по желанию', 'бонусов за отзыв включено: ' + on('fb')],
-    ['askTrack', '🎓 Мини-курс или материалы', 'если не выбрал в аудите'],
-    ['testOffer', '🧪 Тест → 🎁 подарок', 'подарков включено: ' + on('gift')],
-    ['schedCourse', '🗓 Пост-расписание по треку'],
-  ];
+  const fl = S.flow || { order: Object.keys(ENTRY), off: [] };
+  const opt = S.flowOptional || [];
+  const row = (k, t, sub, i, o) => '<div class="stp' + (o.off ? ' off' : '') + '" role="button" tabindex="0" data-k="' + k + '"' + (o.mv ? ' data-mv="1"' : '') + '>' +
+    (o.mv ? '<div class="handle" aria-label="перетащить">⋮⋮</div>' : '<div class="lock" title="это место менять нельзя">🔒</div>') +
+    '<b>' + i + '</b><span class="st-t">' + t + (sub ? '<i>' + sub + '</i>' : '') + '</span>' +
+    (o.mv && !window.Sortable ? '<span class="mv"><button type="button" class="chip" data-up="' + k + '" aria-label="выше">▲</button><button type="button" class="chip" data-down="' + k + '" aria-label="ниже">▼</button></span>' : '') +
+    (o.sw ? '<button type="button" class="chip sw' + (o.off ? '' : ' on') + '" data-sw="' + k + '">' + (o.off ? 'выкл' : 'вкл') + '</button>' : '') + '</div>';
+  let n = 1;
+  let h = row('hello', '👋 Приветствие', 'из аудита приходит выбор: мини-курс или материалы', n++, {});
+  fl.order.forEach((k) => { h += row(k, ENTRY[k][0], ENTRY[k][1](), n++, { mv: k !== 'consentPd', sw: opt.includes(k), off: fl.off.includes(k) }); });
+  h += row('schedCourse', '🗓 Пост-расписание по треку', 'последний шаг: отсюда считается лента', n++, {});
   const miss = !d.policy || !d.consent;
-  return '<div class="box"><h3>Вход в бот</h3><p class="small muted" style="margin:0 0 10px">Так бот встречает нового человека. Порядок фиксированный: по закону сначала согласие. Нажми на шаг — поменять текст.</p><div class="steps">' +
-    steps.map(([k, t, sub], i) => '<button type="button" class="stp" data-k="' + k + '"><b>' + (i + 1) + '</b><span class="st-t">' + t + (sub ? '<i>' + sub + '</i>' : '') + '</span></button>').join('<div class="arr">↓</div>') +
-    '<div class="arr">↓</div><div class="stp last"><b>→</b><span class="st-t">дальше — лента по треку и посты ниже</span></div></div>' +
+  return '<div class="box"><h3>Вход в бот</h3><p class="small muted" style="margin:0 0 10px">Так бот встречает нового человека. Тяни за ⋮⋮, чтобы поменять порядок; «вкл/выкл» — показывать шаг или пропускать. Нажми на шаг — поменять текст, паузу и кнопки-ссылки. Первым всегда стоит согласие на данные — по закону сначала оно.</p><div class="steps" id="flowList">' + h + '</div>' +
+    '<div class="arr">↓</div><div class="stp last"><b>→</b><span class="st-t">дальше — лента по треку и посты ниже</span></div>' +
     '<div class="docs-row"><div><b>Люди и отзывы</b><div class="small muted">контакты, выбор из аудита, отзывы о кабинете: ' + (S.fbCount || 0) + '</div></div><button type="button" class="chip" id="peopleBtn">открыть</button></div>' +
     '<div class="docs-row"><div><b>Документы</b><div class="small muted">политика ' + ok('policy') + ' · согласие ' + ok('consent') + ' · оферта ' + ok('offer') + '</div></div><button type="button" class="chip" id="docsBtn">изменить</button></div>' +
     (miss ? '<div class="note warn">Без ссылок на политику и согласие бот нельзя открывать для всех (152-ФЗ). Пока бот только для своих.</div>' : '') + '</div>';
 }
+async function saveFlow(order, off) {
+  const prev = S.flow;
+  S.flow = { order, off };
+  try { const r = await api('/flow', { order, off }); S.flow = r.flow; toast('Порядок сохранён'); }
+  catch (e) { S.flow = prev; toast('Не сохранилось: ' + e.message); }
+  render();
+}
 function bindEntry() {
-  document.querySelectorAll('.stp[data-k]').forEach((el) => el.onclick = () => { if (el.dataset.k === 'testOffer') { tab = 'gifts'; render(); window.scrollTo(0, 0); return; } openMsg(el.dataset.k); });
+  const list = $('flowList');
+  const cur = () => (S.flow || { order: Object.keys(ENTRY), off: [] });
+  list.querySelectorAll('.stp[data-k]').forEach((el) => {
+    const open = () => { const k = el.dataset.k; if (k === 'testOffer') { openMsg('testOffer'); return; } openMsg(k); };
+    el.onclick = (e) => { if (e.target.closest('.handle,[data-sw],[data-up],[data-down]')) return; open(); };
+    el.onkeydown = (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === el) { e.preventDefault(); open(); } };
+  });
+  list.querySelectorAll('[data-sw]').forEach((b) => b.onclick = () => {
+    const f = cur(), k = b.dataset.sw;
+    saveFlow(f.order.slice(), f.off.includes(k) ? f.off.filter((x) => x !== k) : [...f.off, k]);
+  });
+  const move = (k, dir) => {
+    const f = cur(), o = f.order.slice(), i = o.indexOf(k), j = i + dir;
+    if (i < 0 || j < 1 || j >= o.length) return; // на место согласия — нельзя
+    [o[i], o[j]] = [o[j], o[i]];
+    saveFlow(o, f.off);
+  };
+  list.querySelectorAll('[data-up]').forEach((b) => b.onclick = () => move(b.dataset.up, -1));
+  list.querySelectorAll('[data-down]').forEach((b) => b.onclick = () => move(b.dataset.down, 1));
+  if (window.Sortable) Sortable.create(list, {
+    handle: '.handle', draggable: '.stp[data-mv]', animation: 160, ghostClass: 'ghost', chosenClass: 'chosen', forceFallback: true, fallbackTolerance: 4, scroll: true, bubbleScroll: true,
+    onMove: (ev) => !ev.related || !!ev.related.dataset.mv, // выше согласия и ниже последнего шага — нельзя
+    onEnd: () => {
+      const o = ['consentPd', ...[...list.querySelectorAll('.stp[data-mv]')].map((x) => x.dataset.k)];
+      saveFlow(o, cur().off);
+    },
+  });
   $('docsBtn').onclick = openDocs;
   $('peopleBtn').onclick = openPeople;
 }

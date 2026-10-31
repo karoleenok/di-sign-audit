@@ -6,7 +6,7 @@ import { AUD, LEVELS } from './texts.js';
 import { sendPost, audienceCount, loadDocs, DOCS, TRACKS } from './posts.js';
 import { mdToEntities, entitiesToMd } from './fmt.js';
 import { runPreview, startFastRun, stopRuns, stepRuns, activeRun } from './testrun.js';
-import { onStart, docVars } from './users.js';
+import { onStart, docVars, loadFlow, normFlow, FLOW_OPTIONAL } from './users.js';
 import { saveMsgExtra } from './msgs.js';
 import { listMsgs, saveMsg, resetMsg, btn, say, setMsgMedia, canMedia, msgInfo, loadMsgs } from './msgs.js';
 
@@ -127,7 +127,7 @@ export async function handlePanelApi(ctx, request, url) {
       audiences: AUD, levels: LEVELS,
       posts: posts.map((p) => postOut(p, sent[p.id], clicks[p.id])),
       msgs: await listMsgs(ctx),
-      docs: await loadDocs(ctx), docNames: DOCS, tracks: TRACKS,
+      docs: await loadDocs(ctx), docNames: DOCS, tracks: TRACKS, flow: await loadFlow(ctx), flowOptional: FLOW_OPTIONAL,
       fbCount: ((await ctx.db.first(`SELECT COUNT(*) AS n FROM users WHERE fb_at IS NOT NULL`)) || {}).n || 0,
       people: { all: people.n || 0, active: people.active || 0 },
       run: await activeRun(ctx.db, user.id),
@@ -238,6 +238,15 @@ export async function handlePanelApi(ctx, request, url) {
     const rows = await ctx.db.all(`SELECT tg_id, first_name, username, contact_name, phone, email, level, zone, track, status, fb_like, fb_improve, fb_at, created_at, sched_at FROM users ORDER BY COALESCE(fb_at, 0) DESC, created_at DESC LIMIT 200`);
     const n = await ctx.db.first(`SELECT COUNT(*) AS all_n, SUM(CASE WHEN sched_at IS NOT NULL THEN 1 ELSE 0 END) AS done, SUM(CASE WHEN track = 'course' THEN 1 ELSE 0 END) AS course, SUM(CASE WHEN track = 'mat' THEN 1 ELSE 0 END) AS mat, SUM(CASE WHEN fb_at IS NOT NULL THEN 1 ELSE 0 END) AS fb FROM users`);
     return json({ people: rows, totals: n });
+  }
+
+  // порядок и включение шагов входа
+  if (path === '/flow' && request.method === 'POST') {
+    const f = normFlow(body.order, body.off);
+    const put = (k, v) => ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [k, JSON.stringify(v)]);
+    await put('flow:order', f.order);
+    await put('flow:off', f.off);
+    return json({ ok: true, flow: f });
   }
 
   // ссылки на документы (политика, согласие, оферта) и данные владельца
