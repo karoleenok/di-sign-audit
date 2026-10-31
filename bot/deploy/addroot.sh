@@ -6,11 +6,11 @@ grep -q '^ADMIN_IDS="' "$ENVF" || sed -i 's/^ADMIN_IDS=\(.*\)$/ADMIN_IDS="\1"/' 
 set -a; . "$ENVF"; set +a
 KEY=$(head -c 24 /dev/urandom | base64 | tr -dc 'a-km-np-z2-9' | head -c 24)
 echo
-echo "Ключ для Vercel (переменная RELAY_KEY):"
+echo "Ключ для моста (переменная RELAY_KEY):"
 echo
 echo "    $KEY"
 echo
-read -r -p "Адрес моста на Vercel (https://....vercel.app): " URL
+read -r -p "Адрес второго моста (https://....deno.net или .deno.dev): " URL
 URL=${URL%/}
 [ -n "$URL" ] || { echo "адрес пустой"; exit 1; }
 echo "проверяю мост..."
