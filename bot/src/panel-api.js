@@ -205,6 +205,21 @@ export async function handlePanelApi(ctx, request, url) {
     return json({ ok: true, post: postOut(np), reach: await audienceCount(ctx.db, np) });
   }
 
+  // копия существующего поста в другой раздел (текст, оформление, премиум-эмодзи, файлы и кнопки сохраняются; оригинал не трогаем)
+  m = /^\/post\/(\d+)\/copy$/.exec(path);
+  if (m && request.method === 'POST') {
+    const kind = body.kind;
+    if (!['drip', 'date', 'gift', 'node', 'fb'].includes(kind)) return json({ error: 'Выбери раздел' }, 400);
+    const src = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [+m[1]]);
+    if (!src) return json({ error: 'Поста нет' }, 404);
+    await ctx.db.run(
+      `INSERT INTO posts (title, kind, audience, track, day, send_time, run_at, catchup, status, text, entities, media, buttons, created_by, created_at, mode, delay_min, after_id, once)
+       VALUES (?, ?, ?, ?, ?, '11:00', NULL, 0, 'draft', ?, ?, ?, ?, ?, ?, 'day', 0, NULL, ?)`,
+      [src.title || null, kind, src.audience || 'all', src.track || 'all', kind === 'drip' ? 1 : null, src.text, src.entities, src.media, src.buttons, user.id, ctx.now, src.once ? 1 : 0]);
+    const row = await ctx.db.first(`SELECT * FROM posts WHERE created_by = ? ORDER BY id DESC LIMIT 1`, [user.id]);
+    return json({ ok: true, post: postOut(row) });
+  }
+
   // новый пост прямо из панели
   if (path === '/post/new' && request.method === 'POST') {
     const kind = body.kind;

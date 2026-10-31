@@ -581,7 +581,7 @@ function renderFlow() {
   h += entryBox();
   const sec = (title, note, list, kind) => '<div class="grp">' + title + '</div>' + (note ? '<p class="small muted" style="margin:-2px 2px 10px">' + note + '</p>' : '') +
     (list.length ? list.map((p) => '<div class="tree">' + node(p, 0, []) + '</div>').join('') : '<p class="small muted dash">Пока пусто.</p>') +
-    (kind ? '<button type="button" class="btn ghost" data-newk="' + kind + '" style="margin:8px 0 4px">＋ Добавить пост сюда</button>' : '');
+    (kind ? '<div class="btns two" style="margin:8px 0 4px"><button type="button" class="btn ghost" data-newk="' + kind + '">＋ Новый пост</button><button type="button" class="btn ghost" data-pickk="' + kind + '">📋 Из существующих</button></div>' : '');
   h += sec('🎁 После теста', 'Подарок уходит сразу после аудит-теста.', gifts, 'gift');
   h += sec('📅 Лента', 'По порядку от входа в бот. Дни и время удобно двигать во вкладке «Лента».', drip, 'drip');
   h += sec('🕒 В дату', 'Уходит один раз в выбранные дату и время всем, кто уже в боте. Для эфиров и анонсов.', dates, 'date');
@@ -591,6 +591,7 @@ function renderFlow() {
   $('body').innerHTML = h;
   $('newPost').onclick = () => openNew();
   document.querySelectorAll('[data-newk]').forEach((el) => el.onclick = () => { haptic(); openNew({ kind: el.dataset.newk }); });
+  document.querySelectorAll('[data-pickk]').forEach((el) => el.onclick = () => { haptic(); pickExisting(el.dataset.pickk); });
   bindEntry();
   document.querySelectorAll('.fn,.ref').forEach((el) => el.onclick = () => openPost(+el.dataset.id));
   document.querySelectorAll('[data-add]').forEach((el) => el.onclick = () => openPost(+el.dataset.add, { focus: 'buttons' }));
@@ -703,6 +704,18 @@ function openDocs() {
 }
 
 // ---------- новый пост ----------
+// выбрать готовый пост и положить его копию в раздел (оригинал остаётся)
+function pickExisting(kind) {
+  const list = S.posts.filter((p) => p.kind !== kind || true).sort((a, b) => b.id - a.id);
+  sheet('<span class="pill">Из существующих</span><h2>Какой пост добавить в «' + KIND[kind].replace(/^\S+\s/, '') + '»?</h2><p class="small muted" style="margin:0 0 8px">Сделаю копию с текстом, картинками, оформлением и кнопками. Оригинал останется на месте. Дальше поставишь дату или время и включишь.</p><div class="pk">' +
+    (list.length ? list.map((p) => '<button type="button" class="kind" data-id="' + p.id + '"><b>' + esc(postName(p).slice(0, 60)) + '</b><span>' + KIND[p.kind] + ' · #' + p.id + (p.status !== 'active' ? ' · ' + (p.status === 'draft' ? 'черновик' : 'пауза') : '') + '</span></button>').join('') : '<p class="small muted">Постов пока нет.</p>') +
+    '</div><div class="btns"><button class="btn ghost" id="pkClose">Закрыть</button></div>');
+  $('pkClose').onclick = closeSheet;
+  document.querySelectorAll('.pk .kind').forEach((el) => el.onclick = async () => {
+    try { const r = await api('/post/' + el.dataset.id + '/copy', { kind }); await reload(); haptic('medium'); openPost(r.post.id); toast('Копия готова — поставь дату и включи'); }
+    catch (e) { toast(e.message); }
+  });
+}
 function openNew(preset) {
   preset = preset || {};
   if (preset.kind) return openPost(null, { draft: Object.assign(blankPost(preset.kind), preset) });

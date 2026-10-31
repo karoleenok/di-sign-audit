@@ -666,6 +666,16 @@ step('кнопка «файл»: у шага и у поста по нажати�
   assert.ok(!calls.some((c) => c.body.chat_id === W && /прототип/.test(c.body.text || '')), 'отзыв пропущен');
   await api('/flow', { order: [], off: [] });
   }
+  // копия поста в другой раздел («из существующих»)
+  {
+    const pid = (await db.first(`SELECT id FROM posts WHERE title = 'Мой привет'`)).id;
+    const r = await api(`/post/${pid}/copy`, { kind: 'fb' });
+    assert.equal(r.post.kind, 'fb'); assert.equal(r.post.status, 'draft'); assert.notEqual(r.post.id, pid);
+    const a = await db.first(`SELECT text, entities, buttons FROM posts WHERE id = ?`, [pid]);
+    const b = await db.first(`SELECT text, entities, buttons FROM posts WHERE id = ?`, [r.post.id]);
+    assert.deepEqual({ ...b }, { ...a }, 'копия повторяет текст, оформление и кнопки');
+    assert.equal((await api(`/post/${pid}/copy`, { kind: 'zzz' })).status, 400);
+  }
 }
 step('конструктор сценариев: порядок и выключатели шагов входа, посты-ответы, кнопки-выбор, цепочка после ответа, документы из панели, оплата-заглушка, #номер в чате');
 
