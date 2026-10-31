@@ -241,6 +241,26 @@ export async function handlePanelApi(ctx, request, url) {
     return json({ ok: true, ...r });
   }
 
+  // перенос поста между лентой по дням и «постами для шагов» (без дня)
+  m = /^\/post\/(\d+)\/move$/.exec(path);
+  if (m && request.method === 'POST') {
+    const p = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [+m[1]]);
+    if (!p) return json({ error: 'Поста нет' }, 404);
+    if (body.to === 'node') {
+      if (p.kind !== 'drip') return json({ error: 'В посты для шагов можно перенести только пост из ленты' }, 400);
+      await ctx.db.run(`UPDATE posts SET kind = 'node', day = NULL, mode = 'day', after_id = NULL, delay_min = 0 WHERE id = ?`, [p.id]);
+      return json({ ok: true });
+    }
+    if (body.to === 'drip') {
+      if (p.kind !== 'node') return json({ error: 'В ленту можно перенести только пост для шага' }, 400);
+      const day = parseInt(body.day, 10);
+      if (!(day >= 0 && day <= 365)) return json({ error: 'День — от 0 до 365' }, 400);
+      await ctx.db.run(`UPDATE posts SET kind = 'drip', day = ?, send_time = ?, mode = 'day', after_id = NULL, delay_min = 0 WHERE id = ?`, [day, day === 0 ? '00:00' : '11:00', p.id]);
+      return json({ ok: true });
+    }
+    return json({ error: 'Непонятно, куда переносить' }, 400);
+  }
+
   // копия существующего поста в другой раздел (текст, оформление, премиум-эмодзи, файлы и кнопки сохраняются; оригинал не трогаем)
   m = /^\/post\/(\d+)\/copy$/.exec(path);
   if (m && request.method === 'POST') {

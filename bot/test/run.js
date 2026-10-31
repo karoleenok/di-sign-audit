@@ -697,6 +697,19 @@ step('кнопка «файл»: у шага и у поста по нажати�
     await db.run(`UPDATE users SET fb_at = NULL, fb_like = NULL, fb_improve = NULL WHERE tg_id IN (1400, 1500)`);
     await db.run(`DELETE FROM deliveries WHERE tg_id IN (1400, 1500)`);
   }
+  // перенос между лентой и постами для шагов
+  {
+    const np = (await api('/post/new', { kind: 'drip', title: 'Переносимый', md: 'текст', status: 'active', day: 2, time: '12:00' })).post;
+    assert.equal((await api('/post/' + np.id + '/move', { to: 'node' })).ok, true);
+    let row = await db.first(`SELECT kind, day, mode FROM posts WHERE id = ?`, [np.id]);
+    assert.equal(row.kind, 'node'); assert.equal(row.day, null);
+    assert.equal((await api('/post/' + np.id + '/move', { to: 'node' })).status, 400, 'пост для шага снова в «для шагов» нельзя');
+    assert.equal((await api('/post/' + np.id + '/move', { to: 'drip', day: 3 })).ok, true);
+    row = await db.first(`SELECT kind, day, mode, send_time FROM posts WHERE id = ?`, [np.id]);
+    assert.deepEqual({ ...row }, { kind: 'drip', day: 3, mode: 'day', send_time: '11:00' });
+    assert.equal((await api('/post/' + np.id + '/move', { to: 'drip', day: 999 })).status, 400);
+    await db.run(`UPDATE posts SET status = 'archived' WHERE id = ?`, [np.id]);
+  }
   // полный путь: после аудита и с сайта
   for (const fromAudit of [true, false]) {
     const f0 = calls.length;

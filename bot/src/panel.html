@@ -25,7 +25,7 @@ h1{font:400 34px/1.05 var(--serif);margin:12px 0 4px}
 h1 i{font-style:italic}
 .lead{color:var(--soft);margin:0 0 14px}
 .tabs{position:sticky;top:0;z-index:20;background:var(--bg);padding:8px 0 10px;margin:0 -16px;padding-left:16px;padding-right:16px;border-bottom:1px solid var(--line)}
-.stp.drop{outline:2px dashed var(--accent,#c4572a);background:rgba(196,87,42,.08)}.pool-card{display:flex;align-items:center;gap:8px;padding:8px 10px;margin-top:6px;border:1px solid var(--line);border-radius:12px;background:var(--card)}.pool-card .handle{touch-action:none;cursor:grab}.pool-card .pt{flex:1;min-width:0;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pool-card .small{white-space:nowrap}.dragfloat{position:fixed;z-index:99;pointer-events:none;padding:8px 12px;border-radius:12px;background:var(--card);box-shadow:var(--shadow);font-weight:500;max-width:70vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stp.drop{outline:2px dashed var(--accent,#c4572a);background:rgba(196,87,42,.08)}.poolList{min-height:46px;border-radius:12px;border:1.5px dashed var(--line);padding:0 6px 6px}.pool-card{display:flex;align-items:center;gap:8px;padding:8px 10px;margin-top:6px;border:1px solid var(--line);border-radius:12px;background:var(--card)}.pool-card .handle{touch-action:none;cursor:grab}.pool-card .pt{flex:1;min-width:0;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pool-card .small{white-space:nowrap}.dragfloat{position:fixed;z-index:99;pointer-events:none;padding:8px 12px;border-radius:12px;background:var(--card);box-shadow:var(--shadow);font-weight:500;max-width:70vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .seg{display:flex;gap:4px;background:rgba(44,13,2,.06);border-radius:14px;padding:4px}
 .seg button{flex:1;border:0;background:transparent;border-radius:10px;padding:9px 6px;font-weight:500;cursor:pointer;white-space:nowrap}
 .seg button.on{background:var(--card);box-shadow:var(--shadow)}
@@ -288,7 +288,8 @@ function bindDays() {
   if (window.Sortable) document.querySelectorAll('.list').forEach((el) => {
     Sortable.create(el, {
       group: 'drip', handle: '.handle', animation: 160, ghostClass: 'ghost', chosenClass: 'chosen', forceFallback: true, fallbackTolerance: 4, scroll: true, bubbleScroll: true,
-      onEnd: (ev) => onDrop(ev),
+      onStart: () => dragWatch(true),
+      onEnd: (ev) => { dragWatch(false); onDrop(ev); },
     });
   });
   bindCards();
@@ -298,6 +299,29 @@ function bindDays() {
 async function onDrop(ev) {
   const id = +ev.item.dataset.id;
   const moved = S.posts.find((p) => p.id === id);
+  const fromPool = !!ev.from.dataset.pool, toPool = !!ev.to.dataset.pool;
+  // пост из «постов для шагов», брошенный на шаг входа — встаёт вместо шаблона
+  if (fromPool) {
+    const row = stepRowAt(ev.originalEvent);
+    if (row) {
+      const key = row.dataset.k;
+      try { const r = await api('/msg/' + key, { post: id }); S.msgs = r.msgs; haptic('medium'); toast('Готово: на шаге «' + (ENTRY[key] ? ENTRY[key][0].replace(/^\S+\s/, '') : key) + '» теперь этот пост'); } catch (er) { toast(er.message); }
+      render(); return;
+    }
+  }
+  if (fromPool && toPool) { render(); return; }
+  if (toPool) {
+    // из ленты по дням → в посты для шагов
+    try { await api('/post/' + id + '/move', { to: 'node' }); moved.kind = 'node'; moved.day = null; moved.mode = 'day'; haptic('medium'); toast('Перенесено в «Свои посты для шагов» — теперь его можно поставить на шаг входа'); }
+    catch (er) { toast('Не получилось: ' + er.message); }
+    await reload(); return;
+  }
+  if (fromPool) {
+    // из постов для шагов → в ленту, в выбранный день
+    const dd = +ev.to.dataset.day;
+    try { await api('/post/' + id + '/move', { to: 'drip', day: dd }); moved.kind = 'drip'; moved.day = dd; moved.mode = 'day'; moved.time = dd === 0 ? '00:00' : '11:00'; haptic('medium'); }
+    catch (er) { toast('Не получилось: ' + er.message); await reload(); return; }
+  }
   const toDay = +ev.to.dataset.day;
   const ids = [...ev.to.children].map((c) => +c.dataset.id);
   const list = ids.map((i) => S.posts.find((p) => p.id === i));
@@ -645,43 +669,29 @@ function renderFlow() {
 function poolBox() {
   const nodes = S.posts.filter((p) => p.kind === 'node' && p.status !== 'archived');
   const usedBy = (id) => (S.msgs || []).filter((m) => m.post === id).map((m) => (ENTRY[m.key] ? ENTRY[m.key][0] : m.key));
-  return '<div class="box"><h3>Свои посты для шагов</h3><p class="small muted" style="margin:0 0 6px">Посты без дня. Перетащи за ⋮⋮ на шаг входа выше — он заменит шаблонное сообщение. Тот же пост можно поставить на несколько шагов.</p>' +
-    (nodes.length ? nodes.map((p) => { const u = usedBy(p.id); return '<div class="pool-card" data-id="' + p.id + '"><div class="handle" aria-label="перетащить на шаг">⋮⋮</div><span class="pt">' + esc(postName(p)) + '</span>' + (u.length ? '<span class="small muted">на шаге: ' + esc(u.join(', ').slice(0, 40)) + '</span>' : '') + '</div>'; }).join('') : '<p class="small muted dash">Пока пусто — создай пост кнопкой ниже.</p>') +
+  return '<div class="box"><h3>Свои посты для шагов</h3><p class="small muted" style="margin:0 0 6px">Посты без дня. Перетащи за ⋮⋮ на шаг входа — он заменит шаблонное сообщение. Перетащи в день ленты ниже — пост станет обычным постом ленты, а пост из ленты можно перетащить сюда.</p>' +
+    '<div class="list poolList" data-pool="1">' + nodes.map((p) => { const u = usedBy(p.id); return '<div class="pool-card" data-id="' + p.id + '"><div class="handle" aria-label="перетащить">⋮⋮</div><span class="pt">' + esc(postName(p)) + '</span>' + (u.length ? '<span class="small muted">на шаге: ' + esc(u.join(', ').slice(0, 40)) + '</span>' : '') + '</div>'; }).join('') + '</div>' + (nodes.length ? '' : '<p class="small muted" style="margin:6px 2px 0">Пока пусто. Создай пост кнопкой ниже или перетащи сюда пост из ленты по дням.</p>') +
     '<div class="btns" style="margin:8px 0 0"><button type="button" class="btn ghost" id="poolNew">＋ Новый пост для шага</button></div></div>';
 }
 function bindPool() {
   if ($('poolNew')) $('poolNew').onclick = () => { haptic(); openNew({ kind: 'node' }); };
-  document.querySelectorAll('.pool-card').forEach((card) => {
-    card.onclick = (e) => { if (!e.target.closest('.handle')) openPost(+card.dataset.id); };
-    const h = card.querySelector('.handle');
-    h.onpointerdown = (e) => {
-      e.preventDefault();
-      const id = +card.dataset.id, p = S.posts.find((x) => x.id === id);
-      const fl = document.createElement('div'); fl.className = 'dragfloat'; fl.textContent = '🔁 ' + postName(p);
-      document.body.appendChild(fl);
-      let tgt = null, cy = 0;
-      const auto = setInterval(() => { if (cy && cy < 80) window.scrollBy(0, -14); else if (cy && cy > innerHeight - 80) window.scrollBy(0, 14); }, 16);
-      const move = (ev) => {
-        cy = ev.clientY;
-        fl.style.left = ev.clientX + 12 + 'px'; fl.style.top = ev.clientY + 12 + 'px';
-        const el = document.elementFromPoint(ev.clientX, ev.clientY);
-        const row = el && el.closest('.stp[data-k]');
-        if (tgt && tgt !== row) tgt.classList.remove('drop');
-        tgt = row && (S.msgs.find((m) => m.key === row.dataset.k) || {}).canMedia ? row : null;
-        if (tgt) tgt.classList.add('drop');
-      };
-      const up = async () => {
-        document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); document.removeEventListener('pointercancel', up);
-        fl.remove(); clearInterval(auto);
-        if (!tgt) return;
-        const key = tgt.dataset.k; tgt.classList.remove('drop');
-        try { const r = await api('/msg/' + key, { post: id }); S.msgs = r.msgs; haptic('medium'); toast('Готово: на шаге «' + (ENTRY[key] ? ENTRY[key][0].replace(/^\S+\s/, '') : key) + '» теперь этот пост'); render(); }
-        catch (er) { toast(er.message); }
-      };
-      document.addEventListener('pointermove', move); document.addEventListener('pointerup', up); document.addEventListener('pointercancel', up);
-      move(e);
-    };
-  });
+  document.querySelectorAll('.pool-card').forEach((card) => { card.onclick = (e) => { if (!e.target.closest('.handle')) openPost(+card.dataset.id); }; });
+}
+// шаг входа под курсором/пальцем (для сброса поста из пула на шаг)
+function ptOf(e) { const t = e && (e.changedTouches && e.changedTouches[0] || e.touches && e.touches[0]) || e; return t && t.clientX != null ? { x: t.clientX, y: t.clientY } : null; }
+function stepRowAt(e) {
+  const pt = ptOf(e); if (!pt) return null;
+  const el = document.elementFromPoint(pt.x, pt.y);
+  const row = el && el.closest('.stp[data-k]');
+  return row && (S.msgs.find((m) => m.key === row.dataset.k) || {}).canMedia ? row : null;
+}
+let dragHl = null;
+function dragWatch(on) {
+  if (!on) { document.removeEventListener('pointermove', dragWatch.fn); document.removeEventListener('mousemove', dragWatch.fn); document.removeEventListener('touchmove', dragWatch.fn); document.querySelectorAll('.stp.drop').forEach((x) => x.classList.remove('drop')); clearInterval(dragWatch.t); return; }
+  let cy = 0;
+  dragWatch.fn = (e) => { const pt = ptOf(e); if (!pt) return; cy = pt.y; const row = stepRowAt(e); if (dragHl && dragHl !== row) dragHl.classList.remove('drop'); dragHl = row; if (row) row.classList.add('drop'); };
+  dragWatch.t = setInterval(() => { if (cy && cy < 80) window.scrollBy(0, -14); else if (cy && cy > innerHeight - 80) window.scrollBy(0, 14); }, 16);
+  document.addEventListener('pointermove', dragWatch.fn); document.addEventListener('mousemove', dragWatch.fn); document.addEventListener('touchmove', dragWatch.fn, { passive: true });
 }
 
 // вход в бот: служебные шаги по порядку + документы
