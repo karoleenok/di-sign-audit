@@ -2769,6 +2769,84 @@ button.ks-row:hover b{color:#33507F}
 .wk-cursor.act .wk-cur-ring{background:rgba(255,246,236,.32)!important}
 .wk-cur-lbl{-webkit-backdrop-filter:none!important;backdrop-filter:none!important;background:rgba(20,12,18,.62)!important}
 .wk-cur-ring{transition:width .2s,height .2s,margin .2s,background .2s,transform .15s!important}
+
+/* ===== v53: экран главы — витрина с вкладками (вариант c) ===== */
+.wk-ig-scroll.ig3-host,.wk-ig.ig-map .wk-ig-scroll.ig3-host{overflow:hidden}
+.ig3{--g1:8px;--g2:12px;--g3:16px;--g4:24px;--padX:44px;--padT:36px;
+  display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);height:100%;background:#FBF8F1;font-family:"Inter Tight",system-ui,sans-serif;color:#141312}
+.ig3-ph{position:relative;background-size:cover;background-position:center;display:flex;flex-direction:column;justify-content:flex-end;min-height:0;
+  padding:var(--g4) var(--g4) calc(env(safe-area-inset-bottom,0px) + var(--g4)) max(var(--g4),env(safe-area-inset-left,0px));animation:igPh 1s cubic-bezier(.2,.7,.2,1)}
+.ig3-ph::before{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(20,12,16,0) 45%,rgba(20,12,16,.72))}
+.ig3-loc{position:absolute;left:max(var(--g4),env(safe-area-inset-left,0px));top:calc(env(safe-area-inset-top,0px) + var(--g4));z-index:1;background:#fff;border-radius:999px;padding:7px 14px;font-size:13px;font-weight:500}
+.ig3-card{position:relative;max-width:460px;display:grid;grid-template-columns:56px 1fr;gap:var(--g3);align-items:center;padding:var(--g3) 18px;border-radius:20px;background:rgba(255,255,255,.95)}
+.ig3-card img{width:56px;height:56px;object-fit:contain;filter:drop-shadow(0 6px 8px rgba(80,40,20,.2))}
+.ig3-card small{display:block;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#C2577E}
+.ig3-card b{display:block;font-size:18px;font-weight:600;line-height:1.2;margin-top:3px}
+.ig3-side{display:flex;flex-direction:column;gap:var(--g4);min-height:0;max-width:760px;
+  padding:calc(env(safe-area-inset-top,0px) + var(--padT)) max(var(--padX),env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 28px) var(--padX)}
+.ig3-side>*{animation:igIn .5s cubic-bezier(.2,.7,.2,1) both}
+.ig3-side>*:nth-child(2){animation-delay:.04s}.ig3-side>*:nth-child(3){animation-delay:.08s}.ig3-side>*:nth-child(4){animation-delay:.12s}
+.ig3-top{display:flex;justify-content:space-between;align-items:flex-start;gap:var(--g3)}
+.ig3-tag{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#C2577E;font-weight:500}
+.ig3-top h2{margin:var(--g1) 0 0;font-size:clamp(34px,3.6vw,48px);line-height:1;letter-spacing:-.025em;font-weight:600;text-wrap:balance}
+.ig3-x{flex:none;width:42px;height:42px;border-radius:50%;display:grid;place-items:center;border:1.5px solid #E9E2D6;background:#fff;color:#141312;cursor:pointer}
+.ig3-x svg{width:18px;height:18px}
+.ig3-x-ph{display:none}
+.ig3-kpi{display:flex;flex-wrap:wrap;gap:var(--g1)}
+.ig3-kpi span{display:inline-flex;align-items:baseline;gap:5px;font-size:13.5px;color:#54514C;background:#fff;box-shadow:inset 0 0 0 1px #E9E2D6;border-radius:999px;padding:7px 13px;white-space:nowrap}
+.ig3-kpi b{font-weight:600;color:#141312}
+.ig3-seg{display:grid;gap:4px;padding:4px;border-radius:14px;background:#F1ECE5;flex:none}
+.ig3-seg button{border:0;background:none;border-radius:11px;padding:11px 6px;font:500 14.5px "Inter Tight",sans-serif;color:#8B857C;cursor:pointer;white-space:nowrap}
+.ig3-seg button[aria-selected="true"]{background:#fff;color:#141312;box-shadow:0 2px 8px rgba(40,30,20,.08)}
+.ig3-seg button:focus-visible,.ig3-x:focus-visible{outline:2px solid #6C8CE0;outline-offset:2px}
+.ig3-panes{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;mask-image:linear-gradient(#000 calc(100% - 24px),transparent);-webkit-mask-image:linear-gradient(#000 calc(100% - 24px),transparent)}
+.ig3-pane{padding-bottom:var(--g4)}
+.ig3-pane[hidden]{display:none}
+.ig3-big{margin:0 0 var(--g3);font-size:21px;line-height:1.3;letter-spacing:-.012em;font-weight:500;max-width:34ch;text-wrap:pretty}
+.ig3-chk{list-style:none;margin:0;padding:0;display:grid;gap:var(--g2)}
+.ig3-chk li{position:relative;padding-left:28px;font-size:15px;line-height:1.4;color:#54514C}
+.ig3-chk li::before{content:"";position:absolute;left:0;top:1px;width:18px;height:18px;border-radius:6px;background:#F7E9EF}
+.ig3-chk li::after{content:"";position:absolute;left:6.5px;top:4px;width:4px;height:8px;border-right:2px solid #C2577E;border-bottom:2px solid #C2577E;transform:rotate(45deg)}
+.ig3-num{list-style:none;margin:0;padding:0;counter-reset:n;display:grid;gap:var(--g3)}
+.ig3-num li{counter-increment:n;display:grid;grid-template-columns:36px 1fr;font-size:16px;line-height:1.38}
+.ig3-num li::before{content:counter(n,decimal-leading-zero);color:#C2577E;font-weight:600;font-size:13px;padding-top:3px}
+.ig3-prog{list-style:none;margin:0;padding:0;columns:2;column-gap:var(--g4)}
+.ig3-prog.one{columns:1}
+.ig3-prog li{break-inside:avoid;display:grid;grid-template-columns:60px 1fr;align-items:baseline;padding:9px 0;border-bottom:1px solid #EFE8DD;font-size:14.5px;line-height:1.35}
+.ig3-prog li i{font-style:normal;color:#8B857C;font-variant-numeric:tabular-nums;font-size:13.5px}
+.ig3-prog li em{font-style:normal;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:#C2577E;background:#F7E9EF;border-radius:999px;padding:2px 7px;margin-left:var(--g1);white-space:nowrap;vertical-align:1px}
+.ig3-foot{display:flex;gap:var(--g1);justify-content:stretch;flex:none}
+.ig3-foot .ig2-btn{flex:1;height:52px;border-radius:16px;background:#141312;font-size:15.5px}
+.ig3-foot .ig2-btn.ghost{background:transparent;color:#141312;border:1.5px solid #E9E2D6;flex:0 0 auto;padding:0 26px}
+@media (max-height:640px) and (min-width:900px){ .ig3{--g4:18px;--padT:24px} .ig3-top h2{font-size:34px} }
+/* планшет: фото полосой сверху */
+@media (max-width:899px){
+  .ig3{grid-template-columns:1fr;grid-template-rows:34% minmax(0,1fr);--padX:28px;--padT:24px}
+  .ig3-ph{padding-bottom:var(--g3);animation:none}
+  .ig3-side{max-width:none;padding-top:var(--padT)}
+}
+/* телефон */
+@media (max-width:599px){
+  .ig3{grid-template-rows:clamp(150px,27%,240px) minmax(0,1fr);--g4:16px;--padX:18px;--padT:16px}
+  .ig3-ph{padding:calc(env(safe-area-inset-top,0px) + 12px) 14px 12px max(14px,env(safe-area-inset-left,0px))}
+  .ig3-loc{left:max(14px,env(safe-area-inset-left,0px));top:calc(env(safe-area-inset-top,0px) + 14px);font-size:12px;padding:5px 11px}
+  .ig3-x-ph{display:grid;position:absolute;right:max(14px,env(safe-area-inset-right,0px));top:calc(env(safe-area-inset-top,0px) + 12px);z-index:2;width:38px;height:38px;border:0;background:rgba(255,255,255,.94)}
+  .ig3-side .ig3-x{display:none}
+  .ig3-card{grid-template-columns:42px 1fr;gap:12px;padding:10px 14px;border-radius:16px}.ig3-card img{width:42px;height:42px}.ig3-card b{font-size:15.5px}
+  .ig3-side{gap:14px;padding-top:var(--padT)}
+  .ig3-top h2{font-size:30px}.ig3-tag{font-size:11px}
+  .ig3-kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));gap:0;background:#fff;border-radius:14px;box-shadow:inset 0 0 0 1px #E9E2D6}
+  .ig3-kpi span{display:grid;gap:2px;justify-items:center;text-align:center;background:none;box-shadow:none;border-radius:0;padding:9px 4px;font-size:11.5px;color:#8B857C;white-space:normal;line-height:1.15}
+  .ig3-kpi span+span{border-left:1px solid #E9E2D6}
+  .ig3-kpi b{font-size:17px}
+  .ig3-seg button{font-size:13.5px;padding:10px 2px}
+  .ig3-big{font-size:17.5px}.ig3-chk li{font-size:14.5px}.ig3-num li{font-size:15px}
+  .ig3-prog{columns:1}.ig3-prog li{grid-template-columns:56px 1fr;font-size:14px;padding:8px 0}
+  .ig3-foot .ig2-btn{height:50px;font-size:15px}.ig3-foot .ig2-btn.ghost{padding:0 18px}
+}
+@media (max-width:359px){ .ig3-top h2{font-size:27px} .ig3-seg button{font-size:12.5px} .ig3-kpi b{font-size:15px} }
+@media (max-width:599px) and (max-height:700px){ .ig3{grid-template-rows:clamp(124px,21%,170px) minmax(0,1fr)} .ig3-side{gap:11px;padding-top:12px} .ig3-top h2{font-size:26px;margin-top:4px} .ig3-loc{display:none} .ig3-big{font-size:16.5px} }
+@media (prefers-reduced-motion:reduce){ .ig3-ph,.ig3-side>*{animation:none} }
 </style>
 </head><body>
 <div class="app" id="appRoot">
@@ -6231,25 +6309,36 @@ var IG_PLACE={
 function igOpen(){
   var k=W.loc, o=WLOC[k], p=o.part?partByLoc(o.part):null, d=p?IG[o.part]:IG_PLACE[k]; if(!d) return;
   function lis(a){ return (a||[]).map(function(x){ return "<li>"+esc(x)+"</li>"; }).join(""); }
-  var heroT= p ? d.hero[1] : (o.t), heroS= p ? (d.hero[0]) : "здесь вы получите";
-  var out='<div class="ig2"><div class="ig2-photo" style="background-image:url('+wImg(k,null).replace(/-(16x9|9x16)\.webp$/, window.innerWidth<760?"-16x9.webp":"-9x16.webp")+')">'+
-    '<span class="ig2-loc">'+esc(o.part||o.t.toLowerCase())+'</span>'+(p?'<span class="ig2-num">'+p.num+'</span>':'')+'</div>';
-  out+='<div class="ig2-side">';
-  out+='<div class="ig2-top"><div><div class="ig2-tag">'+esc(p?("глава "+p.num+" · "+o.part):(o.ch||""))+'</div><h2>'+esc(p?p.name:o.t)+'</h2></div>'+
-    '<button type="button" class="ig2-x" id="igX" aria-label="закрыть"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>';
-  if(d.promise) out+='<p class="ig2-lead">'+esc(d.promise)+'</p>';
-  out+='<div class="ig2-res">'+(p?'<img loading="lazy" decoding="async" src="img/tro/'+TROF[p.trophy]+'.webp" alt="">':'<img loading="lazy" decoding="async" src="img/pin/pin-'+k+'.webp" alt="">')+
-    '<div><small>'+esc(heroS)+'</small>'+(p?'<b>'+esc(heroT)+'</b>':'')+(d.sub?'<p>'+esc(d.sub)+'</p>':'')+'<ul>'+lis(d.take)+'</ul></div></div>';
-  if(d.mind&&d.mind.length) out+='<div><h3 class="ig2-h">что узнаете</h3><ol class="ig2-mind">'+lis(d.mind)+'</ol></div>';
-  if(d.stats) out+='<div class="ig2-stats">'+d.stats.map(function(s){ return '<div><b>'+esc(s[0])+'</b><span>'+esc(s[1])+'</span></div>'; }).join("")+'</div>';
-  if(p) out+='<div class="ig2-prog"><h3 class="ig2-h">программа главы</h3><ul>'+p.lessons.map(function(l){
-      return '<li><i>'+esc(l.n)+'</i>'+esc(l.t)+(d.reviews&&d.reviews[l.n]?'<em>разбор</em>':'')+'</li>'; }).join("")+'</ul></div>';
-  if(p) out+='<p class="ig2-lead" style="font-size:14.5px;margin-top:-6px">Трофей главы на вашу полку — <b style="color:#141312">'+esc(p.trophy)+'</b>.</p>';
-  out+='<div class="ig2-foot">'+(MODE==="demo"?'<a class="ig2-btn ghost" href="'+botLink("chapter_"+(p?p.num:k))+'" target="_blank" rel="noopener">записаться</a>':'')+
-    '<button type="button" class="ig2-btn" id="igBack">продолжить прогулку</button></div>';
-  out+='</div></div>';
-  var sc=$("wkIgScroll"); sc.innerHTML=out; $("wkIg").hidden=false; sc.scrollTop=0;
-  $("igX").onclick=igClose; $("igBack").onclick=igClose; $("igBack").focus({preventScroll:true});
+  var photo=wImg(k,null).replace(/-(16x9|9x16)\.webp$/, window.innerWidth<900?"-16x9.webp":"-9x16.webp");
+  var tabs=[];
+  if(p){
+    var get=(d.take||[]).slice(); get.push("трофей «"+p.trophy+"» на полку в кабинете");
+    tabs.push(["что получите",(d.sub?'<p class="ig3-big">'+esc(d.sub[0].toUpperCase()+d.sub.slice(1))+'.</p>':'')+'<ul class="ig3-chk">'+lis(get)+'</ul>']);
+    if(d.mind&&d.mind.length) tabs.push(["чему научитесь",'<ol class="ig3-num">'+lis(d.mind)+'</ol>']);
+    tabs.push(["программа",'<ul class="ig3-prog'+(p.lessons.length<5?' one':'')+'">'+p.lessons.map(function(l){ return '<li><i>'+esc(l.n)+'</i><span>'+esc(l.t)+(d.reviews&&d.reviews[l.n]?'<em>разбор</em>':'')+'</span></li>'; }).join("")+'</ul>']);
+  } else {
+    if(d.mind&&d.mind.length) tabs.push(["что здесь",(d.promise?'<p class="ig3-big">'+esc(d.promise)+'</p>':'')+'<ol class="ig3-num">'+lis(d.mind)+'</ol>']);
+    if(d.take&&d.take.length) tabs.push(["что получите",'<ul class="ig3-chk">'+lis(d.take)+'</ul>']);
+  }
+  var cardImg=p?'img/tro/'+TROF[p.trophy]+'.webp':'img/pin/pin-'+k+'.webp';
+  var cardT=p?d.hero[1]:o.t, cardS=p?"на выходе":(o.ch||"место кампуса");
+  var out='<div class="ig3"><div class="ig3-ph" style="background-image:url('+photo+')">'+
+    '<span class="ig3-loc">'+esc(o.part||o.t.toLowerCase())+'</span>'+
+    '<button type="button" class="ig3-x ig3-x-ph" aria-label="закрыть"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>'+
+    '<div class="ig3-card"><img src="'+cardImg+'" alt=""><div><small>'+esc(cardS)+'</small><b>'+esc(cardT)+'</b></div></div></div>';
+  out+='<div class="ig3-side"><div class="ig3-top"><div><div class="ig3-tag">'+esc(p?("глава "+p.num+" · "+o.part):(o.ch||""))+'</div><h2>'+esc(p?p.name:o.t)+'</h2></div>'+
+    '<button type="button" class="ig3-x" id="igX" aria-label="закрыть"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>';
+  if(d.stats) out+='<div class="ig3-kpi">'+d.stats.map(function(x){ return '<span><b>'+esc(x[0])+'</b>'+esc(x[1])+'</span>'; }).join("")+'</div>';
+  if(tabs.length>1) out+='<div class="ig3-seg" role="tablist" style="grid-template-columns:repeat('+tabs.length+',1fr)">'+tabs.map(function(t,i){ return '<button type="button" role="tab" aria-selected="'+(i===0)+'" data-i="'+i+'">'+t[0]+'</button>'; }).join("")+'</div>';
+  out+='<div class="ig3-panes">'+tabs.map(function(t,i){ return '<div class="ig3-pane"'+(i?' hidden':'')+'>'+t[1]+'</div>'; }).join("")+'</div>';
+  out+='<div class="ig2-foot ig3-foot">'+(MODE==="demo"?'<a class="ig2-btn ghost" href="'+botLink("chapter_"+(p?p.num:k))+'" target="_blank" rel="noopener">записаться</a>':'')+
+    '<button type="button" class="ig2-btn" id="igBack">продолжить прогулку</button></div></div></div>';
+  var sc=$("wkIgScroll"); sc.innerHTML=out; sc.classList.add("ig3-host"); $("wkIg").hidden=false; sc.scrollTop=0;
+  Array.prototype.forEach.call(sc.querySelectorAll(".ig3-seg button"),function(bt){ bt.onclick=function(){
+    Array.prototype.forEach.call(sc.querySelectorAll(".ig3-seg button"),function(x){ x.setAttribute("aria-selected",String(x===bt)); });
+    Array.prototype.forEach.call(sc.querySelectorAll(".ig3-pane"),function(pn,i){ pn.hidden=i!==+bt.dataset.i; });
+    sc.querySelector(".ig3-panes").scrollTop=0; }; });
+  $("igX").onclick=igClose; sc.querySelector(".ig3-x-ph").onclick=igClose; $("igBack").onclick=igClose; $("igBack").focus({preventScroll:true});
 }
 function igClose(){ $("wkIg").hidden=true; }
 $("wkInfoBtn").onclick=igOpen;
