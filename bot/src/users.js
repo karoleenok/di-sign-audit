@@ -103,7 +103,7 @@ export async function onStart(ctx, msg, payload) {
   const k = 'start:' + from.id + ':' + (payload || '');
   const fresh = await ctx.db.run(
     `INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value WHERE CAST(settings.value AS INTEGER) <= ?`,
-    [k, String(ctx.now), ctx.now - 4]);
+    [k, String(ctx.now), ctx.now - 15]);
   if (!fresh.changes) { await delMsg(ctx, from.id, msg.message_id); return; }
   let u = await getUser(ctx, from.id);
   if (!u) {

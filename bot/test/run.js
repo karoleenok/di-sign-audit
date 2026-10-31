@@ -335,7 +335,7 @@ step('профиль бота: описание до «Старт», корот�
   assert.match(hp.body.caption, /Привет, U900!/, 'текст стал подписью с подстановкой имени');
   // повторный /start убирает и картинку-приветствие
   const c1 = calls.length;
-  NOW += 10;
+  NOW += 20;
   await msg(900, '/start');
   assert.ok(calls.slice(c1).filter((c) => c.method === 'deleteMessage').some((c) => c.body.message_id === hp.res.message_id), 'старое приветствие-картинка исчезло');
   // картинку с подписью в режиме «Изменить» — и текст, и картинка
@@ -784,7 +784,7 @@ step('конструктор сценариев: порядок и выключ�
   const got = calls.slice(t0).filter((c) => c.body.chat_id === U && c.method === 'sendMessage').map((c) => c.body.text);
   assert.ok(got.includes('Урок 1 мини-курса') && got.includes('Новости школы') && !got.includes('Гайд по шрифтам'), 'выбрал мини-курс — получает курс и общее, без материалов: ' + got);
   // повторный отзыв не просим, бонус не дублируем
-  const r0 = calls.length; NOW += 10; await m('/start');
+  const r0 = calls.length; NOW += 20; await m('/start');
   assert.ok(!calls.slice(r0).some((c) => c.body.chat_id === U && /Секретный урок|прототип|обращаться/.test(c.body.text || '')), 'вход повторно не спрашивает');
   // почта с ошибкой и без отзыва — материалы
   const V = 1401;

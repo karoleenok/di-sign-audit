@@ -79,18 +79,21 @@ export async function tick(ctx, budget, queryBudget) {
      ORDER BY CASE kind WHEN 'date' THEN 0 ELSE 1 END, run_at, day, send_time, pos, id`, [now]);
   // по кругу: каждый запуск начинаем со следующего поста, чтобы до всех доходила очередь
   const posRow = await ctx.db.first(`SELECT value FROM settings WHERE key = 'tick_pos'`);
-  const start = posts.length ? (posRow ? +posRow.value : 0) % posts.length : 0;
+  // порядок как в ленте: приветствие дня 0 идёт первым, дальше по порядку. По кругу начинаем только если прошлый запуск не успел обойти всех (не хватило лимита запросов)
+  const cut = await ctx.db.first(`SELECT value FROM settings WHERE key = 'tick_cut'`);
+  const start = posts.length && cut && cut.value === '1' ? (posRow ? +posRow.value : 0) % posts.length : 0;
   const ordered = [...posts.slice(start), ...posts.slice(0, start)];
-  let left = budget, sent = 0, done = 0, arrow = null;
+  const gotNow = new Set(); // посты «сразу» (день 0): каждому человеку не больше одного за запуск — приходят по порядку, раз в минуту, а не кучей
+  let left = budget, sent = 0, done = 0, arrow = null, cutShort = false;
   for (const p of ordered) {
-    if (left <= 0 || q >= maxQ - 3) break;
+    if (left <= 0 || q >= maxQ - 3) { cutShort = true; break; }
     done++;
     const media = p.media ? JSON.parse(p.media) : [];
     const long = (p.text || '').length > 1024;
     const per = media.length > 1 ? 1 + ((p.buttons || long) ? 1 : 0) : media.length === 1 ? 1 + (long ? 1 : 0) : 1;
     const can = Math.floor(left / per);
-    if (can <= 0) break;
-    const users = await dueUsers(ctx.db, p, now, can);
+    if (can <= 0) { cutShort = true; break; }
+    const users = (await dueUsers(ctx.db, p, now, can)).filter((u) => !(p.kind === 'drip' && p.day === 0 && (!p.mode || p.mode === 'day') && gotNow.has(u.tg_id)));
     if (!users.length) continue;
     if (arrow === null) { arrow = await btn(ctx, 'buttonsArrow'); ctx.docs = await loadDocs(ctx); }
     const rows = [];
@@ -98,7 +101,7 @@ export async function tick(ctx, budget, queryBudget) {
     for (const u of users) {
       try {
         await sendPost(ctx.tg, u.tg_id, p, { uid: u.tg_id, publicUrl: ctx.publicUrl, arrow, docs: ctx.docs });
-        rows.push({ tg_id: u.tg_id, ok: true }); sent++;
+        rows.push({ tg_id: u.tg_id, ok: true }); sent++; if (p.kind === 'drip' && p.day === 0) gotNow.add(u.tg_id);
       } catch (e) {
         if (e.code === 403) { rows.push({ tg_id: u.tg_id, ok: false }); await ctx.db.run(`UPDATE users SET status = 'blocked' WHERE tg_id = ?`, [u.tg_id]); }
         else if (e.code === 429) {
@@ -110,9 +113,10 @@ export async function tick(ctx, budget, queryBudget) {
       left -= per;
     }
     await recordDeliveries(ctx.db, p.id, rows, now);
-    if (stop) break;
+    if (stop) { cutShort = true; break; }
   }
-  if (posts.length) await ctx.db.run(`INSERT INTO settings (key, value) VALUES ('tick_pos', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String((start + Math.max(done, 1)) % posts.length)]);
+  if (posts.length) await ctx.db.run(`INSERT INTO settings (key, value) VALUES ('tick_pos', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(cutShort ? (start + Math.max(done, 1)) % posts.length : 0)]);
+  await ctx.db.run(`INSERT INTO settings (key, value) VALUES ('tick_cut', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [cutShort ? '1' : '0']);
   return { sent, queries: q };
 }
 
