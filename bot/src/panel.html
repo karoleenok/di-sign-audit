@@ -579,16 +579,18 @@ function renderFlow() {
   const dates = S.posts.filter((p) => p.kind === 'date').sort((a, b) => (a.run_at || 9e12) - (b.run_at || 9e12));
   let h = '<div class="btns" style="margin-top:16px"><button class="btn" type="button" id="newPost">＋ Новый пост</button></div>';
   h += entryBox();
-  const sec = (title, note, list) => '<div class="grp">' + title + '</div>' + (note ? '<p class="small muted" style="margin:-2px 2px 10px">' + note + '</p>' : '') +
-    (list.length ? list.map((p) => '<div class="tree">' + node(p, 0, []) + '</div>').join('') : '<p class="small muted dash">Пока пусто.</p>');
-  h += sec('🎁 После теста', 'Подарок уходит сразу после аудит-теста.', gifts);
-  h += sec('📅 Лента', 'По порядку от входа в бот. Дни и время удобно двигать во вкладке «Лента».', drip);
-  h += sec('🕒 В дату', '', dates);
-  h += sec('💬 Бонус за отзыв', 'Уходит сразу после отзыва о прототипе кабинета.', S.posts.filter((p) => p.kind === 'fb').sort((a, b) => a.pos - b.pos || a.id - b.id));
+  const sec = (title, note, list, kind) => '<div class="grp">' + title + '</div>' + (note ? '<p class="small muted" style="margin:-2px 2px 10px">' + note + '</p>' : '') +
+    (list.length ? list.map((p) => '<div class="tree">' + node(p, 0, []) + '</div>').join('') : '<p class="small muted dash">Пока пусто.</p>') +
+    (kind ? '<button type="button" class="btn ghost" data-newk="' + kind + '" style="margin:8px 0 4px">＋ Добавить пост сюда</button>' : '');
+  h += sec('🎁 После теста', 'Подарок уходит сразу после аудит-теста.', gifts, 'gift');
+  h += sec('📅 Лента', 'По порядку от входа в бот. Дни и время удобно двигать во вкладке «Лента».', drip, 'drip');
+  h += sec('🕒 В дату', 'Уходит один раз в выбранные дату и время всем, кто уже в боте. Для эфиров и анонсов.', dates, 'date');
+  h += sec('💬 Бонус за отзыв', 'Уходит сразу после отзыва о прототипе кабинета.', S.posts.filter((p) => p.kind === 'fb').sort((a, b) => a.pos - b.pos || a.id - b.id), 'fb');
   const lost = S.posts.filter((p) => p.kind === 'node' && !shown.has(p.id));
   if (lost.length) h += sec('🔘 Посты-ответы без кнопки', 'На них пока не ведёт ни одна кнопка — человек их не получит. Привяжи: открой нужный пост → «＋ кнопка» → «Пост».', lost);
   $('body').innerHTML = h;
-  $('newPost').onclick = openNew;
+  $('newPost').onclick = () => openNew();
+  document.querySelectorAll('[data-newk]').forEach((el) => el.onclick = () => { haptic(); openNew({ kind: el.dataset.newk }); });
   bindEntry();
   document.querySelectorAll('.fn,.ref').forEach((el) => el.onclick = () => openPost(+el.dataset.id));
   document.querySelectorAll('[data-add]').forEach((el) => el.onclick = () => openPost(+el.dataset.add, { focus: 'buttons' }));
