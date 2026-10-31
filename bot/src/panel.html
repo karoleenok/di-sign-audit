@@ -31,6 +31,14 @@ h1 i{font-style:italic}
 .seg.sm button{padding:7px 6px;font-size:14px}
 .chips{display:flex;gap:6px;overflow-x:auto;padding:2px 0 4px;scrollbar-width:none}
 .chips::-webkit-scrollbar{display:none}
+.up{position:fixed;left:12px;right:12px;bottom:14px;z-index:90;max-width:616px;margin:0 auto;background:var(--ink);color:var(--bg);border-radius:16px;padding:12px 14px;box-shadow:0 10px 30px rgba(44,13,2,.3);animation:upIn .25s ease}
+.up .nm{display:flex;justify-content:space-between;gap:10px;font-size:13px}.up .nm b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.up .tr{height:8px;border-radius:99px;background:rgba(255,251,247,.2);margin-top:8px;overflow:hidden}
+.up .fl2{height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,#f4c9f6,#fffbf7,#f4c9f6);background-size:200% 100%;animation:upSh 1.2s linear infinite;transition:width .25s ease}
+.up .sub{font-size:12px;opacity:.7;margin-top:6px}
+.up.done .fl2{animation:none;background:#9ed38a}
+@keyframes upIn{from{transform:translateY(20px);opacity:0}to{transform:none;opacity:1}}
+@keyframes upSh{to{background-position:-200% 0}}
 .chip{flex:none;border:1px solid var(--line);background:var(--card);border-radius:99px;padding:6px 12px;font-size:13px;cursor:pointer}
 .chip.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .box{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;margin:14px 0}
@@ -427,19 +435,41 @@ function rowsEditor(el, rows) {
 }
 
 // выбрать файл для кнопки: грузим в Telegram, возвращаем {type, file_id, name}
+// загрузка с живым прогрессом: полоска, проценты, мегабайты и скорость
+function uploadWithProgress(url, body, headers, name) {
+  const mb = (n) => (n / 1048576).toFixed(n > 10485760 ? 0 : 1).replace('.', ',');
+  const box = document.createElement('div'); box.className = 'up';
+  box.innerHTML = '<div class="nm"><b></b><span>0%</span></div><div class="tr"><div class="fl2"></div></div><div class="sub">готовлю…</div>';
+  box.querySelector('b').textContent = name; document.body.appendChild(box);
+  const bar = box.querySelector('.fl2'), pc = box.querySelector('.nm span'), sub = box.querySelector('.sub');
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest(); const t0 = Date.now();
+    x.open('POST', url);
+    Object.keys(headers).forEach((k) => x.setRequestHeader(k, headers[k]));
+    x.upload.onprogress = (e) => {
+      if (!e.lengthComputable) return;
+      const p = Math.min(100, Math.round(e.loaded / e.total * 100)), sp = e.loaded / Math.max(1, (Date.now() - t0) / 1000);
+      bar.style.width = p + '%'; pc.textContent = p + '%';
+      const left = sp > 0 ? Math.ceil((e.total - e.loaded) / sp) : 0;
+      sub.textContent = mb(e.loaded) + ' из ' + mb(e.total) + ' МБ · ' + mb(sp) + ' МБ/с' + (p < 100 ? ' · ещё ~' + (left > 60 ? Math.ceil(left / 60) + ' мин' : left + ' с') : ' · сохраняю на сервере…');
+    };
+    const end = (ok, v) => { box.classList.toggle('done', ok); if (ok) { bar.style.width = '100%'; pc.textContent = '✓'; sub.textContent = 'готово'; } setTimeout(() => box.remove(), ok ? 900 : 0); ok ? resolve(v) : reject(v); };
+    x.onload = () => { let d; try { d = JSON.parse(x.responseText); } catch { d = { error: 'Сервер не ответил' }; } if (x.status >= 200 && x.status < 300 && !d.error) end(true, d); else end(false, new Error(d.error || 'Ошибка')); };
+    x.onerror = () => end(false, new Error('Связь оборвалась — попробуй ещё раз'));
+    x.send(body);
+  });
+}
+// выбрать файл для кнопки: грузим в Telegram, возвращаем {type, file_id, name}
 function pickBtnFile(done) {
   const inp = document.createElement('input'); inp.type = 'file';
   inp.onchange = async () => {
     const f = inp.files[0]; if (!f) return;
     const big = f.size > 45 * 1048576; // Telegram принимает от бота до 50 МБ — большие кладём на наш сервер и даём ссылку
     if (f.size > 1024 * 1048576) return toast('Файл больше 1 ГБ — на сервере столько не держим');
-    toast('Загружаю ' + f.name + ' · ' + (f.size > 1048576 ? (f.size / 1048576).toFixed(1) + ' МБ' : Math.round(f.size / 1024) + ' КБ') + (big ? ' — большой, подожди' : ''));
     try {
-      let r;
-      if (big) r = await fetch('/api/panel/bigfile?name=' + encodeURIComponent(f.name) + '&type=' + encodeURIComponent(f.type || ''), { method: 'POST', headers: { 'x-init-data': INIT, 'content-type': 'application/octet-stream' }, body: f });
-      else { const fd = new FormData(); fd.append('file', f); r = await fetch('/api/panel/upload', { method: 'POST', headers: { 'x-init-data': INIT }, body: fd }); }
-      const d = await r.json().catch(() => ({ error: 'Сервер не ответил' }));
-      if (!r.ok || d.error) throw new Error(d.error || 'Ошибка');
+      let d;
+      if (big) d = await uploadWithProgress('/api/panel/bigfile?name=' + encodeURIComponent(f.name) + '&type=' + encodeURIComponent(f.type || ''), f, { 'x-init-data': INIT, 'content-type': 'application/octet-stream' }, f.name);
+      else { const fd = new FormData(); fd.append('file', f); d = await uploadWithProgress('/api/panel/upload', fd, { 'x-init-data': INIT }, f.name); }
       d.file.name = f.name; haptic('medium'); toast('Файл загружен ✓'); done(d.file);
     } catch (e) { toast(f.name + ': ' + e.message); }
   };
