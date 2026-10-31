@@ -5,7 +5,7 @@ import { isAdmin } from './admin.js';
 import { AUD, LEVELS } from './texts.js';
 import { sendPost, audienceCount, loadDocs, DOCS, TRACKS, cleanFile } from './posts.js';
 import { mdToEntities, entitiesToMd } from './fmt.js';
-import { runPreview, startFastRun, stopRuns, stepRuns, activeRun } from './testrun.js';
+import { runPreview, runFullPath, startFastRun, stopRuns, stepRuns, activeRun } from './testrun.js';
 import { onStart, docVars, consentView, backfillFb, loadFlow, normFlow, FLOW_OPTIONAL } from './users.js';
 import { MSK, DAY } from './time.js';
 import { saveMsgExtra } from './msgs.js';
@@ -338,7 +338,7 @@ export async function handlePanelApi(ctx, request, url) {
   // проверка ленты на себе
   if (path === '/run/preview' && request.method === 'POST') {
     const level = ['start', 'pro'].includes(body.level) ? body.level : 'all';
-    const job = runPreview(ctx, user.id, level).catch((e) => console.log('preview', e && e.stack));
+    const job = (body.full ? runFullPath(ctx, user.id, level, body.fromAudit !== false) : runPreview(ctx, user.id, level)).catch((e) => console.log('preview', e && e.stack));
     if (ctx.waitUntil) ctx.waitUntil(job); else await job;
     return json({ ok: true });
   }

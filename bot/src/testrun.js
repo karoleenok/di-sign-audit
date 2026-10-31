@@ -4,6 +4,7 @@
 import { sendPost, offsetMin, fmtDelay, loadDocs } from './posts.js';
 import { btn } from './msgs.js';
 import { AUD } from './texts.js';
+import { loadFlow, previewStep } from './users.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const fitsLevel = (p, level) => !level || level === 'all' || p.audience === 'all' || p.audience === level;
@@ -50,6 +51,49 @@ export async function runPreview(ctx, adminId, level, pauseMs = 900) {
   }
   if (!items.length) await ctx.tg.call('sendMessage', { chat_id: adminId, text: 'Включённых постов пока нет — создай в боте: /new' });
   else await ctx.tg.call('sendMessage', { chat_id: adminId, text: `🧪 Конец предпросмотра · показано ${n}` });
+  return n;
+}
+
+
+const STEP_TITLE = { hello: 'приветствие', helloTest: 'приветствие', consentPd: 'согласие на данные', consentAds: 'согласие на рассылку', askLevel: 'уровень', askName: 'как обращаться', askContact: 'контакт', fbOffer: 'предложение отзыва', askTrack: 'мини-курс или материалы', testOffer: 'предложение теста', schedCourse: 'расписание (мини-курс)', schedMat: 'расписание (материалы)' };
+
+// Полный путь: вход → подарок (если из аудита) → расписание → лента → бонус за отзыв.
+// fromAudit: true — пришёл после аудита (уровень, подарок известны); false — с сайта, не пройдя аудит.
+export async function runFullPath(ctx, adminId, level, fromAudit, pauseMs = 900) {
+  const lv = level === 'pro' ? 'pro' : 'start';
+  const { order, off } = await loadFlow(ctx);
+  const { gifts, drip, byId } = await feedOrder(ctx.db, lv);
+  const fb = await ctx.db.all(`SELECT * FROM posts WHERE kind = 'fb' AND status = 'active' ORDER BY pos, id`);
+  const arrow = await btn(ctx, 'buttonsArrow');
+  const k = ctx.env.DELAY_FACTOR === undefined ? 1 : Number(ctx.env.DELAY_FACTOR);
+  const tg = (text) => ctx.tg.call('sendMessage', { chat_id: adminId, text, disable_notification: true });
+  const wait = async () => { if (pauseMs && k > 0) await sleep(pauseMs * k); };
+  const me = { first_name: ctx.userName || 'друг', username: ctx.userUsername || '' };
+  let n = 0, step = 0;
+  const run = async (label, fn) => {
+    await wait();
+    try { await tg('🧪 ' + label); await fn(); n++; }
+    catch (e) { await ctx.tg.call('sendMessage', { chat_id: adminId, text: `⚠️ ${label}: не отправилось — ${e.message}` }).catch(() => {}); }
+  };
+  await tg(`🧪 Полный путь — ${fromAudit ? 'человек пришёл после аудита' : 'человек пришёл с сайта, не пройдя аудит'}, уровень: ${lv === 'pro' ? 'продолжающий' : 'начинающий'}.\nКнопки в этих сообщениях настоящие, но это только показ: нажимать не нужно. Подпись над каждым — что это и когда придёт.`);
+  await run(`шаг ${++step} · ${STEP_TITLE[fromAudit ? 'helloTest' : 'hello']}`, () => previewStep(ctx, adminId, fromAudit ? 'helloTest' : 'hello', me));
+  for (const key of order) {
+    if (off.includes(key)) continue;
+    if (fromAudit && (key === 'askLevel' || key === 'askTrack' || key === 'testOffer')) continue; // эти из аудита уже известны
+    await run(`шаг ${++step} · ${STEP_TITLE[key]}`, () => previewStep(ctx, adminId, key, me));
+  }
+  if (fromAudit) for (const p of gifts) await run(`шаг ${++step} · 🎁 подарок после теста · «${p.title || 'без названия'}»`, async () => sendPost(ctx.tg, adminId, p, { uid: adminId, publicUrl: ctx.publicUrl, arrow, docs: await loadDocs(ctx) }));
+  await run(`шаг ${++step} · ${STEP_TITLE.schedCourse} (если выбрал мини-курс)`, () => previewStep(ctx, adminId, 'schedCourse', me));
+  await run(`шаг ${++step} · ${STEP_TITLE.schedMat} (если выбрал материалы)`, () => previewStep(ctx, adminId, 'schedMat', me));
+  await tg('🧪 дальше — лента: посты приходят по расписанию');
+  const MAX = 30;
+  for (const it of drip.slice(0, MAX)) await run(whenLabel(it.p, it.off, byId) + (it.p.title ? ` · «${it.p.title}»` : ''), async () => sendPost(ctx.tg, adminId, it.p, { uid: adminId, publicUrl: ctx.publicUrl, arrow, docs: await loadDocs(ctx) }));
+  if (drip.length > MAX) await tg(`🧪 показала первые ${MAX} из ${drip.length} постов ленты`);
+  if (fb.length) {
+    await tg('🧪 бонус за отзыв — приходит, когда человек оставил отзыв о кабинете');
+    for (const p of fb) await run(`💬 бонус за отзыв · «${p.title || 'без названия'}»`, async () => sendPost(ctx.tg, adminId, p, { uid: adminId, publicUrl: ctx.publicUrl, arrow, docs: await loadDocs(ctx) }));
+  }
+  await tg(`🧪 конец полного пути · показано ${n}`);
   return n;
 }
 

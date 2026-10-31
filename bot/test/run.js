@@ -697,6 +697,16 @@ step('кнопка «файл»: у шага и у поста по нажати�
     await db.run(`UPDATE users SET fb_at = NULL, fb_like = NULL, fb_improve = NULL WHERE tg_id IN (1400, 1500)`);
     await db.run(`DELETE FROM deliveries WHERE tg_id IN (1400, 1500)`);
   }
+  // полный путь: после аудита и с сайта
+  for (const fromAudit of [true, false]) {
+    const f0 = calls.length;
+    assert.equal((await api('/run/preview', { level: 'start', full: true, fromAudit })).ok, true);
+    const txt = calls.slice(f0).filter((c) => c.body.chat_id === 100 && c.method === 'sendMessage').map((c) => c.body.text || '');
+    assert.ok(txt.some((t) => /Полный путь/.test(t) && (fromAudit ? /после аудита/ : /с сайта/).test(t)), 'шапка пути');
+    assert.ok(txt.some((t) => /согласие на данные/.test(t)), 'шаг согласия показан');
+    assert.equal(txt.some((t) => /· уровень/.test(t)), !fromAudit, 'уровень спрашиваем только без аудита');
+    assert.ok(txt.some((t) => /конец полного пути/.test(t)), 'конец');
+  }
 }
 step('конструктор сценариев: порядок и выключатели шагов входа, посты-ответы, кнопки-выбор, цепочка после ответа, документы из панели, оплата-заглушка, #номер в чате');
 

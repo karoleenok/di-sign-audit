@@ -329,14 +329,17 @@ async function onDrop(ev) {
 function runBox() {
   const who = view.level === 'start' ? 'начинающего' : view.level === 'pro' ? 'продолжающего' : 'любого ученика';
   const r = S.run;
-  return '<div class="box"><h3>Проверить на себе</h3><p class="small muted" style="margin:0 0 10px">Лента придёт тебе в бот — как её получит ' + who + ' (выбирается выше). Включённые посты, с подписью «когда».</p>' +
-    '<div class="btns" style="margin-top:0"><button class="btn" id="runPrev" type="button">▶️ Посмотреть ленту сейчас</button>' +
+  const src = S.runSrc || 'audit';
+  return '<div class="box"><h3>Проверить на себе</h3><p class="small muted" style="margin:0 0 10px">Весь путь придёт тебе в бот: вход, подарок, расписание, посты ленты и бонус за отзыв — с подписью «что и когда». Уровень — выше (' + who + ').</p>' +
+    '<div class="seg" style="margin-bottom:10px"><button type="button" class="' + (src === 'audit' ? 'on' : '') + '" data-rsrc="audit">после аудита</button><button type="button" class="' + (src === 'site' ? 'on' : '') + '" data-rsrc="site">с сайта, без аудита</button></div>' +
+    '<div class="btns" style="margin-top:0"><button class="btn" id="runPrev" type="button">▶️ Посмотреть весь путь сейчас</button>' +
     (r ? '<div class="note" style="margin:0">⏩ Идёт ускоренный тест (1 день = 1 минута) · уже пришло: ' + r.sent + '</div><button class="btn danger" id="runStop" type="button">⏹ Остановить тест</button>'
        : '<button class="btn ghost" id="runFast" type="button">⏩ Ускоренный тест: 1 день = 1 минута</button>') + '</div></div>';
 }
 function bindRun() {
   const lvl = view.level;
-  if ($('runPrev')) $('runPrev').onclick = async () => { try { await api('/run/preview', { level: lvl }); haptic('medium'); toast('Отправляю ленту тебе в бот 👀'); } catch (e) { toast(e.message); } };
+  document.querySelectorAll('[data-rsrc]').forEach((b) => { b.onclick = () => { S.runSrc = b.dataset.rsrc; renderFeed(); }; });
+  if ($('runPrev')) $('runPrev').onclick = async () => { try { await api('/run/preview', { level: lvl, full: true, fromAudit: (S.runSrc || 'audit') === 'audit' }); haptic('medium'); toast('Отправляю весь путь тебе в бот 👀'); } catch (e) { toast(e.message); } };
   if ($('runFast')) $('runFast').onclick = async () => { try { const r = await api('/run/fast', { level: lvl }); S.run = r.run; haptic('medium'); toast('Тест пошёл — смотри в боте ⏩'); renderFeed(); } catch (e) { toast(e.message); } };
   if ($('runStop')) $('runStop').onclick = async () => { try { await api('/run/stop', {}); S.run = null; toast('Тест остановлен'); renderFeed(); } catch (e) { toast(e.message); } };
 }

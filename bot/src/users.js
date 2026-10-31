@@ -235,6 +235,28 @@ const STEP_RUN = {
   },
 };
 
+
+// показать шаг входа админу «как есть» (для предпросмотра полного пути): те же тексты и кнопки, но ничего не меняем в анкете
+export async function previewStep(ctx, id, k, u = {}) {
+  const name = u.first_name || 'друг';
+  if (k === 'hello' || k === 'helloTest') return say(ctx, id, k, { имя: name });
+  if (k === 'consentPd') { const { vars, extra } = await consentView(ctx); return say(ctx, id, 'consentPd', vars, extra); }
+  if (k === 'consentAds') return say(ctx, id, 'consentAds', {}, { reply_markup: kb([[{ text: await btn(ctx, 'consentAdsYes'), callback_data: 'c:ads:1' }, { text: await btn(ctx, 'consentAdsNo'), callback_data: 'c:ads:0' }]]) });
+  if (k === 'askLevel') return say(ctx, id, 'askLevel', {}, { reply_markup: kb([[{ text: await btn(ctx, 'levelBtnStart'), callback_data: 'lv:start' }], [{ text: await btn(ctx, 'levelBtnPro'), callback_data: 'lv:pro' }]]) });
+  if (k === 'askName') return say(ctx, id, 'askName', { имя: name }, { reply_markup: kb([[{ text: await btn(ctx, 'nameOk'), callback_data: 'n:ok' }]]) });
+  if (k === 'askContact') {
+    const rows = [];
+    if (u.username) rows.push([{ text: (await btn(ctx, 'contactTg')) + ' · @' + u.username, callback_data: 'ct:tg' }]);
+    rows.push([{ text: await btn(ctx, 'contactPhone'), callback_data: 'ct:phone' }], [{ text: await btn(ctx, 'contactEmail'), callback_data: 'ct:email' }]);
+    return say(ctx, id, 'askContact', {}, { reply_markup: kb(rows) });
+  }
+  if (k === 'fbOffer') return say(ctx, id, 'fbOffer', { кабинет: ctx.env.KABINET_URL || 'https://karoleenok.github.io/di-sign-audit/kabinet/' }, { reply_markup: kb([[{ text: await btn(ctx, 'fbYes'), callback_data: 'fb:yes' }], [{ text: await btn(ctx, 'fbNo'), callback_data: 'fb:no' }]]) });
+  if (k === 'askTrack') return say(ctx, id, 'askTrack', {}, { reply_markup: kb([[{ text: await btn(ctx, 'trackCourse'), callback_data: 'tr:course' }], [{ text: await btn(ctx, 'trackMat'), callback_data: 'tr:mat' }]]) });
+  if (k === 'testOffer') { const url = ctx.env.TEST_URL; return say(ctx, id, 'testOffer', {}, url ? { reply_markup: kb([[{ text: await btn(ctx, 'testBtn'), url }]]) } : {}); }
+  if (k === 'schedCourse' || k === 'schedMat') return say(ctx, id, k, {});
+  throw new Error('нет такого шага: ' + k);
+}
+
 export async function nextStep(ctx, u) {
   const id = u.tg_id;
   const { order, off } = await loadFlow(ctx);
