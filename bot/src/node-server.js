@@ -8,6 +8,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import zlib from 'node:zlib';
 import { nodeSqliteAdapter } from './db-node.js';
 import { migrate } from './schema.js';
 import { makeCtx, handleUpdate, tick, setup, clickRedirect, exportAll } from './core.js';
@@ -39,9 +40,17 @@ async function tgFetch(url, opts) {
 const ctxFor = () => makeCtx({ db, env, publicUrl: env.PUBLIC_URL, fetchFn: tgFetch });
 const polling = (env.MODE || 'webhook') === 'polling';
 
+const testCache = { html: '', at: 0 };
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, env.PUBLIC_URL || 'http://localhost');
-  const send = (code, body, type = 'text/html; charset=utf-8', headers = {}) => { res.writeHead(code, { 'content-type': type, ...headers }); res.end(body); };
+  const send = (code, body, type = 'text/html; charset=utf-8', headers = {}) => {
+    // страницы сжимаем: 300 КБ теста превращаются в ~60 КБ
+    if (typeof body === 'string' && body.length > 2000 && /\bgzip\b/.test(req.headers['accept-encoding'] || '')) {
+      res.writeHead(code, { 'content-type': type, 'content-encoding': 'gzip', vary: 'accept-encoding', ...headers });
+      return res.end(zlib.gzipSync(body));
+    }
+    res.writeHead(code, { 'content-type': type, ...headers }); res.end(body);
+  };
   try {
     // панель админа (кнопка в боте) и её API
     if (url.pathname === '/admin' || url.pathname === '/admin/') return send(200, PANEL, 'text/html; charset=utf-8', { 'cache-control': 'no-store' });
@@ -62,9 +71,16 @@ const server = http.createServer(async (req, res) => {
     }
     // страница аудит-теста: берём файл с GitHub и отдаём как обычную страницу
     if (url.pathname === '/test' || url.pathname === '/test/') {
+      // страница тянется с GitHub раз в 5 минут и хранится в памяти (раньше — при каждом открытии, а это 300 КБ)
       const src = env.TEST_SRC || 'https://raw.githubusercontent.com/karoleenok/di-sign-audit/main/index.html';
-      const r = await fetch(src);
-      return send(r.ok ? 200 : 502, await r.text());
+      if (!testCache.html || Date.now() - testCache.at > 300_000) {
+        try {
+          const r = await fetch(src, { signal: AbortSignal.timeout(15_000) });
+          if (r.ok) { testCache.html = await r.text(); testCache.at = Date.now(); }
+        } catch (e) { console.error('test fetch', e.message); }
+      }
+      if (!testCache.html) return send(502, 'Тест временно недоступен, попробуй через минуту');
+      return send(200, testCache.html, 'text/html; charset=utf-8', { 'cache-control': 'public, max-age=300' });
     }
     if (url.pathname === '/tg' && req.method === 'POST') {
       if (env.WEBHOOK_SECRET && req.headers['x-telegram-bot-api-secret-token'] !== env.WEBHOOK_SECRET) return send(403, 'forbidden');
