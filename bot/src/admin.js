@@ -523,7 +523,7 @@ async function check(ctx, id) {
 export async function showGuide(ctx, id, key) {
   const text = GUIDE[key] || GUIDE.menu;
   const rows = key === 'menu' || !GUIDE[key]
-    ? [...(ctx.publicUrl ? [[{ text: '🗂 Открыть панель', web_app: { url: ctx.publicUrl + '/admin' } }]] : []), ...GUIDE_MENU.map(([k, t]) => [{ text: t, callback_data: 'h:' + k }])]
+    ? [...(ctx.publicUrl ? [[{ text: '🗂 Открыть панель', web_app: { url: ctx.publicUrl + '/admin?v=' + Date.now().toString(36) } }]] : []), ...GUIDE_MENU.map(([k, t]) => [{ text: t, callback_data: 'h:' + k }])]
     : (() => {
         const i = GUIDE_MENU.findIndex(([k]) => k === key);
         const next = GUIDE_MENU[i + 1];
@@ -549,7 +549,7 @@ export async function textsMenu(ctx, id) {
     const n = Object.keys(MSG).filter((k) => MSG[k][0] === g && all[k]).length;
     return [{ text: t + (n ? ` · изменено ${n}` : ''), callback_data: 't:g:' + g }];
   });
-  if (ctx.publicUrl) rows.push([{ text: '🗂 Открыть панель (удобнее)', web_app: { url: ctx.publicUrl + '/admin' } }]);
+  if (ctx.publicUrl) rows.push([{ text: '🗂 Открыть панель (удобнее)', web_app: { url: ctx.publicUrl + '/admin?v=' + Date.now().toString(36) } }]);
   return say(ctx, id, 'Тексты бота. Выбери, что поменять — покажу, как сообщение видят ученики, и можно прислать новый вариант (с премиум-эмодзи).', { reply_markup: kb(rows) });
 }
 async function textsGroup(ctx, id, g) {
@@ -577,6 +577,6 @@ async function showMsg(ctx, id, key, note) {
 export async function panelLink(ctx, id) {
   if (!ctx.publicUrl) return say(ctx, id, 'Панель откроется, когда у бота будет адрес в интернете.');
   return say(ctx, id, 'Панель: лента постов по дням (можно перетаскивать), даты, подарки и все тексты бота.', {
-    reply_markup: kb([[{ text: '🗂 Открыть панель', web_app: { url: ctx.publicUrl + '/admin' } }]]),
+    reply_markup: kb([[{ text: '🗂 Открыть панель', web_app: { url: ctx.publicUrl + '/admin?v=' + Date.now().toString(36) } }]]),
   });
 }
