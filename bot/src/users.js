@@ -266,7 +266,7 @@ export async function previewStep(ctx, id, k, u = {}) {
 
 // свой пост-шаг: уходит один раз, ответа не ждём — вход идёт дальше
 async function runPostStep(ctx, u, pid) {
-  const p = await ctx.db.first(`SELECT * FROM posts WHERE id = ? AND kind = 'node'`, [pid]);
+  const p = await ctx.db.first(`SELECT * FROM posts WHERE id = ? AND kind = 'node' AND status = 'active'`, [pid]);
   if (!p) return;
   if (await ctx.db.first(`SELECT 1 AS x FROM deliveries WHERE post_id = ? AND tg_id = ?`, [pid, u.tg_id])) return;
   let ok = true;

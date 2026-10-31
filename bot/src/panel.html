@@ -763,8 +763,9 @@ function entryBox() {
   const row = (k, t, sub, i, o) => '<div class="stp' + (o.off ? ' off' : '') + '" role="button" tabindex="0" data-k="' + k + '"' + (o.mv ? ' data-mv="1"' : '') + '>' +
     (o.mv ? '<div class="handle" aria-label="перетащить">⋮⋮</div>' : '<div class="lock" title="это место менять нельзя">🔒</div>') +
     '<b>' + i + '</b><span class="st-t">' + t + (sub ? '<i>' + sub + '</i>' : '') + '</span>' +
+    (k !== 'schedCourse' ? '<button type="button" class="chip" data-next="' + k + '" aria-label="что дальше" title="добавить пост после этого шага" style="padding:4px 10px;font-weight:700">＋</button>' : '') +
     (o.mv && !window.Sortable ? '<span class="mv"><button type="button" class="chip" data-up="' + k + '" aria-label="выше">▲</button><button type="button" class="chip" data-down="' + k + '" aria-label="ниже">▼</button></span>' : '') +
-    (o.rm ? '<button type="button" class="chip" data-rm="' + k + '" aria-label="убрать из сценария">✕</button>' : '') + (o.sw ? '<button type="button" class="chip sw' + (o.off ? '' : ' on') + '" data-sw="' + k + '">' + (o.off ? 'выкл' : 'вкл') + '</button>' : '') + '</div>';
+    (o.nx2 ? '' : '') + (o.rm ? '<button type="button" class="chip" data-rm="' + k + '" aria-label="убрать из сценария">✕</button>' : '') + (o.sw ? '<button type="button" class="chip sw' + (o.off ? '' : ' on') + '" data-sw="' + k + '">' + (o.off ? 'выкл' : 'вкл') + '</button>' : '') + '</div>';
   const pt = (k) => { const m = S.msgs.find((x) => x.key === k); const p = m && m.post && S.posts.find((x) => x.id === m.post); return p ? ' · 🔁 твой пост «' + esc((p.title || p.text || '#' + p.id).slice(0, 30)) + '»' : ''; };
   let n = 1;
   let h = row('hello', '👋 Приветствие', 'из аудита приходит выбор: мини-курс или материалы' + pt('hello'), n++, {});
@@ -772,16 +773,36 @@ function entryBox() {
     if (/^post:\d+$/.test(k)) {
       const p = S.posts.find((x) => x.id === +k.slice(5));
       if (!p) return;
-      h += row(k, '🔁 Свой пост «' + esc(postName(p).slice(0, 34)) + '»', 'отдельный шаг: уходит один раз, вход идёт дальше', n++, { mv: true, sw: true, off: fl.off.includes(k), rm: true });
+      h += row(k, '↳ 🔁 Свой пост «' + esc(postName(p).slice(0, 34)) + '»', p.status === 'active' ? 'отдельный шаг: уходит один раз, вход идёт дальше' : '<b class="warn-t">' + (p.status === 'draft' ? 'черновик' : 'не включён') + ' — не уйдёт, пока не включишь пост</b>', n++, { mv: true, sw: true, off: fl.off.includes(k), rm: true, nx: true });
     } else h += row(k, ENTRY[k][0], ENTRY[k][1]() + pt(k), n++, { mv: k !== 'consentPd', sw: opt.includes(k), off: fl.off.includes(k) });
   });
   h += row('schedCourse', '🗓 Пост-расписание по треку', 'последний шаг: отсюда считается лента' + pt('schedCourse'), n++, {});
   const miss = !d.policy || !d.consent;
-  return '<div class="box"><h3>Вход в бот</h3><p class="small muted" style="margin:0 0 10px">Так бот встречает нового человека. Тяни за ⋮⋮, чтобы поменять порядок; «вкл/выкл» — показывать шаг или пропускать. Нажми на шаг — поменять текст, паузу и кнопки или подставить вместо него свой пост из ленты. Первым всегда стоит согласие на данные — по закону сначала оно.</p><div class="steps" id="flowList">' + h + '</div>' +
+  return '<div class="box"><h3>Вход в бот</h3><p class="small muted" style="margin:0 0 10px">Так бот встречает нового человека. Тяни за ⋮⋮, чтобы поменять порядок; «＋» у шага — добавить свой пост сразу после него; «вкл/выкл» — показывать шаг или пропускать. Нажми на шаг — поменять текст, паузу и кнопки или подставить вместо него свой пост из ленты. Первым всегда стоит согласие на данные — по закону сначала оно.</p><div class="steps" id="flowList">' + h + '</div>' +
     '<div class="arr">↓</div><div class="stp last"><b>→</b><span class="st-t">дальше — лента по треку и посты ниже</span></div>' +
     '<div class="docs-row"><div><b>Люди и отзывы</b><div class="small muted">контакты, выбор из аудита, отзывы о кабинете: ' + (S.fbCount || 0) + '</div></div><button type="button" class="chip" id="peopleBtn">открыть</button></div>' +
     '<div class="docs-row"><div><b>Документы</b><div class="small muted">политика ' + ok('policy') + ' · согласие ' + ok('consent') + ' · оферта ' + ok('offer') + '</div></div><button type="button" class="chip" id="docsBtn">изменить</button></div>' +
     (miss ? '<div class="note warn">Без ссылок на политику и согласие бот нельзя открывать для всех (152-ФЗ). Пока бот только для своих.</div>' : '') + '</div>';
+}
+// «＋ дальше»: выбрать (или создать) пост, который пойдёт сразу после этого шага
+function pickNext(afterKey) {
+  const f = S.flow, inFlow = new Set(f.order);
+  const list = S.posts.filter((p) => p.kind === 'node' && p.status !== 'archived' && !inFlow.has('post:' + p.id)).sort((a, b) => b.id - a.id);
+  sheet('<span class="pill">Что дальше</span><h2>Какой пост пойдёт после этого шага?</h2><p class="small muted" style="margin:0 0 8px">Выбери готовый пост для шагов или создай новый — он встанет сразу после выбранного шага, дальше вход идёт как обычно. Потом его можно перетащить за ⋮⋮.</p><div class="kinds pk">' +
+    (list.length ? list.map((p) => '<button type="button" class="kind" data-id="' + p.id + '"><b>' + esc(postName(p).slice(0, 60)) + '</b><span>#' + p.id + (p.status !== 'active' ? ' · ' + (p.status === 'draft' ? 'черновик' : 'пауза') : '') + '</span></button>').join('') : '<p class="small muted">Готовых постов для шагов нет — создай новый.</p>') +
+    '</div><div class="btns"><button class="btn" id="pnNew" type="button">＋ Создать новый пост</button><button class="btn ghost" id="pnX" type="button">Закрыть</button></div>');
+  $('pnX').onclick = closeSheet;
+  const put = async (id) => {
+    const o = f.order.filter((x) => x !== 'post:' + id);
+    const at = afterKey === 'hello' ? 1 : o.indexOf(afterKey) + 1;
+    o.splice(at < 1 ? 1 : at, 0, 'post:' + id);
+    closeSheet(); await saveFlow(o, f.off);
+  };
+  document.querySelectorAll('.pk .kind').forEach((el) => el.onclick = () => { haptic(); put(+el.dataset.id); });
+  $('pnNew').onclick = async () => {
+    try { const r = await api('/post/new', { kind: 'node', title: 'Новый шаг-пост', md: '', status: 'draft' }); await put(r.post.id); await reload(); openPost(r.post.id); toast('Напиши текст и включи пост — тогда он уйдёт'); }
+    catch (e) { toast(e.message); }
+  };
 }
 async function saveFlow(order, off) {
   const prev = S.flow;
@@ -795,13 +816,14 @@ function bindEntry() {
   const cur = () => (S.flow || { order: Object.keys(ENTRY), off: [] });
   list.querySelectorAll('.stp[data-k]').forEach((el) => {
     const open = () => { const k = el.dataset.k; if (/^post:\d+$/.test(k)) { openPost(+k.slice(5)); return; } openMsg(k); };
-    el.onclick = (e) => { if (e.target.closest('.handle,[data-sw],[data-up],[data-down],[data-rm]')) return; open(); };
+    el.onclick = (e) => { if (e.target.closest('.handle,[data-sw],[data-up],[data-down],[data-rm],[data-next]')) return; open(); };
     el.onkeydown = (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === el) { e.preventDefault(); open(); } };
   });
   list.querySelectorAll('[data-sw]').forEach((b) => b.onclick = () => {
     const f = cur(), k = b.dataset.sw;
     saveFlow(f.order.slice(), f.off.includes(k) ? f.off.filter((x) => x !== k) : [...f.off, k]);
   });
+  list.querySelectorAll('[data-next]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); pickNext(b.dataset.next); });
   list.querySelectorAll('[data-rm]').forEach((b) => b.onclick = () => { const f = cur(), k = b.dataset.rm; saveFlow(f.order.filter((x) => x !== k), f.off.filter((x) => x !== k)); });
   const move = (k, dir) => {
     const f = cur(), o = f.order.slice(), i = o.indexOf(k), j = i + dir;
