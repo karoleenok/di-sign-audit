@@ -381,7 +381,7 @@ function renderTexts() {
     [st.key, ...(st.btns || []), ...(st.alt || [])].forEach((k) => used.add(k));
     h += '<div class="day"><div class="dayh"><b>' + (i + 1) + '</b><span>' + esc(st.title) + '</span></div>' +
       '<div class="msg" data-k="' + m.key + '" style="margin-bottom:0"><div class="t"><span class="time">⏱ ' + String(m.delay).replace('.', ',') + ' с</span>' + (m.changed ? '<span class="tag">✎ изменено</span>' : '') + mediaTag(m) + '</div><div class="p" style="-webkit-line-clamp:3">' + esc(m.text) + '</div>' +
-      (((st.btns || []).length || m.links.length) ? '<div class="meta" style="margin-top:8px">' + (st.btns || []).map((b) => { const bm = mOf(b); return bm ? '<button type="button" class="chip" data-open="' + b + '">🔘 ' + esc(bm.text) + '</button>' : ''; }).join('') + m.links.flat().map((l) => '<span class="chip" style="cursor:default">🔗 ' + esc(l.text) + '</span>').join('') + '</div>' : '') +
+      (((st.btns || []).length || m.links.length) ? '<div class="meta" style="margin-top:8px">' + (st.btns || []).map((b) => { const bm = mOf(b); return bm ? '<button type="button" class="chip" data-open="' + b + '">🔘 ' + esc(bm.text) + '</button>' : ''; }).join('') + m.links.flat().map((l) => '<span class="chip" style="cursor:default">' + (l.go ? '➡️ ' : l.doc ? '📄 ' : l.pay ? '💳 ' : '🔗 ') + esc(l.text) + '</span>').join('') + '</div>' : '') +
       '</div>' + (st.alt || []).map((a) => { const am = mOf(a); return am ? '<div class="msg" data-k="' + a + '" style="margin:6px 0 0 18px;padding:10px 12px"><div class="t small">↳ ' + esc(am.title) + (am.changed ? ' ✎' : '') + mediaTag(am) + '</div><div class="p">' + esc(am.text) + '</div></div>' : ''; }).join('') +
       (st.note ? '<p class="small muted" style="margin:6px 2px 0">' + esc(st.note) + '</p>' : '') + '</div>';
   });
@@ -424,6 +424,42 @@ function rowsEditor(el, rows) {
   });
   draw();
   return () => { sync(); return rows; };
+}
+
+// редактор кнопок шага: ссылка / пост / документ / оплата (как у постов)
+function stepBtnEditor(el, rowsIn) {
+  let rows = rowsIn.map((row) => row.map((b) => Object.assign({ t: b.go ? 'go' : b.doc ? 'doc' : b.pay ? 'pay' : 'url' }, b)));
+  const sync = () => { el.querySelectorAll('[data-f]').forEach((i) => { const r = +i.dataset.r, k = +i.dataset.i; if (rows[r] && rows[r][k]) rows[r][k][i.dataset.f] = i.value; }); };
+  const optPosts = (cur) => '<option value="">— выбери пост —</option>' + ['node', 'drip', 'date', 'gift'].map((k) => { const l = S.posts.filter((x) => x.kind === k); return l.length ? '<optgroup label="' + KIND[k] + '">' + l.map((x) => '<option value="' + x.id + '"' + (+cur === x.id ? ' selected' : '') + '>' + esc(postName(x).slice(0, 44)) + '</option>').join('') + '</optgroup>' : ''; }).join('');
+  const field = (b, r, i) => {
+    const a = 'data-r="' + r + '" data-i="' + i + '"';
+    if (b.t === 'go') return '<select ' + a + ' data-f="go">' + optPosts(b.go) + '</select>';
+    if (b.t === 'doc') return '<select ' + a + ' data-f="doc">' + Object.keys(S.docNames).map((k) => '<option value="' + k + '"' + (b.doc === k ? ' selected' : '') + '>' + esc(S.docNames[k]) + (S.docs[k] ? '' : ' — ссылка не задана') + '</option>').join('') + '</select>';
+    if (b.t === 'pay') return '<select ' + a + ' data-f="pay">' + Object.keys(TARIFF).map((k) => '<option value="' + k + '"' + (b.pay === k ? ' selected' : '') + '>' + TARIFF[k] + '</option>').join('') + '</select>';
+    return '<input type="text" placeholder="https://ссылка" inputmode="url" ' + a + ' data-f="url" value="' + esc(b.url || '') + '">';
+  };
+  const draw = () => {
+    el.innerHTML = (rows.length ? rows.map((row, r) => '<div class="brow"><div class="row" style="justify-content:space-between;margin-bottom:6px"><span class="small muted">Ряд ' + (r + 1) + '</span><span>' +
+      (r > 0 ? '<button type="button" class="chip" data-up="' + r + '">↑</button> ' : '') + (r < rows.length - 1 ? '<button type="button" class="chip" data-down="' + r + '">↓</button>' : '') + '</span></div>' +
+      row.map((b, i) => '<div class="bcard"><div style="display:grid;grid-template-columns:1fr auto;gap:6px"><input type="text" placeholder="Текст кнопки" maxlength="60" data-r="' + r + '" data-i="' + i + '" data-f="text" value="' + esc(b.text || '') + '"><button type="button" class="chip" data-del="' + r + ':' + i + '">✕</button></div>' +
+        '<div class="btype">' + [['url', '🔗 Ссылка'], ['go', '➡️ Пост'], ['doc', '📄 Документ'], ['pay', '💳 Оплата']].map(([k, t]) => '<button type="button" data-type="' + k + '" data-r="' + r + '" data-i="' + i + '" class="' + (b.t === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>' + field(b, r, i) + '</div>').join('') +
+      (row.length < 4 ? '<button type="button" class="chip" data-add="' + r + '">＋ кнопка рядом</button>' : '') + '</div>').join('') : '<p class="small muted" style="margin:2px">Своих кнопок нет.</p>') +
+      '<button type="button" class="btn ghost" data-newrow="1" style="margin-top:6px">＋ Кнопка</button>';
+  };
+  el.addEventListener('input', sync); el.addEventListener('change', sync);
+  el.addEventListener('click', (e) => {
+    const t = e.target.closest('button'); if (!t) return; sync();
+    if (t.dataset.type) { const b = rows[+t.dataset.r][+t.dataset.i]; b.t = t.dataset.type; if (b.t === 'doc' && !b.doc) b.doc = 'policy'; if (b.t === 'pay' && !b.pay) b.pay = 'curator'; }
+    else if (t.dataset.newrow) rows.push([{ t: 'url', text: '', url: '' }]);
+    else if (t.dataset.add !== undefined) { const rr = rows[+t.dataset.add]; rr.push({ t: rr[rr.length - 1].t, text: '', url: '', go: '', doc: 'policy', pay: 'curator' }); }
+    else if (t.dataset.del) { const [r, i] = t.dataset.del.split(':').map(Number); rows[r].splice(i, 1); if (!rows[r].length) rows.splice(r, 1); }
+    else if (t.dataset.up) { const r = +t.dataset.up; [rows[r - 1], rows[r]] = [rows[r], rows[r - 1]]; }
+    else if (t.dataset.down) { const r = +t.dataset.down; [rows[r + 1], rows[r]] = [rows[r], rows[r + 1]]; }
+    else return;
+    haptic(); draw();
+  });
+  draw();
+  return () => { sync(); return rows.map((row) => row.map((b) => b.t === 'go' ? { text: b.text, go: +b.go || null } : b.t === 'doc' ? { text: b.text, doc: b.doc } : b.t === 'pay' ? { text: b.text, pay: b.pay } : { text: b.text, url: b.url })); };
 }
 
 function bindCards() {
@@ -828,6 +864,11 @@ function openPost(id, opt) {
 }
 async function reload() { try { S = await api('/state'); render(); } catch (e) { toast(e.message); } }
 
+function builtinBtns(key) {
+  const st = FLOW.find((x) => x.key === key);
+  const bs = ((st && st.btns) || []).map((b) => mOf(b)).filter(Boolean);
+  return bs.length ? '<p class="small muted" style="margin:0 2px 6px">Встроенные кнопки шага (нужны для пути, убрать нельзя; текст — в «Тексты»): ' + bs.map((b) => '<span class="chip" style="cursor:default">🔘 ' + esc(b.text) + '</span>').join(' ') + '</p>' : '';
+}
 function openMsg(key) {
   const m = S.msgs.find((x) => x.key === key); if (!m) return;
   let h = '<span class="pill">' + (m.button ? 'Кнопка' : m.group === 'profile' ? 'Профиль бота' : 'Сообщение') + '</span><h2>' + esc(m.title) + '</h2>' +
@@ -842,14 +883,14 @@ function openMsg(key) {
       '<input type="file" id="mFile" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4" hidden><p class="small muted" style="margin:6px 2px 0">Текст станет подписью под картинкой (до 1024 знаков — длиннее уйдёт следующим сообщением).</p>' : '') +
     (m.canMedia ? '<label class="f">Подставить свой пост вместо этого шаблона</label><select id="mPost"><option value="">— нет, оставить шаблон —</option>' + (S.posts || []).map((p) => '<option value="' + p.id + '"' + (m.post === p.id ? ' selected' : '') + '>#' + p.id + ' · ' + esc((p.title || p.text || 'без названия').slice(0, 40)) + '</option>').join('') + '</select><p class="small muted" style="margin:6px 2px 0">Ученик получит выбранный пост (текст, картинки и все его кнопки: ссылки, другие посты, документы). Кнопки самого шага — «Даю согласие», «Всё верно» и т.п. — встанут под кнопками поста, чтобы путь не сломался. Пока выбран пост, текст шаблона выше не показывается.</p>' : '') +
     (m.canMedia ? '<label class="f">Пауза перед сообщением</label><div class="row"><input type="text" inputmode="decimal" id="mDelay" style="width:90px" value="' + String(m.delay).replace('.', ',') + '"><span class="muted">сек — столько бот «печатает» (• • •) перед ним' + (m.delay !== m.defDelay ? ' · было ' + String(m.defDelay).replace('.', ',') : '') + '</span></div>' +
-      '<label class="f">Свои кнопки-ссылки под сообщением</label><div id="mLinks"></div><p class="small muted" style="margin:6px 2px 0">Например «Наш канал» или «Сайт школы». Встают под встроенными кнопками.</p>' : '') +
+      '<label class="f">Кнопки под сообщением</label>' + builtinBtns(m.key) + '<div id="mLinks"></div><p class="small muted" style="margin:6px 2px 0">Кнопка может вести на ссылку, на другой пост бота, на документ или на оплату тарифа. Встают под встроенными кнопками шага.</p>' : '') +
     (m.vars.length ? '<p class="small muted" style="margin:10px 2px 0">Нажми, чтобы вставить — бот подставит сам:</p><div class="vars" id="mVars">' + m.vars.map((v) => '<button type="button" data-v="{' + v + '}">{' + v + '}</button>').join('') + '</div>' : '') +
     '<div class="btns"><button class="btn" id="mSave">Сохранить</button><div class="btns two" style="margin:0"><button class="btn ghost" id="mPrev">👁 Прислать мне</button><button class="btn ghost" id="mClose">Закрыть</button></div>' +
     (m.changed ? '<button class="btn danger" id="mReset">↩️ Вернуть текст по умолчанию</button>' : '') + '</div>' +
     (m.changed ? '<p class="small muted" style="margin-top:12px">По умолчанию было:</p><div class="preview">' + esc(m.def) + '</div>' : '');
   sheet(h);
   const ta = $('mText');
-  const getLinks = $('mLinks') ? rowsEditor($('mLinks'), JSON.parse(JSON.stringify(m.links || []))) : null;
+  const getLinks = $('mLinks') ? stepBtnEditor($('mLinks'), JSON.parse(JSON.stringify(m.links || []))) : null;
   if ($('mImg')) fetch('/api/panel/msg/' + key + '/img', { headers: { 'x-init-data': INIT } }).then((r) => r.ok ? r.blob() : null).then((b) => {
     if (!b) { $('mImgInfo').textContent = 'превью не загрузилось — в боте картинка есть'; return; }
     const img = $('mImg');

@@ -485,6 +485,29 @@ step('путь ученика: пауза перед шагом и свои кн
   await saveMsgExtra(C(), 'consentPd', { post: null });
 }
 step('шаг пути можно заменить своим постом: текст, кнопки поста + встроенные кнопки шага');
+{
+  const { saveMsgExtra } = await import('../src/msgs.js');
+  const t = (await db.first(`SELECT id FROM posts WHERE title = 'Мой привет'`)).id;
+  await saveMsgExtra(C(), 'askLevel', { links: [[{ text: 'Читать пост', go: t }], [{ text: 'Оферта', doc: 'offer' }, { text: 'Тариф', pay: 'mentor' }]] });
+  await assert.rejects(() => saveMsgExtra(C(), 'askLevel', { links: [[{ text: 'X', go: 99999 }]] }), /не найден/);
+  const c0 = calls.length;
+  await handleUpdate(C(), { message: { message_id: 6201, from: { id: 1400, first_name: 'Ира' }, chat: { id: 1400, type: 'private' }, text: '/start' } });
+  await cb(1400, 'c:pd'); await cb(1400, 'c:ads:1');
+  const withBtn = calls.slice(c0).find((c) => c.body.chat_id === 1400 && (c.body.reply_markup?.inline_keyboard || []).flat().some((b) => b.text === 'Читать пост'));
+  assert.ok(withBtn, 'шаг с кнопками дошёл до ученика');
+  {
+    const kb = withBtn.body.reply_markup.inline_keyboard.flat();
+    const g = kb.find((b) => b.text === 'Читать пост');
+    assert.match(g.callback_data, /^gm:askLevel:0-0$/, 'кнопка-пост шага идёт через gm:');
+    assert.ok(kb.some((b) => b.text === 'Тариф' && /^gp:askLevel$/.test(b.callback_data)), 'оплата — заглушка gp:');
+    const c1 = calls.length;
+    await cb(1400, g.callback_data);
+    assert.ok(calls.slice(c1).some((c) => c.body.chat_id === 1400 && /Мой пост для/.test(c.body.text || '')), 'нажатие кнопки-поста шлёт выбранный пост');
+  }
+  await saveMsgExtra(C(), 'askLevel', { links: [] });
+}
+step('кнопки шага: ссылка, пост, документ, оплата');
+
 
 
 // ---------- конструктор сценариев: пост-ответ, кнопки-выбор, документы, оплата ----------

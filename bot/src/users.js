@@ -1,5 +1,5 @@
 import { ZONES, LEVELS } from './texts.js';
-import { say, btn, msg as msgText, delayOf } from './msgs.js';
+import { say, btn, msg as msgText, delayOf, linksOf } from './msgs.js';
 import { sendPost, recordDeliveries, loadDocs } from './posts.js';
 import { isAdmin } from './admin.js';
 
@@ -425,6 +425,20 @@ export async function onUserCallback(ctx, cq) {
   }
   if (d === 'del:no') { await answer('deleteCancel'); return done(); }
   if (d.startsWith('go:')) return onGo(ctx, cq, u, answer);
+  if (d.startsWith('gp:')) { await ctx.tg.call('answerCallbackQuery', { callback_query_id: cq.id, text: (await msgText(ctx, 'payLater')).text.slice(0, 190), show_alert: true }).catch(() => {}); return; }
+  if (d.startsWith('gm:')) {
+    // кнопка «пост» под служебным сообщением шага: присылаем выбранный пост
+    await answer();
+    const m = /^gm:([A-Za-z_]+):(\d+)-(\d+)$/.exec(d);
+    const b = m && ((await linksOf(ctx, m[1]))[+m[2]] || [])[+m[3]];
+    if (!b || !b.go) return;
+    const target = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [+b.go]);
+    const admin = await isAdmin(ctx, id);
+    if (!target || target.status === 'archived' || (target.status !== 'active' && !admin)) return;
+    try { await sendPost(ctx.tg, id, target, { uid: id, publicUrl: ctx.publicUrl, arrow: await btn(ctx, 'buttonsArrow'), docs: await loadDocs(ctx) }); }
+    catch (e) { if (e.code === 403) await ctx.db.run(`UPDATE users SET status = 'blocked' WHERE tg_id = ?`, [id]); }
+    return;
+  }
   if (d === 'n:ok') {
     await answer();
     await ctx.db.run(`UPDATE users SET contact_name = COALESCE(contact_name, ?) WHERE tg_id = ?`, [u.first_name || 'друг', id]);

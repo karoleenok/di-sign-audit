@@ -145,8 +145,12 @@ export function cleanRows(rows) {
     for (const b of row) {
       const text = String((b && b.text) || '').trim().slice(0, 60);
       let link = String((b && b.url) || '').trim();
-      if (!text && !link) continue;
+      const go = parseInt(b && b.go, 10) || null;
+      if (!text && !link && !go && !(b && (b.doc || b.pay))) continue;
       if (!text) throw new Error('У кнопки нет текста');
+      if (go) { r.push({ text, go }); continue; }
+      if (b.doc) { if (!['policy', 'consent', 'offer'].includes(b.doc)) throw new Error('Неизвестный документ'); r.push({ text, doc: b.doc }); continue; }
+      if (b.pay) { r.push({ text, pay: ['curator', 'mentor'].includes(b.pay) ? b.pay : 'curator' }); continue; }
       if (/^t\.me\//i.test(link)) link = 'https://' + link;
       if (!/^https?:\/\/\S+$/i.test(link)) throw new Error(`Ссылка у кнопки «${text}» должна начинаться с https://`);
       r.push({ text, url: link });
@@ -155,6 +159,18 @@ export function cleanRows(rows) {
     if (r.length) out.push(r);
   }
   return out;
+}
+// свои кнопки шага -> клавиатура Telegram (пост — через нажатие gm:, документ — ссылка из настроек)
+export async function linkRows(ctx, key) {
+  const rows = await linksOf(ctx, key);
+  if (!rows.length) return [];
+  const docs = rows.some((r) => r.some((b) => b.doc)) ? await loadDocs(ctx) : {};
+  return rows.map((row, ri) => row.map((b, bi) => {
+    if (b.go) return { text: b.text, callback_data: `gm:${key}:${ri}-${bi}` };
+    if (b.pay) return { text: b.text, callback_data: `gp:${key}` };
+    if (b.doc) return docs[b.doc] ? { text: b.text, url: docs[b.doc] } : null;
+    return { text: b.text, url: b.url };
+  }).filter(Boolean)).filter((r) => r.length);
 }
 export async function saveMsgExtra(ctx, key, { delay, links, post } = {}) {
   const i = msgInfo(key);
@@ -165,7 +181,10 @@ export async function saveMsgExtra(ctx, key, { delay, links, post } = {}) {
     if (!(d >= 0 && d <= 30)) throw new Error('Пауза — от 0 до 30 секунд');
     x.delay = Math.round(d * 10) / 10;
   }
-  if (links !== undefined) x.links = cleanRows(links);
+  if (links !== undefined) {
+    x.links = cleanRows(links);
+    for (const b of x.links.flat()) if (b.go && !(await ctx.db.first(`SELECT id FROM posts WHERE id = ? AND status != 'archived'`, [b.go]))) throw new Error(`Пост для кнопки «${b.text}» не найден`);
+  }
   if (post !== undefined) {
     if (post === null || post === '' || post === 0) delete x.post;
     else {
@@ -248,7 +267,7 @@ export async function say(ctx, chatId, key, vars, extra = {}) {
     const p = await ctx.db.first(`SELECT * FROM posts WHERE id = ? AND status != 'archived'`, [pid]);
     if (p) {
       const f = fill(p.text || '', j0(p.entities), { имя: ctx.userName || 'друг', ...(vars || {}) });
-      const own = [...(((extra.reply_markup && extra.reply_markup.inline_keyboard) || [])), ...(await linksOf(ctx, key))];
+      const own = [...(((extra.reply_markup && extra.reply_markup.inline_keyboard) || [])), ...(await linkRows(ctx, key))];
       const rm = extra.reply_markup;
       if (rm && !rm.inline_keyboard) {
         // обычная клавиатура (например «поделиться телефоном») — шлём отдельным коротким сообщением
@@ -260,7 +279,7 @@ export async function say(ctx, chatId, key, vars, extra = {}) {
   }
   const m = await msg(ctx, key, vars);
   // свои кнопки-ссылки — под встроенными
-  const links = await linksOf(ctx, key);
+  const links = await linkRows(ctx, key);
   if (links.length) extra = { ...extra, reply_markup: { inline_keyboard: [...((extra.reply_markup && extra.reply_markup.inline_keyboard) || []), ...links] } };
   const ents = m.entities.length ? m.entities : undefined;
   if (m.media) {
