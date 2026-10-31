@@ -146,18 +146,41 @@ async function migrate(db) {
 }
 
 // src/tg.js
+var SLOW_MS = 6e3;
+var sticky = /* @__PURE__ */ new Map();
 function makeTg({ token, root, fetchFn, relayKey }) {
-  const base = (root || "https://api.telegram.org").replace(/\/$/, "");
+  const roots = String(root || "https://api.telegram.org").split(",").map((s) => s.trim().replace(/\/$/, "")).filter(Boolean);
+  const keys = String(relayKey || "").split(",").map((s) => s.trim());
+  const id = roots.join(",");
+  const keyOf = (i) => (keys.length > 1 ? keys[i] : keys[0]) || "";
   const f = fetchFn || ((...a) => fetch(...a));
+  async function viaRoots(path, mk, isPoll) {
+    const n = roots.length;
+    let last;
+    for (let a = 0; a < n; a++) {
+      const i = ((sticky.get(id) || 0) + a) % n;
+      const t0 = Date.now();
+      try {
+        const res = await f(`${roots[i]}${path}`, mk(keyOf(i)));
+        if (n > 1 && !isPoll && Date.now() - t0 > SLOW_MS) sticky.set(id, (i + 1) % n);
+        else if (a) sticky.set(id, i);
+        return res;
+      } catch (e) {
+        last = e;
+        if (n > 1) sticky.set(id, (i + 1) % n);
+      }
+    }
+    throw last;
+  }
   const tg = {
     calls: 0,
     async call(method, params) {
       tg.calls++;
-      const res = await f(`${base}/bot${token}/${method}`, {
+      const res = await viaRoots(`/bot${token}/${method}`, (key) => ({
         method: "POST",
-        headers: relayKey ? { "content-type": "application/json", "x-relay-key": relayKey } : { "content-type": "application/json" },
+        headers: key ? { "content-type": "application/json", "x-relay-key": key } : { "content-type": "application/json" },
         body: JSON.stringify(params || {})
-      });
+      }), method === "getUpdates");
       let j3;
       try {
         j3 = await res.json();
@@ -175,7 +198,7 @@ function makeTg({ token, root, fetchFn, relayKey }) {
     // загрузка файла (картинка из панели): multipart вместо JSON
     async upload(method, form) {
       tg.calls++;
-      const res = await f(`${base}/bot${token}/${method}`, { method: "POST", headers: relayKey ? { "x-relay-key": relayKey } : {}, body: form });
+      const res = await viaRoots(`/bot${token}/${method}`, (key) => ({ method: "POST", headers: key ? { "x-relay-key": key } : {}, body: form }));
       const j3 = await res.json().catch(() => ({ ok: false, description: "bad response" }));
       if (!j3.ok) {
         const e = new Error(j3.description || "telegram error");
@@ -187,7 +210,17 @@ function makeTg({ token, root, fetchFn, relayKey }) {
     // скачать файл по file_id (превью картинки в панели)
     async download(fileId) {
       const file = await tg.call("getFile", { file_id: fileId });
-      return f(`${base}/file/bot${token}/${file.file_path}`, { headers: relayKey ? { "x-relay-key": relayKey } : {} });
+      let last;
+      for (let i = 0; i < roots.length; i++) {
+        try {
+          const res = await f(`${roots[i]}/file/bot${token}/${file.file_path}`, { headers: keyOf(i) ? { "x-relay-key": keyOf(i) } : {} });
+          if (res.ok) return res;
+          last = new Error("мост отдал " + res.status);
+        } catch (e) {
+          last = e;
+        }
+      }
+      throw last || new Error("файл недоступен");
     }
   };
   return tg;
@@ -314,6 +347,202 @@ var ADMIN_COMMANDS = [
   { command: "help", description: "Помощь для админа" },
   ...USER_COMMANDS
 ];
+
+// src/posts.js
+var CAPTION_MAX = 1024;
+var j = (s, d) => {
+  try {
+    return s ? JSON.parse(s) : d;
+  } catch {
+    return d;
+  }
+};
+var TRACKS = { all: "всем", course: "мини-курс", mat: "материалы" };
+var DOCS = { policy: "Политика обработки данных", consent: "Согласие на обработку данных", offer: "Оферта" };
+function keyboard(post, uid, publicUrl, docs) {
+  const rows = j(post.buttons, []);
+  if (!rows.length) return void 0;
+  const out = rows.map((row, ri) => row.map((b, bi) => {
+    if (b.go) return { text: b.text, callback_data: post.id ? `go:${post.id}:${ri}-${bi}` : "go:x" };
+    if (b.pay) return { text: b.text, callback_data: post.id ? `buy:${post.id}:${ri}-${bi}` : "buy:x" };
+    if (b.file && b.file.type !== "link") return { text: b.text, callback_data: post.id ? `fl:${post.id}:${ri}-${bi}` : "fl:x" };
+    if (b.doc) {
+      const u = docs && docs[b.doc];
+      return u ? { text: b.text, url: u } : null;
+    }
+    return { text: b.text, url: publicUrl && post.id ? `${publicUrl}/r/${post.id}/${ri}-${bi}/${uid || 0}` : b.url };
+  }).filter(Boolean)).filter((r) => r.length);
+  return out.length ? { inline_keyboard: out } : void 0;
+}
+var stripCustom = (ents) => (ents || []).filter((e) => e.type !== "custom_emoji");
+var hasCustom = (ents) => (ents || []).some((e) => e.type === "custom_emoji");
+async function sendPost(tg, chatId, post, { uid, publicUrl, arrow, docs, extraRows } = {}) {
+  const text = post.text || "";
+  const ents = j(post.entities, []);
+  const media = j(post.media, []);
+  let kb3 = keyboard(post, uid, publicUrl, docs);
+  if (extraRows && extraRows.length) kb3 = { inline_keyboard: [...kb3 && kb3.inline_keyboard || [], ...extraRows] };
+  let warn = null;
+  const attempt = async (entities) => {
+    if (!media.length) {
+      await tg.call("sendMessage", { chat_id: chatId, text: text || "…", entities, reply_markup: kb3, link_preview_options: { is_disabled: true } });
+      return;
+    }
+    const fits = text.length <= CAPTION_MAX;
+    if (media.length === 1) {
+      const m = media[0];
+      const method = { photo: "sendPhoto", video: "sendVideo", document: "sendDocument", animation: "sendAnimation" }[m.type] || "sendDocument";
+      const p = { chat_id: chatId, [m.type in { photo: 1, video: 1, document: 1, animation: 1 } ? m.type : "document"]: m.file_id };
+      if (fits) {
+        p.caption = text;
+        p.caption_entities = entities;
+        p.reply_markup = kb3;
+      }
+      await tg.call(method, p);
+      if (!fits) await tg.call("sendMessage", { chat_id: chatId, text, entities, reply_markup: kb3, link_preview_options: { is_disabled: true } });
+      return;
+    }
+    const group = media.slice(0, 10).map((m, i) => {
+      const it = { type: m.type === "animation" ? "video" : m.type, media: m.file_id };
+      if (i === 0 && fits && text) {
+        it.caption = text;
+        it.caption_entities = entities;
+      }
+      return it;
+    });
+    await tg.call("sendMediaGroup", { chat_id: chatId, media: group });
+    if (!fits) await tg.call("sendMessage", { chat_id: chatId, text, entities, reply_markup: kb3, link_preview_options: { is_disabled: true } });
+    else if (kb3) await tg.call("sendMessage", { chat_id: chatId, text: post.btn_text || arrow || T.buttonsArrow, reply_markup: kb3 });
+  };
+  try {
+    await attempt(ents);
+  } catch (e) {
+    if (hasCustom(ents) && e.code === 400) {
+      await attempt(stripCustom(ents));
+      warn = "Премиум-эмодзи не прошли и были заменены обычными: " + e.message;
+    } else throw e;
+  }
+  return { warn };
+}
+function audienceSql(post) {
+  let c = "";
+  const p = [];
+  if (post.audience === "start") c += ` AND u.level = 'start'`;
+  else if (post.audience === "pro") c += ` AND u.level = 'pro'`;
+  if (post.track === "course" || post.track === "mat") {
+    c += ` AND u.track = ?`;
+    p.push(post.track);
+  }
+  return { c, p };
+}
+var BASE = `u.status = 'active' AND u.consent_ads_at IS NOT NULL AND u.joined_at IS NOT NULL AND u.paid_at IS NULL`;
+var NOT_SENT = `NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.post_id = ? AND d.tg_id = u.tg_id)`;
+function dueSql(post) {
+  const delay = (Number(post.delay_min) || 0) * 60;
+  if (post.mode === "timer") return `(u.joined_at + ${delay})`;
+  if (post.mode === "after") return `((SELECT d2.sent_at FROM deliveries d2 WHERE d2.post_id = ${Number(post.after_id) || 0} AND d2.tg_id = u.tg_id AND d2.ok = 1) + ${delay})`;
+  const tod = timeSec(post.send_time);
+  return Number(post.day) === 0 ? `u.joined_at` : `(((u.joined_at + ${MSK}) / ${DAY}) * ${DAY} - ${MSK} + ${Number(post.day) * DAY} + ${tod})`;
+}
+function timeSec(s) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s || "11:00");
+  return m ? +m[1] * 3600 + +m[2] * 60 : 11 * 3600;
+}
+async function dueUsers(db, post, now, limit) {
+  const a = audienceSql(post);
+  if (post.kind === "drip") {
+    const due = dueSql(post);
+    const catchup = post.catchup ? "" : ` AND ${due} >= ?`;
+    const params = [...a.p, now, post.id, ...post.catchup ? [] : [post.created_at], limit];
+    return db.all(
+      `SELECT u.tg_id FROM users u WHERE ${BASE}${a.c} AND ${due} <= ? AND ${NOT_SENT}${catchup} ORDER BY u.joined_at LIMIT ?`,
+      params
+    );
+  }
+  if (post.kind === "date") {
+    const params = [...a.p, post.id, post.run_at, limit];
+    return db.all(`SELECT u.tg_id FROM users u WHERE ${BASE}${a.c} AND ${NOT_SENT} AND u.joined_at <= ? ORDER BY u.joined_at LIMIT ?`, params);
+  }
+  return [];
+}
+async function audienceCount(db, post) {
+  const a = audienceSql(post);
+  const r = await db.first(`SELECT COUNT(*) AS n FROM users u WHERE ${BASE}${a.c}`, a.p);
+  return r ? r.n : 0;
+}
+async function recordDeliveries(db, postId, rows, now) {
+  if (!rows.length) return;
+  const vals = rows.map(() => "(?, ?, ?, ?)").join(", ");
+  const params = [];
+  rows.forEach((r) => params.push(postId, r.tg_id, now, r.ok ? 1 : 0));
+  await db.run(`INSERT OR IGNORE INTO deliveries (post_id, tg_id, sent_at, ok) VALUES ${vals}`, params);
+}
+function postLabel(p) {
+  const t = (p.title || p.text || "").replace(/\s+/g, " ").trim().slice(0, 38) || "без текста";
+  const media = j(p.media, []);
+  const ic = media.length > 1 ? `🖼×${media.length} ` : media.length ? "🖼 " : "";
+  return `${ic}${t}`;
+}
+function postWhen(p) {
+  if (p.kind === "gift") return "подарок после теста";
+  if (p.kind === "node") return "по нажатию кнопки";
+  if (p.kind === "fb") return "бонус за отзыв о кабинете";
+  if (p.kind === "date") return p.run_at ? `дата ${fmtWhen(p.run_at)}` : "дата не задана";
+  if (p.mode === "timer") return `через ${fmtDelay(p.delay_min)} после входа`;
+  if (p.mode === "after") return `через ${fmtDelay(p.delay_min)} после поста #${p.after_id}`;
+  return Number(p.day) === 0 ? "день 0 · сразу" : `день ${p.day} · ${p.send_time}`;
+}
+function postSummary(p) {
+  const st = { draft: "📝 черновик", active: "✅ включён", paused: "⏸ на паузе", archived: "🗄 в архиве" }[p.status] || p.status;
+  const btns = j(p.buttons, []).flat().length;
+  return [
+    `#${p.id} · ${st}`,
+    `Когда: ${postWhen(p)}`,
+    ...p.kind === "node" ? [] : [`Кому: ${AUD[p.audience] || p.audience}`],
+    `Кнопок: ${btns}${p.kind === "drip" ? ` · догонять опоздавших: ${p.catchup ? "да" : "нет"}` : ""}`
+  ].join("\n");
+}
+function fmtDelay(min) {
+  const m = Number(min) || 0;
+  if (m === 0) return "0 мин (сразу)";
+  const d = Math.floor(m / 1440), h = Math.floor(m % 1440 / 60), mm = m % 60;
+  return [d ? d + " дн" : "", h ? h + " ч" : "", mm ? mm + " мин" : ""].filter(Boolean).join(" ");
+}
+function offsetMin(p, byId, depth = 0) {
+  if (!p || depth > 20) return 0;
+  if (p.mode === "timer") return Number(p.delay_min) || 0;
+  if (p.mode === "after") return offsetMin(byId[p.after_id], byId, depth + 1) + (Number(p.delay_min) || 0);
+  const day = Number(p.day) || 0;
+  if (day === 0) return 0;
+  const t = timeSec(p.send_time) / 60;
+  return day * 1440 + t - 600;
+}
+async function loadDocs(ctx) {
+  if (ctx._docs) return ctx._docs;
+  const rows = await ctx.db.all(`SELECT key, value FROM settings WHERE key LIKE 'doc:%'`);
+  const o = Object.fromEntries(rows.map((r) => [r.key.slice(4), r.value]));
+  const env = ctx.env || {};
+  ctx._docs = {
+    policy: o.policy || env.POLICY_URL || "",
+    consent: o.consent || env.CONSENT_URL || "",
+    offer: o.offer || env.OFFER_URL || "",
+    owner: o.owner || env.OWNER_INFO || ""
+  };
+  return ctx._docs;
+}
+var FILE_METHOD = { photo: "sendPhoto", video: "sendVideo", animation: "sendAnimation", document: "sendDocument" };
+var FILE_TYPES = Object.keys(FILE_METHOD);
+function cleanFile(f) {
+  if (f && f.type === "link") {
+    if (!/^https:\/\/[^\s]+\/f\/[a-z0-9]{24}\/[^\s]*$/i.test(String(f.url || ""))) return null;
+    return { type: "link", url: String(f.url), name: String(f.name || "").slice(0, 80), size: Number(f.size) || 0 };
+  }
+  if (!f || !FILE_TYPES.includes(f.type) || !/^[\w-]{10,200}$/.test(String(f.file_id || ""))) return null;
+  return { type: f.type, file_id: String(f.file_id), name: String(f.name || "").slice(0, 80) };
+}
+async function sendButtonFile(tg, chatId, f) {
+  return tg.call(FILE_METHOD[f.type] || "sendDocument", { chat_id: chatId, [FILE_METHOD[f.type] ? f.type : "document"]: f.file_id });
+}
 
 // src/msgs.js
 var MSG_GROUPS = [
@@ -486,8 +715,28 @@ function cleanRows(rows) {
     for (const b of row) {
       const text = String(b && b.text || "").trim().slice(0, 60);
       let link = String(b && b.url || "").trim();
-      if (!text && !link) continue;
+      const go = parseInt(b && b.go, 10) || null;
+      if (!text && !link && !go && !(b && (b.doc || b.pay || b.file))) continue;
       if (!text) throw new Error("У кнопки нет текста");
+      if (go) {
+        r.push({ text, go });
+        continue;
+      }
+      if (b.file) {
+        const f = cleanFile(b.file);
+        if (!f) throw new Error(`У кнопки «${text}» не выбран файл`);
+        r.push(f.type === "link" ? { text, url: f.url, file: f } : { text, file: f });
+        continue;
+      }
+      if (b.doc) {
+        if (!["policy", "consent", "offer"].includes(b.doc)) throw new Error("Неизвестный документ");
+        r.push({ text, doc: b.doc });
+        continue;
+      }
+      if (b.pay) {
+        r.push({ text, pay: ["curator", "mentor"].includes(b.pay) ? b.pay : "curator" });
+        continue;
+      }
       if (/^t\.me\//i.test(link)) link = "https://" + link;
       if (!/^https?:\/\/\S+$/i.test(link)) throw new Error(`Ссылка у кнопки «${text}» должна начинаться с https://`);
       r.push({ text, url: link });
@@ -497,7 +746,19 @@ function cleanRows(rows) {
   }
   return out;
 }
-async function saveMsgExtra(ctx, key, { delay, links } = {}) {
+async function linkRows(ctx, key) {
+  const rows = await linksOf(ctx, key);
+  if (!rows.length) return [];
+  const docs = rows.some((r) => r.some((b) => b.doc)) ? await loadDocs(ctx) : {};
+  return rows.map((row, ri) => row.map((b, bi) => {
+    if (b.go) return { text: b.text, callback_data: `gm:${key}:${ri}-${bi}` };
+    if (b.pay) return { text: b.text, callback_data: `gp:${key}` };
+    if (b.file && b.file.type !== "link") return { text: b.text, callback_data: `fm:${key}:${ri}-${bi}` };
+    if (b.doc) return docs[b.doc] ? { text: b.text, url: docs[b.doc] } : null;
+    return { text: b.text, url: b.url };
+  }).filter(Boolean)).filter((r) => r.length);
+}
+async function saveMsgExtra(ctx, key, { delay, links, post } = {}) {
   const i = msgInfo(key);
   if (!i || i.button || i.plain) throw new Error("Для этого сообщения пауза и кнопки не настраиваются");
   const x = { ...await extraOf(ctx, key) };
@@ -506,7 +767,18 @@ async function saveMsgExtra(ctx, key, { delay, links } = {}) {
     if (!(d >= 0 && d <= 30)) throw new Error("Пауза — от 0 до 30 секунд");
     x.delay = Math.round(d * 10) / 10;
   }
-  if (links !== void 0) x.links = cleanRows(links);
+  if (links !== void 0) {
+    x.links = cleanRows(links);
+    for (const b of x.links.flat()) if (b.go && !await ctx.db.first(`SELECT id FROM posts WHERE id = ? AND status != 'archived'`, [b.go])) throw new Error(`Пост для кнопки «${b.text}» не найден`);
+  }
+  if (post !== void 0) {
+    if (post === null || post === "" || post === 0) delete x.post;
+    else {
+      const row = await ctx.db.first(`SELECT id FROM posts WHERE id = ? AND status != 'archived'`, [Number(post)]);
+      if (!row) throw new Error("Такого поста нет");
+      x.post = row.id;
+    }
+  }
   await ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, ["msgx:" + key, JSON.stringify(x)]);
   if (ctx._msgx) ctx._msgx[key] = x;
   return x;
@@ -528,6 +800,24 @@ function fill(text, entities, vars) {
       return e;
     });
   }
+  if (hits.some((h) => h[2] === "")) {
+    let pos = 0;
+    for (const line of t.split("\n")) {
+      const end = pos + line.length + 1;
+      if (line.trim() && /^[^{}]*:\s*$/.test(line) && hits.some((h) => h[2] === "")) {
+        const len = Math.min(end, t.length) - pos;
+        t = t.slice(0, pos) + t.slice(pos + len);
+        ents = ents.filter((e) => !(e.offset >= pos && e.offset < pos + len)).map((e) => e.offset >= pos + len ? { ...e, offset: e.offset - len } : e);
+        continue;
+      }
+      pos = end;
+    }
+    const cut = t.length - t.trimEnd().length;
+    if (cut) {
+      t = t.trimEnd();
+      ents = ents.map((e) => ({ ...e, length: Math.min(e.length, t.length - e.offset) }));
+    }
+  }
   return { text: t, entities: ents.filter((e) => e.length > 0) };
 }
 async function msg(ctx, key, vars) {
@@ -542,8 +832,15 @@ async function msg(ctx, key, vars) {
 async function btn(ctx, key, vars) {
   return (await msg(ctx, key, vars)).text.slice(0, 64);
 }
+var j0 = (s) => {
+  try {
+    return s ? JSON.parse(s) : [];
+  } catch {
+    return [];
+  }
+};
 var MEDIA_METHOD = { photo: "sendPhoto", video: "sendVideo", animation: "sendAnimation" };
-var CAPTION_MAX = 1024;
+var CAPTION_MAX2 = 1024;
 async function withEmojiFallback(send, ents) {
   try {
     return await send(ents);
@@ -553,15 +850,29 @@ async function withEmojiFallback(send, ents) {
   }
 }
 async function say(ctx, chatId, key, vars, extra = {}) {
+  const pid = (await extraOf(ctx, key)).post;
+  if (pid) {
+    const p = await ctx.db.first(`SELECT * FROM posts WHERE id = ? AND status != 'archived'`, [pid]);
+    if (p) {
+      const f = fill(p.text || "", j0(p.entities), { имя: ctx.userName || "друг", ...vars || {} });
+      const own = [...extra.reply_markup && extra.reply_markup.inline_keyboard || [], ...await linkRows(ctx, key)];
+      const rm = extra.reply_markup;
+      if (rm && !rm.inline_keyboard) {
+        await sendPost(ctx.tg, chatId, { ...p, text: f.text, entities: JSON.stringify(f.entities) }, { uid: chatId, publicUrl: ctx.publicUrl, docs: await loadDocs(ctx) });
+        return ctx.tg.call("sendMessage", { chat_id: chatId, text: "👇", reply_markup: rm });
+      }
+      return sendPost(ctx.tg, chatId, { ...p, text: f.text, entities: JSON.stringify(f.entities) }, { uid: chatId, publicUrl: ctx.publicUrl, docs: await loadDocs(ctx), extraRows: own });
+    }
+  }
   const m = await msg(ctx, key, vars);
-  const links = await linksOf(ctx, key);
+  const links = await linkRows(ctx, key);
   if (links.length) extra = { ...extra, reply_markup: { inline_keyboard: [...extra.reply_markup && extra.reply_markup.inline_keyboard || [], ...links] } };
   const ents = m.entities.length ? m.entities : void 0;
   if (m.media) {
     const { link_preview_options, reply_markup, ...rest } = extra;
     const method = MEDIA_METHOD[m.media.type] || "sendPhoto";
     const field = MEDIA_METHOD[m.media.type] ? m.media.type : "photo";
-    const fits = (m.text || "").length <= CAPTION_MAX;
+    const fits = (m.text || "").length <= CAPTION_MAX2;
     const first = await withEmojiFallback((e) => ctx.tg.call(method, {
       chat_id: chatId,
       [field]: m.media.file_id,
@@ -661,189 +972,8 @@ async function listMsgs(ctx) {
     const i = msgInfo(k);
     const o = all[k];
     const x = ctx._msgx && ctx._msgx[k] || {};
-    return { ...i, delay: typeof x.delay === "number" ? x.delay : DEFAULT_DELAY[k] ?? 0.7, defDelay: DEFAULT_DELAY[k] ?? 0.7, links: x.links || [], text: o ? o.text : i.def, changed: !!o, media: o && o.media ? o.media.type : null, canMedia: !i.button && !i.plain, emoji: !!(o && (o.entities || []).some((e) => e.type === "custom_emoji")) };
+    return { ...i, delay: typeof x.delay === "number" ? x.delay : DEFAULT_DELAY[k] ?? 0.7, defDelay: DEFAULT_DELAY[k] ?? 0.7, links: x.links || [], post: x.post || null, text: o ? o.text : i.def, changed: !!o, media: o && o.media ? o.media.type : null, canMedia: !i.button && !i.plain, emoji: !!(o && (o.entities || []).some((e) => e.type === "custom_emoji")) };
   }).map(async (m) => m.group === "profile" && !m.changed && (m.key === "botDesc" || m.key === "botShort") ? { ...m, text: await liveProfile(ctx, m.key), def: "(как задано в BotFather)" } : m));
-}
-
-// src/posts.js
-var CAPTION_MAX2 = 1024;
-var j = (s, d) => {
-  try {
-    return s ? JSON.parse(s) : d;
-  } catch {
-    return d;
-  }
-};
-var TRACKS = { all: "всем", course: "мини-курс", mat: "материалы" };
-var DOCS = { policy: "Политика обработки данных", consent: "Согласие на обработку данных", offer: "Оферта" };
-function keyboard(post, uid, publicUrl, docs) {
-  const rows = j(post.buttons, []);
-  if (!rows.length) return void 0;
-  const out = rows.map((row, ri) => row.map((b, bi) => {
-    if (b.go) return { text: b.text, callback_data: post.id ? `go:${post.id}:${ri}-${bi}` : "go:x" };
-    if (b.pay) return { text: b.text, callback_data: post.id ? `buy:${post.id}:${ri}-${bi}` : "buy:x" };
-    if (b.doc) {
-      const u = docs && docs[b.doc];
-      return u ? { text: b.text, url: u } : null;
-    }
-    return { text: b.text, url: publicUrl && post.id ? `${publicUrl}/r/${post.id}/${ri}-${bi}/${uid || 0}` : b.url };
-  }).filter(Boolean)).filter((r) => r.length);
-  return out.length ? { inline_keyboard: out } : void 0;
-}
-var stripCustom = (ents) => (ents || []).filter((e) => e.type !== "custom_emoji");
-var hasCustom = (ents) => (ents || []).some((e) => e.type === "custom_emoji");
-async function sendPost(tg, chatId, post, { uid, publicUrl, arrow, docs } = {}) {
-  const text = post.text || "";
-  const ents = j(post.entities, []);
-  const media = j(post.media, []);
-  const kb3 = keyboard(post, uid, publicUrl, docs);
-  let warn = null;
-  const attempt = async (entities) => {
-    if (!media.length) {
-      await tg.call("sendMessage", { chat_id: chatId, text: text || "…", entities, reply_markup: kb3, link_preview_options: { is_disabled: true } });
-      return;
-    }
-    const fits = text.length <= CAPTION_MAX2;
-    if (media.length === 1) {
-      const m = media[0];
-      const method = { photo: "sendPhoto", video: "sendVideo", document: "sendDocument", animation: "sendAnimation" }[m.type] || "sendDocument";
-      const p = { chat_id: chatId, [m.type in { photo: 1, video: 1, document: 1, animation: 1 } ? m.type : "document"]: m.file_id };
-      if (fits) {
-        p.caption = text;
-        p.caption_entities = entities;
-        p.reply_markup = kb3;
-      }
-      await tg.call(method, p);
-      if (!fits) await tg.call("sendMessage", { chat_id: chatId, text, entities, reply_markup: kb3, link_preview_options: { is_disabled: true } });
-      return;
-    }
-    const group = media.slice(0, 10).map((m, i) => {
-      const it = { type: m.type === "animation" ? "video" : m.type, media: m.file_id };
-      if (i === 0 && fits && text) {
-        it.caption = text;
-        it.caption_entities = entities;
-      }
-      return it;
-    });
-    await tg.call("sendMediaGroup", { chat_id: chatId, media: group });
-    if (!fits) await tg.call("sendMessage", { chat_id: chatId, text, entities, reply_markup: kb3, link_preview_options: { is_disabled: true } });
-    else if (kb3) await tg.call("sendMessage", { chat_id: chatId, text: post.btn_text || arrow || T.buttonsArrow, reply_markup: kb3 });
-  };
-  try {
-    await attempt(ents);
-  } catch (e) {
-    if (hasCustom(ents) && e.code === 400) {
-      await attempt(stripCustom(ents));
-      warn = "Премиум-эмодзи не прошли и были заменены обычными: " + e.message;
-    } else throw e;
-  }
-  return { warn };
-}
-function audienceSql(post) {
-  let c = "";
-  const p = [];
-  if (post.audience === "start") c += ` AND u.level = 'start'`;
-  else if (post.audience === "pro") c += ` AND u.level = 'pro'`;
-  if (post.track === "course" || post.track === "mat") {
-    c += ` AND u.track = ?`;
-    p.push(post.track);
-  }
-  return { c, p };
-}
-var BASE = `u.status = 'active' AND u.consent_ads_at IS NOT NULL AND u.joined_at IS NOT NULL AND u.paid_at IS NULL`;
-var NOT_SENT = `NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.post_id = ? AND d.tg_id = u.tg_id)`;
-function dueSql(post) {
-  const delay = (Number(post.delay_min) || 0) * 60;
-  if (post.mode === "timer") return `(u.joined_at + ${delay})`;
-  if (post.mode === "after") return `((SELECT d2.sent_at FROM deliveries d2 WHERE d2.post_id = ${Number(post.after_id) || 0} AND d2.tg_id = u.tg_id AND d2.ok = 1) + ${delay})`;
-  const tod = timeSec(post.send_time);
-  return Number(post.day) === 0 ? `u.joined_at` : `(((u.joined_at + ${MSK}) / ${DAY}) * ${DAY} - ${MSK} + ${Number(post.day) * DAY} + ${tod})`;
-}
-function timeSec(s) {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(s || "11:00");
-  return m ? +m[1] * 3600 + +m[2] * 60 : 11 * 3600;
-}
-async function dueUsers(db, post, now, limit) {
-  const a = audienceSql(post);
-  if (post.kind === "drip") {
-    const due = dueSql(post);
-    const catchup = post.catchup ? "" : ` AND ${due} >= ?`;
-    const params = [...a.p, now, post.id, ...post.catchup ? [] : [post.created_at], limit];
-    return db.all(
-      `SELECT u.tg_id FROM users u WHERE ${BASE}${a.c} AND ${due} <= ? AND ${NOT_SENT}${catchup} ORDER BY u.joined_at LIMIT ?`,
-      params
-    );
-  }
-  if (post.kind === "date") {
-    const params = [...a.p, post.id, post.run_at, limit];
-    return db.all(`SELECT u.tg_id FROM users u WHERE ${BASE}${a.c} AND ${NOT_SENT} AND u.joined_at <= ? ORDER BY u.joined_at LIMIT ?`, params);
-  }
-  return [];
-}
-async function audienceCount(db, post) {
-  const a = audienceSql(post);
-  const r = await db.first(`SELECT COUNT(*) AS n FROM users u WHERE ${BASE}${a.c}`, a.p);
-  return r ? r.n : 0;
-}
-async function recordDeliveries(db, postId, rows, now) {
-  if (!rows.length) return;
-  const vals = rows.map(() => "(?, ?, ?, ?)").join(", ");
-  const params = [];
-  rows.forEach((r) => params.push(postId, r.tg_id, now, r.ok ? 1 : 0));
-  await db.run(`INSERT OR IGNORE INTO deliveries (post_id, tg_id, sent_at, ok) VALUES ${vals}`, params);
-}
-function postLabel(p) {
-  const t = (p.title || p.text || "").replace(/\s+/g, " ").trim().slice(0, 38) || "без текста";
-  const media = j(p.media, []);
-  const ic = media.length > 1 ? `🖼×${media.length} ` : media.length ? "🖼 " : "";
-  return `${ic}${t}`;
-}
-function postWhen(p) {
-  if (p.kind === "gift") return "подарок после теста";
-  if (p.kind === "node") return "по нажатию кнопки";
-  if (p.kind === "fb") return "бонус за отзыв о кабинете";
-  if (p.kind === "date") return p.run_at ? `дата ${fmtWhen(p.run_at)}` : "дата не задана";
-  if (p.mode === "timer") return `через ${fmtDelay(p.delay_min)} после входа`;
-  if (p.mode === "after") return `через ${fmtDelay(p.delay_min)} после поста #${p.after_id}`;
-  return Number(p.day) === 0 ? "день 0 · сразу" : `день ${p.day} · ${p.send_time}`;
-}
-function postSummary(p) {
-  const st = { draft: "📝 черновик", active: "✅ включён", paused: "⏸ на паузе", archived: "🗄 в архиве" }[p.status] || p.status;
-  const btns = j(p.buttons, []).flat().length;
-  return [
-    `#${p.id} · ${st}`,
-    `Когда: ${postWhen(p)}`,
-    ...p.kind === "node" ? [] : [`Кому: ${AUD[p.audience] || p.audience}`],
-    `Кнопок: ${btns}${p.kind === "drip" ? ` · догонять опоздавших: ${p.catchup ? "да" : "нет"}` : ""}`
-  ].join("\n");
-}
-function fmtDelay(min) {
-  const m = Number(min) || 0;
-  if (m === 0) return "0 мин (сразу)";
-  const d = Math.floor(m / 1440), h = Math.floor(m % 1440 / 60), mm = m % 60;
-  return [d ? d + " дн" : "", h ? h + " ч" : "", mm ? mm + " мин" : ""].filter(Boolean).join(" ");
-}
-function offsetMin(p, byId, depth = 0) {
-  if (!p || depth > 20) return 0;
-  if (p.mode === "timer") return Number(p.delay_min) || 0;
-  if (p.mode === "after") return offsetMin(byId[p.after_id], byId, depth + 1) + (Number(p.delay_min) || 0);
-  const day = Number(p.day) || 0;
-  if (day === 0) return 0;
-  const t = timeSec(p.send_time) / 60;
-  return day * 1440 + t - 600;
-}
-async function loadDocs(ctx) {
-  if (ctx._docs) return ctx._docs;
-  const rows = await ctx.db.all(`SELECT key, value FROM settings WHERE key LIKE 'doc:%'`);
-  const o = Object.fromEntries(rows.map((r) => [r.key.slice(4), r.value]));
-  const env = ctx.env || {};
-  ctx._docs = {
-    policy: o.policy || env.POLICY_URL || "",
-    consent: o.consent || env.CONSENT_URL || "",
-    offer: o.offer || env.OFFER_URL || "",
-    owner: o.owner || env.OWNER_INFO || ""
-  };
-  return ctx._docs;
 }
 
 // src/guide.js
@@ -1676,8 +1806,10 @@ async function check(ctx, id) {
   }
   try {
     const w = await ctx.tg.call("getWebhookInfo");
-    lines.push(w.url ? `✅ Вебхук: ${w.url}` : "❌ Вебхук не установлен — открой адрес /setup");
-    if (w.pending_update_count) lines.push(`⏳ В очереди сообщений: ${w.pending_update_count}`);
+    const polling = String(ctx.env.MODE || "") === "polling";
+    if (polling) lines.push(w.url ? `⚠️ Стоит вебхук ${w.url}, а сервер работает без вебхука — открой адрес /setup` : "✅ Режим без вебхука: сервер сам забирает сообщения");
+    else lines.push(w.url ? `✅ Вебхук: ${w.url}` : "❌ Вебхук не установлен — открой адрес /setup");
+    if (w.pending_update_count && !polling) lines.push(`⏳ В очереди сообщений: ${w.pending_update_count}`);
     if (w.last_error_message) lines.push(`⚠️ Последняя ошибка Telegram: ${w.last_error_message}`);
   } catch {
   }
@@ -1691,7 +1823,7 @@ async function check(ctx, id) {
 }
 async function showGuide(ctx, id, key) {
   const text = GUIDE[key] || GUIDE.menu;
-  const rows = key === "menu" || !GUIDE[key] ? [...ctx.publicUrl ? [[{ text: "🗂 Открыть панель", web_app: { url: ctx.publicUrl + "/admin" } }]] : [], ...GUIDE_MENU.map(([k, t]) => [{ text: t, callback_data: "h:" + k }])] : (() => {
+  const rows = key === "menu" || !GUIDE[key] ? [...ctx.publicUrl ? [[{ text: "🗂 Открыть панель", web_app: { url: ctx.publicUrl + "/admin?v=" + Date.now().toString(36) } }]] : [], ...GUIDE_MENU.map(([k, t]) => [{ text: t, callback_data: "h:" + k }])] : (() => {
     const i = GUIDE_MENU.findIndex(([k]) => k === key);
     const next = GUIDE_MENU[i + 1];
     const r = [];
@@ -1715,7 +1847,7 @@ async function textsMenu(ctx, id) {
     const n = Object.keys(MSG).filter((k) => MSG[k][0] === g && all[k]).length;
     return [{ text: t + (n ? ` · изменено ${n}` : ""), callback_data: "t:g:" + g }];
   });
-  if (ctx.publicUrl) rows.push([{ text: "🗂 Открыть панель (удобнее)", web_app: { url: ctx.publicUrl + "/admin" } }]);
+  if (ctx.publicUrl) rows.push([{ text: "🗂 Открыть панель (удобнее)", web_app: { url: ctx.publicUrl + "/admin?v=" + Date.now().toString(36) } }]);
   return say2(ctx, id, "Тексты бота. Выбери, что поменять — покажу, как сообщение видят ученики, и можно прислать новый вариант (с премиум-эмодзи).", { reply_markup: kb(rows) });
 }
 async function textsGroup(ctx, id, g) {
@@ -1742,7 +1874,7 @@ ${i.group === "profile" ? "Сейчас в Telegram так 👇" : "Ученик
 async function panelLink(ctx, id) {
   if (!ctx.publicUrl) return say2(ctx, id, "Панель откроется, когда у бота будет адрес в интернете.");
   return say2(ctx, id, "Панель: лента постов по дням (можно перетаскивать), даты, подарки и все тексты бота.", {
-    reply_markup: kb([[{ text: "🗂 Открыть панель", web_app: { url: ctx.publicUrl + "/admin" } }]])
+    reply_markup: kb([[{ text: "🗂 Открыть панель", web_app: { url: ctx.publicUrl + "/admin?v=" + Date.now().toString(36) } }]])
   });
 }
 
@@ -1783,7 +1915,8 @@ async function pause(ctx, id, ms) {
   const k = ctx.env.DELAY_FACTOR === void 0 ? 1 : Number(ctx.env.DELAY_FACTOR);
   if (!(k > 0) || !(ms > 0)) return;
   const t = Math.max(450, ms * k);
-  await ctx.tg.call("sendChatAction", { chat_id: id, action: "typing" }).catch(() => {
+  const t0 = Date.now();
+  ctx.tg.call("sendChatAction", { chat_id: id, action: "typing" }).catch(() => {
   });
   if (ctx.env.TYPING_BUBBLE === "0") {
     await sleep(t);
@@ -1791,17 +1924,17 @@ async function pause(ctx, id, ms) {
   }
   const dots = await ctx.tg.call("sendMessage", { chat_id: id, text: "•", disable_notification: true }).catch(() => null);
   if (!dots) {
-    await sleep(t);
+    await sleep(Math.max(0, t - (Date.now() - t0)));
     return;
   }
-  await sleep(t / 3);
-  await ctx.tg.call("editMessageText", { chat_id: id, message_id: dots.message_id, text: "• •" }).catch(() => {
+  const mid = dots.message_id;
+  const edit = (text) => ctx.tg.call("editMessageText", { chat_id: id, message_id: mid, text }).catch(() => {
   });
-  await sleep(t / 3);
-  await ctx.tg.call("editMessageText", { chat_id: id, message_id: dots.message_id, text: "• • •" }).catch(() => {
-  });
-  await sleep(t / 3);
-  await ctx.tg.call("deleteMessage", { chat_id: id, message_id: dots.message_id }).catch(() => {
+  const e1 = sleep(Math.max(0, t / 3 - (Date.now() - t0))).then(() => edit("• •"));
+  const e2 = sleep(Math.max(0, 2 * t / 3 - (Date.now() - t0))).then(() => edit("• • •"));
+  await sleep(Math.max(0, t - (Date.now() - t0)));
+  await Promise.all([e1, e2]);
+  await ctx.tg.call("deleteMessage", { chat_id: id, message_id: mid }).catch(() => {
   });
 }
 var techList = (u) => {
@@ -1897,14 +2030,21 @@ async function loadFlow(ctx) {
   };
   return normFlow(j3(m["flow:order"]), j3(m["flow:off"]));
 }
+async function consentView(ctx) {
+  const d = await loadDocs(ctx);
+  const rows = [];
+  if (d.policy) rows.push([{ text: "📄 Политика обработки данных", url: d.policy }]);
+  if (d.consent) rows.push([{ text: "📄 Текст согласия", url: d.consent }]);
+  rows.push([{ text: await btn(ctx, "consentPdBtn"), callback_data: "c:pd" }]);
+  const vars = { ...await docVars(ctx), ...d.policy ? { политика: "" } : {}, ...d.consent ? { согласие: "" } : {} };
+  return { vars, extra: { link_preview_options: { is_disabled: true }, reply_markup: kb2(rows) } };
+}
 var STEP_RUN = {
   async consentPd(ctx, u) {
     if (u.consent_pd_at) return false;
     await pauseFor(ctx, u.tg_id, "consentPd");
-    await tech(ctx, u.tg_id, say(ctx, u.tg_id, "consentPd", await docVars(ctx), {
-      link_preview_options: { is_disabled: true },
-      reply_markup: kb2([[{ text: await btn(ctx, "consentPdBtn"), callback_data: "c:pd" }]])
-    }));
+    const { vars, extra } = await consentView(ctx);
+    await tech(ctx, u.tg_id, say(ctx, u.tg_id, "consentPd", vars, extra));
     return true;
   },
   async consentAds(ctx, u) {
@@ -1967,6 +2107,31 @@ var STEP_RUN = {
     return false;
   }
 };
+async function previewStep(ctx, id, k, u = {}) {
+  const name = u.first_name || "друг";
+  if (k === "hello" || k === "helloTest") return say(ctx, id, k, { имя: name });
+  if (k === "consentPd") {
+    const { vars, extra } = await consentView(ctx);
+    return say(ctx, id, "consentPd", vars, extra);
+  }
+  if (k === "consentAds") return say(ctx, id, "consentAds", {}, { reply_markup: kb2([[{ text: await btn(ctx, "consentAdsYes"), callback_data: "c:ads:1" }, { text: await btn(ctx, "consentAdsNo"), callback_data: "c:ads:0" }]]) });
+  if (k === "askLevel") return say(ctx, id, "askLevel", {}, { reply_markup: kb2([[{ text: await btn(ctx, "levelBtnStart"), callback_data: "lv:start" }], [{ text: await btn(ctx, "levelBtnPro"), callback_data: "lv:pro" }]]) });
+  if (k === "askName") return say(ctx, id, "askName", { имя: name }, { reply_markup: kb2([[{ text: await btn(ctx, "nameOk"), callback_data: "n:ok" }]]) });
+  if (k === "askContact") {
+    const rows = [];
+    if (u.username) rows.push([{ text: await btn(ctx, "contactTg") + " · @" + u.username, callback_data: "ct:tg" }]);
+    rows.push([{ text: await btn(ctx, "contactPhone"), callback_data: "ct:phone" }], [{ text: await btn(ctx, "contactEmail"), callback_data: "ct:email" }]);
+    return say(ctx, id, "askContact", {}, { reply_markup: kb2(rows) });
+  }
+  if (k === "fbOffer") return say(ctx, id, "fbOffer", { кабинет: ctx.env.KABINET_URL || "https://karoleenok.github.io/di-sign-audit/kabinet/" }, { reply_markup: kb2([[{ text: await btn(ctx, "fbYes"), callback_data: "fb:yes" }], [{ text: await btn(ctx, "fbNo"), callback_data: "fb:no" }]]) });
+  if (k === "askTrack") return say(ctx, id, "askTrack", {}, { reply_markup: kb2([[{ text: await btn(ctx, "trackCourse"), callback_data: "tr:course" }], [{ text: await btn(ctx, "trackMat"), callback_data: "tr:mat" }]]) });
+  if (k === "testOffer") {
+    const url = ctx.env.TEST_URL;
+    return say(ctx, id, "testOffer", {}, url ? { reply_markup: kb2([[{ text: await btn(ctx, "testBtn"), url }]]) } : {});
+  }
+  if (k === "schedCourse" || k === "schedMat") return say(ctx, id, k, {});
+  throw new Error("нет такого шага: " + k);
+}
 async function nextStep(ctx, u) {
   const id = u.tg_id;
   const { order, off } = await loadFlow(ctx);
@@ -2078,6 +2243,35 @@ async function sendFbBonus(ctx, u) {
     await recordDeliveries(ctx.db, p.id, [{ tg_id: u.tg_id, ok: true }], ctx.now);
   }
 }
+async function backfillFb(ctx, since, dry, only) {
+  const users = only ? await ctx.db.all(`SELECT * FROM users WHERE tg_id = ? AND fb_at IS NOT NULL`, [only]) : await ctx.db.all(`SELECT * FROM users WHERE fb_at IS NOT NULL AND fb_at >= ? AND status = 'active'`, [since]);
+  const posts = await ctx.db.all(`SELECT * FROM posts WHERE kind = 'fb' AND status = 'active' ORDER BY pos, id`);
+  const docs = await loadDocs(ctx);
+  const arrow = await btn(ctx, "buttonsArrow");
+  let people = 0, sent = 0, failed = 0;
+  for (const u of users) {
+    const todo = [];
+    for (const p of posts) if (!await ctx.db.first(`SELECT 1 FROM deliveries WHERE post_id = ? AND tg_id = ?`, [p.id, u.tg_id])) todo.push(p);
+    if (!todo.length) continue;
+    people++;
+    if (dry) {
+      sent += todo.length;
+      continue;
+    }
+    for (const p of todo) {
+      try {
+        await sendPost(ctx.tg, u.tg_id, p, { uid: u.tg_id, publicUrl: ctx.publicUrl, arrow, docs });
+        await recordDeliveries(ctx.db, p.id, [{ tg_id: u.tg_id, ok: true }], ctx.now);
+        sent++;
+      } catch (e) {
+        failed++;
+        if (e.code === 403) await ctx.db.run(`UPDATE users SET status = 'blocked' WHERE tg_id = ?`, [u.tg_id]);
+        break;
+      }
+    }
+  }
+  return { people, sent, failed, posts: posts.length };
+}
 async function notifyAdmins(ctx, u) {
   const ids = /* @__PURE__ */ new Set([...String(ctx.env.ADMIN_IDS || "").split(/[\s,;]+/).filter(Boolean).map(Number), ...(await ctx.db.all(`SELECT tg_id FROM admins`)).map((r) => r.tg_id)]);
   const who = (u.contact_name || u.first_name || "без имени") + (u.username ? " · @" + u.username : "") + (u.phone ? " · " + u.phone : "") + (u.email ? " · " + u.email : "");
@@ -2184,6 +2378,45 @@ async function onUserCallback(ctx, cq) {
     return done();
   }
   if (d.startsWith("go:")) return onGo(ctx, cq, u, answer);
+  if (d.startsWith("gp:")) {
+    await ctx.tg.call("answerCallbackQuery", { callback_query_id: cq.id, text: (await msg(ctx, "payLater")).text.slice(0, 190), show_alert: true }).catch(() => {
+    });
+    return;
+  }
+  if (d.startsWith("fl:") || d.startsWith("fm:")) {
+    await answer();
+    const m = /^(fl|fm):([A-Za-z0-9_]+):(\d+)-(\d+)$/.exec(d);
+    if (!m) return;
+    let rows = [];
+    if (m[1] === "fl") {
+      const src = await ctx.db.first(`SELECT buttons FROM posts WHERE id = ?`, [+m[2]]);
+      rows = src ? JSON.parse(src.buttons || "[]") : [];
+    } else rows = await linksOf(ctx, m[2]);
+    const b = (rows[+m[3]] || [])[+m[4]];
+    if (!b || !b.file) return;
+    if (m[1] === "fl") await ctx.db.run(`INSERT INTO clicks (post_id, tg_id, btn, at) VALUES (?, ?, ?, ?)`, [+m[2], id, b.text, ctx.now]);
+    try {
+      await sendButtonFile(ctx.tg, id, b.file);
+    } catch (e) {
+      if (e.code === 403) await ctx.db.run(`UPDATE users SET status = 'blocked' WHERE tg_id = ?`, [id]);
+    }
+    return;
+  }
+  if (d.startsWith("gm:")) {
+    await answer();
+    const m = /^gm:([A-Za-z_]+):(\d+)-(\d+)$/.exec(d);
+    const b = m && ((await linksOf(ctx, m[1]))[+m[2]] || [])[+m[3]];
+    if (!b || !b.go) return;
+    const target = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [+b.go]);
+    const admin = await isAdmin(ctx, id);
+    if (!target || target.status === "archived" || target.status !== "active" && !admin) return;
+    try {
+      await sendPost(ctx.tg, id, target, { uid: id, publicUrl: ctx.publicUrl, arrow: await btn(ctx, "buttonsArrow"), docs: await loadDocs(ctx) });
+    } catch (e) {
+      if (e.code === 403) await ctx.db.run(`UPDATE users SET status = 'blocked' WHERE tg_id = ?`, [id]);
+    }
+    return;
+  }
   if (d === "n:ok") {
     await answer();
     await ctx.db.run(`UPDATE users SET contact_name = COALESCE(contact_name, ?) WHERE tg_id = ?`, [u.first_name || "друг", id]);
@@ -2582,6 +2815,53 @@ async function runPreview(ctx, adminId, level, pauseMs = 900) {
   else await ctx.tg.call("sendMessage", { chat_id: adminId, text: `🧪 Конец предпросмотра · показано ${n}` });
   return n;
 }
+var STEP_TITLE = { hello: "приветствие", helloTest: "приветствие", consentPd: "согласие на данные", consentAds: "согласие на рассылку", askLevel: "уровень", askName: "как обращаться", askContact: "контакт", fbOffer: "предложение отзыва", askTrack: "мини-курс или материалы", testOffer: "предложение теста", schedCourse: "расписание (мини-курс)", schedMat: "расписание (материалы)" };
+async function runFullPath(ctx, adminId, level, fromAudit, pauseMs = 900) {
+  const lv = level === "pro" ? "pro" : "start";
+  const { order, off } = await loadFlow(ctx);
+  const { gifts, drip, byId } = await feedOrder(ctx.db, lv);
+  const fb = await ctx.db.all(`SELECT * FROM posts WHERE kind = 'fb' AND status = 'active' ORDER BY pos, id`);
+  const arrow = await btn(ctx, "buttonsArrow");
+  const k = ctx.env.DELAY_FACTOR === void 0 ? 1 : Number(ctx.env.DELAY_FACTOR);
+  const tg = (text) => ctx.tg.call("sendMessage", { chat_id: adminId, text, disable_notification: true });
+  const wait = async () => {
+    if (pauseMs && k > 0) await sleep2(pauseMs * k);
+  };
+  const me = { first_name: ctx.userName || "друг", username: ctx.userUsername || "" };
+  let n = 0, step = 0;
+  const run = async (label, fn) => {
+    await wait();
+    try {
+      await tg("🧪 " + label);
+      await fn();
+      n++;
+    } catch (e) {
+      await ctx.tg.call("sendMessage", { chat_id: adminId, text: `⚠️ ${label}: не отправилось — ${e.message}` }).catch(() => {
+      });
+    }
+  };
+  await tg(`🧪 Полный путь — ${fromAudit ? "человек пришёл после аудита" : "человек пришёл с сайта, не пройдя аудит"}, уровень: ${lv === "pro" ? "продолжающий" : "начинающий"}.
+Кнопки в этих сообщениях настоящие, но это только показ: нажимать не нужно. Подпись над каждым — что это и когда придёт.`);
+  await run(`шаг ${++step} · ${STEP_TITLE[fromAudit ? "helloTest" : "hello"]}`, () => previewStep(ctx, adminId, fromAudit ? "helloTest" : "hello", me));
+  for (const key of order) {
+    if (off.includes(key)) continue;
+    if (fromAudit && (key === "askLevel" || key === "askTrack" || key === "testOffer")) continue;
+    await run(`шаг ${++step} · ${STEP_TITLE[key]}`, () => previewStep(ctx, adminId, key, me));
+  }
+  if (fromAudit) for (const p of gifts) await run(`шаг ${++step} · 🎁 подарок после теста · «${p.title || "без названия"}»`, async () => sendPost(ctx.tg, adminId, p, { uid: adminId, publicUrl: ctx.publicUrl, arrow, docs: await loadDocs(ctx) }));
+  await run(`шаг ${++step} · ${STEP_TITLE.schedCourse} (если выбрал мини-курс)`, () => previewStep(ctx, adminId, "schedCourse", me));
+  await run(`шаг ${++step} · ${STEP_TITLE.schedMat} (если выбрал материалы)`, () => previewStep(ctx, adminId, "schedMat", me));
+  await tg("🧪 дальше — лента: посты приходят по расписанию");
+  const MAX = 30;
+  for (const it of drip.slice(0, MAX)) await run(whenLabel(it.p, it.off, byId) + (it.p.title ? ` · «${it.p.title}»` : ""), async () => sendPost(ctx.tg, adminId, it.p, { uid: adminId, publicUrl: ctx.publicUrl, arrow, docs: await loadDocs(ctx) }));
+  if (drip.length > MAX) await tg(`🧪 показала первые ${MAX} из ${drip.length} постов ленты`);
+  if (fb.length) {
+    await tg("🧪 бонус за отзыв — приходит, когда человек оставил отзыв о кабинете");
+    for (const p of fb) await run(`💬 бонус за отзыв · «${p.title || "без названия"}»`, async () => sendPost(ctx.tg, adminId, p, { uid: adminId, publicUrl: ctx.publicUrl, arrow, docs: await loadDocs(ctx) }));
+  }
+  await tg(`🧪 конец полного пути · показано ${n}`);
+  return n;
+}
 async function startFastRun(ctx, adminId, level) {
   await ctx.db.run(`UPDATE test_runs SET status = 'stopped' WHERE admin_id = ? AND status = 'active'`, [adminId]);
   await ctx.db.run(`INSERT INTO test_runs (admin_id, level, started_at, scale, status) VALUES (?, ?, ?, 1440, 'active')`, [adminId, level || "all", ctx.now]);
@@ -2885,6 +3165,68 @@ async function handlePanelApi(ctx, request, url) {
     }
     return json({ ok: true, post: postOut(np), reach: await audienceCount(ctx.db, np) });
   }
+  if (path === "/fb/backfill" && request.method === "POST") {
+    const since = body.since === "all" ? 0 : Math.floor((ctx.now + MSK) / DAY) * DAY - MSK;
+    const r = await backfillFb(ctx, since, !!body.dry);
+    return json({ ok: true, ...r });
+  }
+  if (path === "/reviews") {
+    const rows = await ctx.db.all(`SELECT tg_id, first_name, username, contact_name, phone, email, level, track, status, fb_like, fb_improve, fb_at FROM users WHERE fb_at IS NOT NULL ORDER BY fb_at DESC LIMIT 300`);
+    const dl = await ctx.db.all(`SELECT d.tg_id, d.post_id, d.sent_at, p.title, p.status AS pstatus FROM deliveries d JOIN posts p ON p.id = d.post_id WHERE p.kind = 'fb' AND d.ok = 1`);
+    const active = await ctx.db.all(`SELECT id, title FROM posts WHERE kind = 'fb' AND status = 'active'`);
+    const by = {};
+    for (const d of dl) (by[d.tg_id] = by[d.tg_id] || []).push({ post_id: d.post_id, sent_at: d.sent_at });
+    return json({
+      active: active.length,
+      reviews: rows.map((u) => {
+        const sent = by[u.tg_id] || [];
+        const left = active.filter((a) => !sent.some((x) => x.post_id === a.id)).length;
+        return { ...u, bonus: { sent: sent.length, last_at: sent.reduce((m2, x) => Math.max(m2, x.sent_at), 0) || null, pending: left } };
+      })
+    });
+  }
+  if (path === "/fb/send" && request.method === "POST") {
+    const id = Number(body.tg_id);
+    const u = id && await ctx.db.first(`SELECT status FROM users WHERE tg_id = ?`, [id]);
+    if (!u) return json({ error: "Человека нет" }, 404);
+    if (u.status === "blocked") return json({ error: "Человек заблокировал бота — написать ему нельзя" }, 400);
+    const r = await backfillFb(ctx, 0, false, id);
+    if (!r.posts) return json({ error: "Нет включённых постов «бонус за отзыв»: включи пост (статус «активен»)" }, 400);
+    if (r.failed) return json({ error: "Telegram не принял сообщение — возможно, человек заблокировал бота" }, 400);
+    return json({ ok: true, ...r });
+  }
+  m = /^\/post\/(\d+)\/move$/.exec(path);
+  if (m && request.method === "POST") {
+    const p = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [+m[1]]);
+    if (!p) return json({ error: "Поста нет" }, 404);
+    if (body.to === "node") {
+      if (p.kind !== "drip") return json({ error: "В посты для шагов можно перенести только пост из ленты" }, 400);
+      await ctx.db.run(`UPDATE posts SET kind = 'node', day = NULL, mode = 'day', after_id = NULL, delay_min = 0 WHERE id = ?`, [p.id]);
+      return json({ ok: true });
+    }
+    if (body.to === "drip") {
+      if (p.kind !== "node") return json({ error: "В ленту можно перенести только пост для шага" }, 400);
+      const day = parseInt(body.day, 10);
+      if (!(day >= 0 && day <= 365)) return json({ error: "День — от 0 до 365" }, 400);
+      await ctx.db.run(`UPDATE posts SET kind = 'drip', day = ?, send_time = ?, mode = 'day', after_id = NULL, delay_min = 0 WHERE id = ?`, [day, day === 0 ? "00:00" : "11:00", p.id]);
+      return json({ ok: true });
+    }
+    return json({ error: "Непонятно, куда переносить" }, 400);
+  }
+  m = /^\/post\/(\d+)\/copy$/.exec(path);
+  if (m && request.method === "POST") {
+    const kind = body.kind;
+    if (!["drip", "date", "gift", "node", "fb"].includes(kind)) return json({ error: "Выбери раздел" }, 400);
+    const src = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [+m[1]]);
+    if (!src) return json({ error: "Поста нет" }, 404);
+    await ctx.db.run(
+      `INSERT INTO posts (title, kind, audience, track, day, send_time, run_at, catchup, status, text, entities, media, buttons, created_by, created_at, mode, delay_min, after_id, once)
+       VALUES (?, ?, ?, ?, ?, '11:00', NULL, 0, 'draft', ?, ?, ?, ?, ?, ?, 'day', 0, NULL, ?)`,
+      [src.title || null, kind, src.audience || "all", src.track || "all", kind === "drip" ? 1 : null, src.text, src.entities, src.media, src.buttons, user.id, ctx.now, src.once ? 1 : 0]
+    );
+    const row = await ctx.db.first(`SELECT * FROM posts WHERE created_by = ? ORDER BY id DESC LIMIT 1`, [user.id]);
+    return json({ ok: true, post: postOut(row) });
+  }
   if (path === "/post/new" && request.method === "POST") {
     const kind = body.kind;
     if (!["drip", "date", "gift", "node", "fb"].includes(kind)) return json({ error: "Выбери, когда уходит пост" }, 400);
@@ -2974,7 +3316,7 @@ async function handlePanelApi(ctx, request, url) {
   }
   if (path === "/run/preview" && request.method === "POST") {
     const level = ["start", "pro"].includes(body.level) ? body.level : "all";
-    const job = runPreview(ctx, user.id, level).catch((e) => console.log("preview", e && e.stack));
+    const job = (body.full ? runFullPath(ctx, user.id, level, body.fromAudit !== false) : runPreview(ctx, user.id, level)).catch((e) => console.log("preview", e && e.stack));
     if (ctx.waitUntil) ctx.waitUntil(job);
     else await job;
     return json({ ok: true });
@@ -3022,7 +3364,7 @@ async function handlePanelApi(ctx, request, url) {
       if (body.reset) await resetMsg(ctx, m[1]);
       else if (body.removeMedia) await setMsgMedia(ctx, m[1], null);
       else {
-        if (body.delay !== void 0 || body.links !== void 0) await saveMsgExtra(ctx, m[1], { delay: body.delay, links: body.links });
+        if (body.delay !== void 0 || body.links !== void 0 || body.post !== void 0) await saveMsgExtra(ctx, m[1], { delay: body.delay, links: body.links, post: body.post });
         if (body.text === void 0) return json({ ok: true, msgs: await listMsgs(ctx) });
         const t = String(body.text || "");
         if (!t.trim()) return json({ error: "Пустой текст" }, 400);
@@ -3037,7 +3379,10 @@ async function handlePanelApi(ctx, request, url) {
   }
   m = /^\/msg\/([A-Za-z_]+)\/preview$/.exec(path);
   if (m && request.method === "POST") {
-    await say(ctx, user.id, m[1], { уровень: LEVELS.start, ...await docVars(ctx) });
+    if (m[1] === "consentPd") {
+      const v = await consentView(ctx);
+      await say(ctx, user.id, "consentPd", v.vars, v.extra);
+    } else await say(ctx, user.id, m[1], { уровень: LEVELS.start, ...await docVars(ctx) });
     return json({ ok: true });
   }
   return json({ error: "Нет такого действия" }, 404);
@@ -3053,13 +3398,19 @@ async function cleanButtons(ctx, rowsIn, selfId) {
       const text = String(b.text || "").trim().slice(0, 60);
       let link = String(b.url || "").trim();
       const go = parseInt(b.go, 10) || null;
-      if (!text && !link && !go && !b.doc && !b.pay) continue;
+      if (!text && !link && !go && !b.doc && !b.pay && !b.file) continue;
       if (!text) return { error: "У кнопки нет текста" };
       if (go) {
         if (go === selfId) return { error: `Кнопка «${text}» ведёт на этот же пост` };
         const t = await ctx.db.first(`SELECT id FROM posts WHERE id = ? AND status != 'archived'`, [go]);
         if (!t) return { error: `Пост для кнопки «${text}» не найден` };
         r.push({ text, go });
+        continue;
+      }
+      if (b.file) {
+        const f = cleanFile(b.file);
+        if (!f) return { error: `У кнопки «${text}» не выбран файл` };
+        r.push(f.type === "link" ? { text, url: f.url, file: f } : { text, file: f });
         continue;
       }
       if (b.doc) {
@@ -3081,13 +3432,13 @@ async function cleanButtons(ctx, rowsIn, selfId) {
   }
   return { rows };
 }
-var FILE_TYPES = ["photo", "video", "document", "animation"];
+var FILE_TYPES2 = ["photo", "video", "document", "animation"];
 function cleanFiles(list) {
   if (!Array.isArray(list)) return { error: "Неверные вложения" };
   if (list.length > 10) return { error: "Не больше 10 вложений" };
   const files = [];
   for (const f of list) {
-    if (!f || !FILE_TYPES.includes(f.type) || !/^[\w-]{10,200}$/.test(String(f.file_id || ""))) return { error: "Неверное вложение" };
+    if (!f || !FILE_TYPES2.includes(f.type) || !/^[\w-]{10,200}$/.test(String(f.file_id || ""))) return { error: "Неверное вложение" };
     files.push({ type: f.type, file_id: String(f.file_id) });
   }
   if (files.length > 1 && files.some((f) => f.type === "document") && files.some((f) => f.type !== "document")) return { error: "В одном посте нельзя смешивать файлы с картинками и видео" };
@@ -3146,12 +3497,22 @@ h1{font:400 34px/1.05 var(--serif);margin:12px 0 4px}
 h1 i{font-style:italic}
 .lead{color:var(--soft);margin:0 0 14px}
 .tabs{position:sticky;top:0;z-index:20;background:var(--bg);padding:8px 0 10px;margin:0 -16px;padding-left:16px;padding-right:16px;border-bottom:1px solid var(--line)}
+.stp.drop{outline:2px dashed var(--accent,#c4572a);background:rgba(196,87,42,.08)}.poolList{min-height:46px;border-radius:12px;border:1.5px dashed var(--line);padding:0 6px 6px}.pool-card{display:flex;align-items:center;gap:8px;padding:8px 10px;margin-top:6px;border:1px solid var(--line);border-radius:12px;background:var(--card)}.pool-card .handle{touch-action:none;cursor:grab}.pool-card .pt{flex:1;min-width:0;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pool-card .small{white-space:nowrap}.dragfloat{position:fixed;z-index:99;pointer-events:none;padding:8px 12px;border-radius:12px;background:var(--card);box-shadow:var(--shadow);font-weight:500;max-width:70vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.strip{display:flex;gap:4px;margin-top:8px;flex-wrap:wrap}.strip img,.strip .ph{width:56px;height:56px;object-fit:cover;border-radius:8px;background:rgba(44,13,2,.07);display:flex;align-items:center;justify-content:center;font-size:20px}.strip .more{width:56px;height:56px;border-radius:8px;background:rgba(44,13,2,.07);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:var(--soft)}.pool-card .strip{margin:0;flex-wrap:nowrap}.pool-card .strip img,.pool-card .strip .ph,.pool-card .strip .more{width:36px;height:36px;font-size:14px}
 .seg{display:flex;gap:4px;background:rgba(44,13,2,.06);border-radius:14px;padding:4px}
 .seg button{flex:1;border:0;background:transparent;border-radius:10px;padding:9px 6px;font-weight:500;cursor:pointer;white-space:nowrap}
 .seg button.on{background:var(--card);box-shadow:var(--shadow)}
 .seg.sm button{padding:7px 6px;font-size:14px}
 .chips{display:flex;gap:6px;overflow-x:auto;padding:2px 0 4px;scrollbar-width:none}
 .chips::-webkit-scrollbar{display:none}
+.up{position:fixed;left:12px;right:12px;bottom:14px;z-index:90;max-width:616px;margin:0 auto;background:var(--ink);color:var(--bg);border-radius:16px;padding:12px 14px;box-shadow:0 10px 30px rgba(44,13,2,.3);animation:upIn .25s ease}
+.up .nm{display:flex;justify-content:space-between;gap:10px;font-size:13px}.up .nm b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.up .tr{height:8px;border-radius:99px;background:rgba(255,251,247,.2);margin-top:8px;overflow:hidden}
+.up .fl2{height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,#f4c9f6,#fffbf7,#f4c9f6);background-size:200% 100%;animation:upSh 1.2s linear infinite;transition:width .25s ease}
+.up .sub{font-size:12px;opacity:.7;margin-top:6px}
+.up.done .fl2{animation:none;background:#9ed38a}
+@keyframes upIn{from{transform:translateY(20px);opacity:0}to{transform:none;opacity:1}}
+@keyframes upSh{to{background-position:-200% 0}}
 .chip{flex:none;border:1px solid var(--line);background:var(--card);border-radius:99px;padding:6px 12px;font-size:13px;cursor:pointer}
 .chip.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .box{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;margin:14px 0}
@@ -3341,6 +3702,31 @@ function tags(p) {
   if (view.level !== 'all' && !gets(p)) h += '<span class="tag no">не получит</span>';
   return h;
 }
+
+// превью картинок поста: до 4 штук, остальное «+N»; видео, гифки и файлы — значком
+const THUMBS = new Map();
+function mediaStrip(p, max) {
+  const fs = p.files || [];
+  if (!fs.length) return '';
+  max = max || 4;
+  const ic = { video: '🎬', animation: '🎞', document: '📄' };
+  const shown = fs.slice(0, max);
+  return '<div class="strip">' + shown.map((f) => f.type === 'photo' ? '<img alt="" data-fid="' + esc(f.file_id) + '">' : '<span class="ph" title="' + esc(f.name || f.type) + '">' + (ic[f.type] || '📎') + '</span>').join('') +
+    (fs.length > max ? '<span class="more">+' + (fs.length - max) + '</span>' : '') + '</div>';
+}
+function loadThumbs(root) {
+  const imgs = (root || document).querySelectorAll('img[data-fid]:not([src])');
+  const go = (img) => {
+    const fid = img.dataset.fid;
+    if (THUMBS.has(fid)) { const u = THUMBS.get(fid); if (u) img.src = u; return; }
+    fetch('/api/panel/file?id=' + encodeURIComponent(fid), { headers: { 'x-init-data': INIT } }).then((r) => r.ok ? r.blob() : null)
+      .then((b) => { const u = b ? URL.createObjectURL(b) : ''; THUMBS.set(fid, u); document.querySelectorAll('img[data-fid="' + fid + '"]').forEach((x) => { if (u) x.src = u; }); }).catch(() => {});
+  };
+  if (!('IntersectionObserver' in window)) { imgs.forEach(go); return; }
+  const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { io.unobserve(e.target); go(e.target); } }), { rootMargin: '200px' });
+  imgs.forEach((i) => io.observe(i));
+}
+
 function cardHtml(p, opts) {
   opts = opts || {};
   const off = view.level !== 'all' && !gets(p);
@@ -3349,23 +3735,25 @@ function cardHtml(p, opts) {
     (opts.drag ? '<div class="handle" aria-label="перетащить">⋮⋮</div>' : '<div style="width:6px"></div>') +
     '<div class="cbody"><div class="ctop">' + (time ? '<span class="time">' + esc(time) + '</span>' : '') +
     '<span class="stat">' + (p.sent ? 'отправлено ' + p.sent : 'ещё не отправлялся') + (p.clicks ? ' · нажатий ' + p.clicks : '') + '</span></div>' +
-    '<div class="ttl">' + esc(postName(p)) + '</div><div class="meta">' + tags(p) + '</div></div></div>';
+    '<div class="ttl">' + esc(postName(p)) + '</div><div class="meta">' + tags(p) + '</div>' + mediaStrip(p) + '</div></div>';
 }
 
 // ---------- отрисовка ----------
 function render() {
   const app = $('app');
-  const counts = { feed: S.posts.filter((p) => p.kind === 'drip').length, dates: S.posts.filter((p) => p.kind === 'date').length, gifts: S.posts.filter((p) => p.kind === 'gift').length };
+  const counts = { feed: S.posts.filter((p) => p.kind === 'drip').length, dates: S.posts.filter((p) => p.kind === 'date').length, gifts: S.posts.filter((p) => p.kind === 'gift').length, fb: S.fbCount || 0 };
   app.innerHTML =
     '<div class="top"><span class="pill">Di Sign University · панель</span><span class="small muted">людей: ' + S.people.all + ' · в рассылке: ' + S.people.active + '</span></div>' +
-    (tab === 'flow' ? '<h1>Сценарий <i>бота</i></h1><p class="lead">Собирай посты с нуля и связывай кнопками: ссылка, другой пост, документ или оплата. Нажми на пост — откроется редактор.</p>'
+    (tab === 'flow' ? '<h1>Весь путь <i>ученика</i></h1><p class="lead">Вход, подарок, лента по дням, даты и бонус за отзыв — в одном месте. Тяни за ⋮⋮, нажми на пост или шаг — откроется редактор.</p>'
+      : tab === 'reviews' ? '<h1>Отзывы <i>о кабинете</i></h1><p class="lead">Кто что написал, как с ним связаться и ушёл ли ему бонус.</p>'
       : tab === 'texts' ? '<h1>Тексты <i>бота</i></h1><p class="lead">Служебные сообщения: приветствие, согласия, вопросы, команды.</p>'
-      : '<h1>Лента <i>бота</i></h1><p class="lead">Перетаскивай посты за ⋮⋮, нажми на пост — чтобы поменять день, время и кому он уходит.</p>') +
+      : '<h1>Весь путь <i>ученика</i></h1><p class="lead">Вход, лента, даты и бонус — в одном месте.</p>') +
     '<div class="tabs"><div class="seg" id="tabs">' +
-    [['flow','Сценарий'],['feed','Лента · ' + counts.feed],['dates','Даты · ' + counts.dates],['gifts','Подарки · ' + counts.gifts],['texts','Тексты']].map(([k,t]) => '<button data-t="' + k + '" class="' + (tab === k ? 'on' : '') + '">' + t + '</button>').join('') +
+    [['flow','Путь · ' + counts.feed],['dates','Даты · ' + counts.dates],['gifts','Подарки · ' + counts.gifts],['reviews','Отзывы · ' + counts.fb],['texts','Тексты']].map(([k,t]) => '<button data-t="' + k + '" class="' + (tab === k ? 'on' : '') + '">' + t + '</button>').join('') +
     '</div></div><div id="body"></div>';
   $('tabs').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; tab = b.dataset.t; haptic(); render(); window.scrollTo(0, 0); };
-  ({ flow: renderFlow, feed: renderFeed, dates: renderDates, gifts: renderGifts, texts: renderTexts })[tab]();
+  ({ flow: renderFlow, feed: renderFlow, dates: renderDates, gifts: renderGifts, reviews: renderReviews, texts: renderTexts })[tab]();
+  setTimeout(() => loadThumbs($('body')), 0);
 }
 
 function viewBox() {
@@ -3379,25 +3767,28 @@ function bindView() {
   if ($('hide')) $('hide').onchange = (e) => { view.hide = e.target.checked; saveView(); render(); };
 }
 
-function renderFeed() {
+function renderFeed() { renderFlow(); }
+// дни ленты: карточки можно тащить за ⋮⋮ между днями
+function daysHtml() {
   const drip = S.posts.filter((p) => p.kind === 'drip');
   const ids = byIdMap();
   const maxDay = drip.reduce((m, p) => Math.max(m, bucketDay(p, ids)), 0);
   const last = Math.max(7, maxDay + 1);
   const filtered = (view.hide && view.level !== 'all') ? drip.filter(gets) : drip;
-  let h = viewBox() + runBox();
-  if (!drip.length) h += '<div class="empty">Постов по дням пока нет.<br>Создай первый: «Сценарий» → «＋ Новый пост».</div>';
+  let h = '';
+  if (!drip.length) h += '<div class="empty">Постов по дням пока нет.<br>Создай первый: «＋ Новый пост» вверху.</div>';
   for (let d = 0; d <= last; d++) {
     const items = filtered.filter((p) => bucketDay(p, ids) === d).sort((a, b) => offMin(a, ids) - offMin(b, ids) || a.pos - b.pos || a.id - b.id);
     h += '<section class="day"><div class="dayh"><b>День ' + d + '</b><span>' + dayLabel(d) + '</span></div><div class="list" data-day="' + d + '">' + items.map((p) => cardHtml(p, { drag: true })).join('') + '</div></section>';
   }
-  h += '<div class="note" style="margin-top:22px">Новый пост — во вкладке «Сценарий» → «＋ Новый пост» или в боте: <b>/new</b>. Посты-ответы и цепочки «после поста» видно деревом в «Сценарии».</div>';
-  $('body').innerHTML = h;
-  bindView(); bindRun();
+  return h;
+}
+function bindDays() {
   if (window.Sortable) document.querySelectorAll('.list').forEach((el) => {
     Sortable.create(el, {
       group: 'drip', handle: '.handle', animation: 160, ghostClass: 'ghost', chosenClass: 'chosen', forceFallback: true, fallbackTolerance: 4, scroll: true, bubbleScroll: true,
-      onEnd: (ev) => onDrop(ev),
+      onStart: () => dragWatch(true),
+      onEnd: (ev) => { dragWatch(false); onDrop(ev); },
     });
   });
   bindCards();
@@ -3407,6 +3798,29 @@ function renderFeed() {
 async function onDrop(ev) {
   const id = +ev.item.dataset.id;
   const moved = S.posts.find((p) => p.id === id);
+  const fromPool = !!ev.from.dataset.pool, toPool = !!ev.to.dataset.pool;
+  // пост из «постов для шагов», брошенный на шаг входа — встаёт вместо шаблона
+  if (fromPool) {
+    const row = stepRowAt(ev.originalEvent);
+    if (row) {
+      const key = row.dataset.k;
+      try { const r = await api('/msg/' + key, { post: id }); S.msgs = r.msgs; haptic('medium'); toast('Готово: на шаге «' + (ENTRY[key] ? ENTRY[key][0].replace(/^\\S+\\s/, '') : key) + '» теперь этот пост'); } catch (er) { toast(er.message); }
+      render(); return;
+    }
+  }
+  if (fromPool && toPool) { render(); return; }
+  if (toPool) {
+    // из ленты по дням → в посты для шагов
+    try { await api('/post/' + id + '/move', { to: 'node' }); moved.kind = 'node'; moved.day = null; moved.mode = 'day'; haptic('medium'); toast('Перенесено в «Свои посты для шагов» — теперь его можно поставить на шаг входа'); }
+    catch (er) { toast('Не получилось: ' + er.message); }
+    await reload(); return;
+  }
+  if (fromPool) {
+    // из постов для шагов → в ленту, в выбранный день
+    const dd = +ev.to.dataset.day;
+    try { await api('/post/' + id + '/move', { to: 'drip', day: dd }); moved.kind = 'drip'; moved.day = dd; moved.mode = 'day'; moved.time = dd === 0 ? '00:00' : '11:00'; haptic('medium'); }
+    catch (er) { toast('Не получилось: ' + er.message); await reload(); return; }
+  }
   const toDay = +ev.to.dataset.day;
   const ids = [...ev.to.children].map((c) => +c.dataset.id);
   const list = ids.map((i) => S.posts.find((p) => p.id === i));
@@ -3441,14 +3855,17 @@ async function onDrop(ev) {
 function runBox() {
   const who = view.level === 'start' ? 'начинающего' : view.level === 'pro' ? 'продолжающего' : 'любого ученика';
   const r = S.run;
-  return '<div class="box"><h3>Проверить на себе</h3><p class="small muted" style="margin:0 0 10px">Лента придёт тебе в бот — как её получит ' + who + ' (выбирается выше). Включённые посты, с подписью «когда».</p>' +
-    '<div class="btns" style="margin-top:0"><button class="btn" id="runPrev" type="button">▶️ Посмотреть ленту сейчас</button>' +
+  const src = S.runSrc || 'audit';
+  return '<div class="box"><h3>Проверить на себе</h3><p class="small muted" style="margin:0 0 10px">Весь путь придёт тебе в бот: вход, подарок, расписание, посты ленты и бонус за отзыв — с подписью «что и когда». Уровень — выше (' + who + ').</p>' +
+    '<div class="seg" style="margin-bottom:10px"><button type="button" class="' + (src === 'audit' ? 'on' : '') + '" data-rsrc="audit">после аудита</button><button type="button" class="' + (src === 'site' ? 'on' : '') + '" data-rsrc="site">с сайта, без аудита</button></div>' +
+    '<div class="btns" style="margin-top:0"><button class="btn" id="runPrev" type="button">▶️ Посмотреть весь путь сейчас</button>' +
     (r ? '<div class="note" style="margin:0">⏩ Идёт ускоренный тест (1 день = 1 минута) · уже пришло: ' + r.sent + '</div><button class="btn danger" id="runStop" type="button">⏹ Остановить тест</button>'
        : '<button class="btn ghost" id="runFast" type="button">⏩ Ускоренный тест: 1 день = 1 минута</button>') + '</div></div>';
 }
 function bindRun() {
   const lvl = view.level;
-  if ($('runPrev')) $('runPrev').onclick = async () => { try { await api('/run/preview', { level: lvl }); haptic('medium'); toast('Отправляю ленту тебе в бот 👀'); } catch (e) { toast(e.message); } };
+  document.querySelectorAll('[data-rsrc]').forEach((b) => { b.onclick = () => { S.runSrc = b.dataset.rsrc; renderFeed(); }; });
+  if ($('runPrev')) $('runPrev').onclick = async () => { try { await api('/run/preview', { level: lvl, full: true, fromAudit: (S.runSrc || 'audit') === 'audit' }); haptic('medium'); toast('Отправляю весь путь тебе в бот 👀'); } catch (e) { toast(e.message); } };
   if ($('runFast')) $('runFast').onclick = async () => { try { const r = await api('/run/fast', { level: lvl }); S.run = r.run; haptic('medium'); toast('Тест пошёл — смотри в боте ⏩'); renderFeed(); } catch (e) { toast(e.message); } };
   if ($('runStop')) $('runStop').onclick = async () => { try { await api('/run/stop', {}); S.run = null; toast('Тест остановлен'); renderFeed(); } catch (e) { toast(e.message); } };
 }
@@ -3477,6 +3894,36 @@ function renderGifts() {
   $('body').innerHTML = h; bindCards();
 }
 
+// CRM отзывов
+async function renderReviews() {
+  $('body').innerHTML = '<p class="muted" style="margin-top:16px">Загружаю…</p>';
+  let d; try { d = await api('/reviews'); } catch (e) { $('body').innerHTML = '<div class="note warn">' + esc(e.message) + '</div>'; return; }
+  const fmt = (x) => { const dd = new Date((x + 10800) * 1000); return dd.getUTCDate() + '.' + String(dd.getUTCMonth() + 1).padStart(2, '0') + ' в ' + String(dd.getUTCHours()).padStart(2, '0') + ':' + String(dd.getUTCMinutes()).padStart(2, '0'); };
+  const trk = { course: '🎓 мини-курс', mat: '📚 материалы' };
+  const pending = d.reviews.filter((u) => u.bonus.pending > 0 && u.status !== 'blocked').length;
+  let h = '<div class="meta" style="margin:16px 0 10px"><span class="tag">отзывов ' + d.reviews.length + '</span><span class="tag">бонус не отправлен: ' + pending + '</span><span class="tag">постов-бонусов включено: ' + d.active + '</span></div>';
+  if (!d.active) h += '<div class="note warn">Нет включённых постов «бонус за отзыв». Включи пост во вкладке «Сценарий» → «Бонус за отзыв» (статус «активен»), иначе отправлять нечего.</div>';
+  if (pending > 1) h += '<div class="btns" style="margin:0 0 10px"><button class="btn ghost" id="rvAll">📤 Отправить всем без бонуса (' + pending + ')</button></div>';
+  h += '<p class="small muted">Это персональные данные: не пересылай их в чаты.</p>';
+  h += d.reviews.map((u) => {
+    const name = u.contact_name || u.first_name || 'без имени';
+    const links = [u.username ? '<a href="https://t.me/' + esc(u.username) + '" target="_blank" rel="noopener">@' + esc(u.username) + '</a>' : '', u.phone ? esc(u.phone) : '', u.email ? esc(u.email) : ''].filter(Boolean).join(' · ') || 'контакт не оставил';
+    const b = u.bonus; let status;
+    if (u.status === 'blocked') status = '<span class="tag warn-t">заблокировал бота — бонус не отправить</span>';
+    else if (b.pending === 0 && b.sent > 0) status = '<span class="tag ok-t">✓ бонус отправлен ' + fmt(b.last_at) + '</span>';
+    else if (b.sent > 0) status = '<span class="tag">отправлен ' + fmt(b.last_at) + ', есть новые посты: ' + b.pending + '</span><button type="button" class="chip" data-send="' + u.tg_id + '">📤 Отправить остальные</button>';
+    else status = '<span class="tag warn-t">бонус не отправлен</span><button type="button" class="chip" data-send="' + u.tg_id + '">📤 Отправить</button>';
+    return '<div class="msg" style="cursor:default"><div class="t">' + esc(name) + (u.track ? '<span class="tag zone">' + trk[u.track] + '</span>' : '') + '<span class="stat">отзыв ' + fmt(u.fb_at) + '</span></div>' +
+      '<div class="small muted" style="margin-top:2px">' + links + '</div>' +
+      '<div class="preview" style="margin-top:8px">👍 ' + esc(u.fb_like || '—') + '\\n\\n🛠 ' + esc(u.fb_improve || '—') + '</div>' +
+      '<div class="meta" style="margin-top:8px;align-items:center">' + status + '</div></div>';
+  }).join('') || '<div class="empty">Отзывов пока нет.</div>';
+  $('body').innerHTML = h;
+  const send = async (el, id) => { el.disabled = true; const old = el.textContent; el.textContent = 'Отправляю…'; try { await api('/fb/send', { tg_id: id }); haptic('medium'); toast('Бонус отправлен ✓'); renderReviews(); } catch (e) { toast(e.message); el.disabled = false; el.textContent = old; } };
+  document.querySelectorAll('[data-send]').forEach((el) => el.onclick = () => send(el, +el.dataset.send));
+  if ($('rvAll')) $('rvAll').onclick = async () => { $('rvAll').disabled = true; $('rvAll').textContent = 'Отправляю…'; try { const r = await api('/fb/backfill', { since: 'all' }); toast('Отправлено: ' + r.people + ' чел.'); renderReviews(); } catch (e) { toast(e.message); } };
+}
+
 // путь ученика: служебные сообщения по порядку (порядок фиксирован — согласие на данные по закону первое)
 const FLOW = [
   { key: 'hello', alt: ['helloTest'], title: 'Приветствие', note: 'Сразу после «Старт». Если человек пришёл из аудита — вариант «после теста».' },
@@ -3502,7 +3949,7 @@ function renderTexts() {
     [st.key, ...(st.btns || []), ...(st.alt || [])].forEach((k) => used.add(k));
     h += '<div class="day"><div class="dayh"><b>' + (i + 1) + '</b><span>' + esc(st.title) + '</span></div>' +
       '<div class="msg" data-k="' + m.key + '" style="margin-bottom:0"><div class="t"><span class="time">⏱ ' + String(m.delay).replace('.', ',') + ' с</span>' + (m.changed ? '<span class="tag">✎ изменено</span>' : '') + mediaTag(m) + '</div><div class="p" style="-webkit-line-clamp:3">' + esc(m.text) + '</div>' +
-      (((st.btns || []).length || m.links.length) ? '<div class="meta" style="margin-top:8px">' + (st.btns || []).map((b) => { const bm = mOf(b); return bm ? '<button type="button" class="chip" data-open="' + b + '">🔘 ' + esc(bm.text) + '</button>' : ''; }).join('') + m.links.flat().map((l) => '<span class="chip" style="cursor:default">🔗 ' + esc(l.text) + '</span>').join('') + '</div>' : '') +
+      (((st.btns || []).length || m.links.length) ? '<div class="meta" style="margin-top:8px">' + (st.btns || []).map((b) => { const bm = mOf(b); return bm ? '<button type="button" class="chip" data-open="' + b + '">🔘 ' + esc(bm.text) + '</button>' : ''; }).join('') + m.links.flat().map((l) => '<span class="chip" style="cursor:default">' + (l.go ? '➡️ ' : l.doc ? '📄 ' : l.pay ? '💳 ' : '🔗 ') + esc(l.text) + '</span>').join('') + '</div>' : '') +
       '</div>' + (st.alt || []).map((a) => { const am = mOf(a); return am ? '<div class="msg" data-k="' + a + '" style="margin:6px 0 0 18px;padding:10px 12px"><div class="t small">↳ ' + esc(am.title) + (am.changed ? ' ✎' : '') + mediaTag(am) + '</div><div class="p">' + esc(am.text) + '</div></div>' : ''; }).join('') +
       (st.note ? '<p class="small muted" style="margin:6px 2px 0">' + esc(st.note) + '</p>' : '') + '</div>';
   });
@@ -3545,6 +3992,85 @@ function rowsEditor(el, rows) {
   });
   draw();
   return () => { sync(); return rows; };
+}
+
+// выбрать файл для кнопки: грузим в Telegram, возвращаем {type, file_id, name}
+// загрузка с живым прогрессом: полоска, проценты, мегабайты и скорость
+function uploadWithProgress(url, body, headers, name) {
+  const mb = (n) => (n / 1048576).toFixed(n > 10485760 ? 0 : 1).replace('.', ',');
+  const box = document.createElement('div'); box.className = 'up';
+  box.innerHTML = '<div class="nm"><b></b><span>0%</span></div><div class="tr"><div class="fl2"></div></div><div class="sub">готовлю…</div>';
+  box.querySelector('b').textContent = name; document.body.appendChild(box);
+  const bar = box.querySelector('.fl2'), pc = box.querySelector('.nm span'), sub = box.querySelector('.sub');
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest(); const t0 = Date.now();
+    x.open('POST', url);
+    Object.keys(headers).forEach((k) => x.setRequestHeader(k, headers[k]));
+    x.upload.onprogress = (e) => {
+      if (!e.lengthComputable) return;
+      const p = Math.min(100, Math.round(e.loaded / e.total * 100)), sp = e.loaded / Math.max(1, (Date.now() - t0) / 1000);
+      bar.style.width = p + '%'; pc.textContent = p + '%';
+      const left = sp > 0 ? Math.ceil((e.total - e.loaded) / sp) : 0;
+      sub.textContent = mb(e.loaded) + ' из ' + mb(e.total) + ' МБ · ' + mb(sp) + ' МБ/с' + (p < 100 ? ' · ещё ~' + (left > 60 ? Math.ceil(left / 60) + ' мин' : left + ' с') : ' · сохраняю на сервере…');
+    };
+    const end = (ok, v) => { box.classList.toggle('done', ok); if (ok) { bar.style.width = '100%'; pc.textContent = '✓'; sub.textContent = 'готово'; } setTimeout(() => box.remove(), ok ? 900 : 0); ok ? resolve(v) : reject(v); };
+    x.onload = () => { let d; try { d = JSON.parse(x.responseText); } catch { d = { error: 'Сервер не ответил' }; } if (x.status >= 200 && x.status < 300 && !d.error) end(true, d); else end(false, new Error(d.error || 'Ошибка')); };
+    x.onerror = () => end(false, new Error('Связь оборвалась — попробуй ещё раз'));
+    x.send(body);
+  });
+}
+// выбрать файл для кнопки: грузим в Telegram, возвращаем {type, file_id, name}
+function pickBtnFile(done) {
+  const inp = document.createElement('input'); inp.type = 'file';
+  inp.onchange = async () => {
+    const f = inp.files[0]; if (!f) return;
+    const big = true; // файл всегда кладём на наш сервер: по кнопке откроется страница предпросмотра со «Скачать»
+    if (f.size > 1024 * 1048576) return toast('Файл больше 1 ГБ — на сервере столько не держим');
+    try {
+      let d;
+      if (big) d = await uploadWithProgress('/api/panel/bigfile?name=' + encodeURIComponent(f.name) + '&type=' + encodeURIComponent(f.type || ''), f, { 'x-init-data': INIT, 'content-type': 'application/octet-stream' }, f.name);
+      else { const fd = new FormData(); fd.append('file', f); d = await uploadWithProgress('/api/panel/upload', fd, { 'x-init-data': INIT }, f.name); }
+      d.file.name = f.name; haptic('medium'); toast('Файл загружен ✓'); done(d.file);
+    } catch (e) { toast(f.name + ': ' + e.message); }
+  };
+  inp.click();
+}
+// редактор кнопок шага: ссылка / пост / документ / оплата (как у постов)
+function stepBtnEditor(el, rowsIn) {
+  let rows = rowsIn.map((row) => row.map((b) => Object.assign({ t: b.go ? 'go' : b.doc ? 'doc' : b.pay ? 'pay' : b.file ? 'file' : 'url' }, b)));
+  const sync = () => { el.querySelectorAll('[data-f]').forEach((i) => { const r = +i.dataset.r, k = +i.dataset.i; if (rows[r] && rows[r][k]) rows[r][k][i.dataset.f] = i.value; }); };
+  const optPosts = (cur) => '<option value="">— выбери пост —</option>' + ['node', 'drip', 'date', 'gift'].map((k) => { const l = S.posts.filter((x) => x.kind === k); return l.length ? '<optgroup label="' + KIND[k] + '">' + l.map((x) => '<option value="' + x.id + '"' + (+cur === x.id ? ' selected' : '') + '>' + esc(postName(x).slice(0, 44)) + '</option>').join('') + '</optgroup>' : ''; }).join('');
+  const field = (b, r, i) => {
+    const a = 'data-r="' + r + '" data-i="' + i + '"';
+    if (b.t === 'go') return '<select ' + a + ' data-f="go">' + optPosts(b.go) + '</select>';
+    if (b.t === 'doc') return '<select ' + a + ' data-f="doc">' + Object.keys(S.docNames).map((k) => '<option value="' + k + '"' + (b.doc === k ? ' selected' : '') + '>' + esc(S.docNames[k]) + (S.docs[k] ? '' : ' — ссылка не задана') + '</option>').join('') + '</select>';
+    if (b.t === 'file') return '<div class="small" style="margin:4px 2px">' + (b.file ? '📎 ' + esc(b.file.name || b.file.type) : 'файл не выбран') + '</div><button type="button" class="chip" data-pick="' + r + ':' + i + '">' + (b.file ? 'заменить файл' : '＋ выбрать файл') + '</button><p class="small muted" style="margin:4px 2px 0">По нажатию откроется страница с предпросмотром (картинка, видео, pdf, аудио) и кнопкой «Скачать». Файл до 1 ГБ.</p>';
+    if (b.t === 'pay') return '<select ' + a + ' data-f="pay">' + Object.keys(TARIFF).map((k) => '<option value="' + k + '"' + (b.pay === k ? ' selected' : '') + '>' + TARIFF[k] + '</option>').join('') + '</select>';
+    return '<input type="text" placeholder="https://ссылка" inputmode="url" ' + a + ' data-f="url" value="' + esc(b.url || '') + '">';
+  };
+  const draw = () => {
+    el.innerHTML = (rows.length ? rows.map((row, r) => '<div class="brow"><div class="row" style="justify-content:space-between;margin-bottom:6px"><span class="small muted">Ряд ' + (r + 1) + '</span><span>' +
+      (r > 0 ? '<button type="button" class="chip" data-up="' + r + '">↑</button> ' : '') + (r < rows.length - 1 ? '<button type="button" class="chip" data-down="' + r + '">↓</button>' : '') + '</span></div>' +
+      row.map((b, i) => '<div class="bcard"><div style="display:grid;grid-template-columns:1fr auto;gap:6px"><input type="text" placeholder="Текст кнопки" maxlength="60" data-r="' + r + '" data-i="' + i + '" data-f="text" value="' + esc(b.text || '') + '"><button type="button" class="chip" data-del="' + r + ':' + i + '">✕</button></div>' +
+        '<div class="btype">' + [['url', '🔗 Ссылка'], ['go', '➡️ Пост'], ['doc', '📄 Документ'], ['pay', '💳 Оплата'], ['file', '📎 Файл']].map(([k, t]) => '<button type="button" data-type="' + k + '" data-r="' + r + '" data-i="' + i + '" class="' + (b.t === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>' + field(b, r, i) + '</div>').join('') +
+      (row.length < 4 ? '<button type="button" class="chip" data-add="' + r + '">＋ кнопка рядом</button>' : '') + '</div>').join('') : '<p class="small muted" style="margin:2px">Своих кнопок нет.</p>') +
+      '<button type="button" class="btn ghost" data-newrow="1" style="margin-top:6px">＋ Кнопка</button>';
+  };
+  el.addEventListener('input', sync); el.addEventListener('change', sync);
+  el.addEventListener('click', (e) => {
+    const t = e.target.closest('button'); if (!t) return; sync();
+    if (t.dataset.pick) { const [r, i] = t.dataset.pick.split(':').map(Number); pickBtnFile((f) => { rows[r][i].file = f; draw(); }); return; }
+    if (t.dataset.type) { const b = rows[+t.dataset.r][+t.dataset.i]; b.t = t.dataset.type; if (b.t === 'doc' && !b.doc) b.doc = 'policy'; if (b.t === 'pay' && !b.pay) b.pay = 'curator'; }
+    else if (t.dataset.newrow) rows.push([{ t: 'url', text: '', url: '' }]);
+    else if (t.dataset.add !== undefined) { const rr = rows[+t.dataset.add]; rr.push({ t: rr[rr.length - 1].t, text: '', url: '', go: '', doc: 'policy', pay: 'curator' }); }
+    else if (t.dataset.del) { const [r, i] = t.dataset.del.split(':').map(Number); rows[r].splice(i, 1); if (!rows[r].length) rows.splice(r, 1); }
+    else if (t.dataset.up) { const r = +t.dataset.up; [rows[r - 1], rows[r]] = [rows[r], rows[r - 1]]; }
+    else if (t.dataset.down) { const r = +t.dataset.down; [rows[r + 1], rows[r]] = [rows[r], rows[r + 1]]; }
+    else return;
+    haptic(); draw();
+  });
+  draw();
+  return () => { sync(); return rows.map((row) => row.map((b) => b.t === 'go' ? { text: b.text, go: +b.go || null } : b.t === 'doc' ? { text: b.text, doc: b.doc } : b.t === 'pay' ? { text: b.text, pay: b.pay } : b.t === 'file' ? { text: b.text, file: b.file || null } : { text: b.text, url: b.url })); };
 }
 
 function bindCards() {
@@ -3595,7 +4121,7 @@ function renderFlow() {
     const np = path.concat(p.id);
     let h = '<div class="fn' + (p.status !== 'active' ? ' dim' : '') + '" data-id="' + p.id + '"><div class="fn-top"><span class="time">' + esc(whenOf(p)) + '</span>' + stTag(p) + emptyTag(p) +
       '<span class="stat">' + (p.sent ? '↗ ' + p.sent : '') + (p.clicks ? ' · 👆 ' + p.clicks : '') + '</span></div>' +
-      '<div class="ttl">' + esc(postName(p)) + '</div>' + (p.track && p.track !== 'all' ? '<div class="meta"><span class="tag zone">' + (p.track === 'course' ? '🎓 мини-курс' : '📚 материалы') + '</span></div>' : '') + (p.media.length ? '<div class="meta"><span class="tag">🖼 ' + (p.media.length > 1 ? '×' + p.media.length : '') + '</span>' + (p.audience !== 'all' && p.kind !== 'node' ? '<span class="tag">' + esc(S.audiences[p.audience]) + '</span>' : '') + '</div>' : (p.audience !== 'all' && p.kind !== 'node' ? '<div class="meta"><span class="tag">' + esc(S.audiences[p.audience]) + '</span></div>' : '')) + '</div>';
+      '<div class="ttl">' + esc(postName(p)) + '</div>' + mediaStrip(p, 3) + (p.track && p.track !== 'all' ? '<div class="meta"><span class="tag zone">' + (p.track === 'course' ? '🎓 мини-курс' : '📚 материалы') + '</span></div>' : '') + (p.media.length ? '<div class="meta"><span class="tag">🖼 ' + (p.media.length > 1 ? '×' + p.media.length : '') + '</span>' + (p.audience !== 'all' && p.kind !== 'node' ? '<span class="tag">' + esc(S.audiences[p.audience]) + '</span>' : '') + '</div>' : (p.audience !== 'all' && p.kind !== 'node' ? '<div class="meta"><span class="tag">' + esc(S.audiences[p.audience]) + '</span></div>' : '')) + '</div>';
     let kids = '';
     (p.rows || []).forEach((row) => row.forEach((b) => {
       if (b.go) { const t = ids[+b.go]; kids += '<div class="fb"><span class="fb-l">🔘 ' + esc(b.text) + (p.once ? ' <i class="muted small">выбор</i>' : '') + '</span>' + (t ? node(t, depth + 1, np) : '<span class="tag no">пост в архиве</span>') + '</div>'; }
@@ -3612,20 +4138,59 @@ function renderFlow() {
   const drip = S.posts.filter((p) => p.kind === 'drip' && isRoot(p)).sort((a, b) => offMin(a, ids) - offMin(b, ids) || a.pos - b.pos || a.id - b.id);
   const dates = S.posts.filter((p) => p.kind === 'date').sort((a, b) => (a.run_at || 9e12) - (b.run_at || 9e12));
   let h = '<div class="btns" style="margin-top:16px"><button class="btn" type="button" id="newPost">＋ Новый пост</button></div>';
+  h += poolBox();
   h += entryBox();
-  const sec = (title, note, list) => '<div class="grp">' + title + '</div>' + (note ? '<p class="small muted" style="margin:-2px 2px 10px">' + note + '</p>' : '') +
-    (list.length ? list.map((p) => '<div class="tree">' + node(p, 0, []) + '</div>').join('') : '<p class="small muted dash">Пока пусто.</p>');
-  h += sec('🎁 После теста', 'Подарок уходит сразу после аудит-теста.', gifts);
-  h += sec('📅 Лента', 'По порядку от входа в бот. Дни и время удобно двигать во вкладке «Лента».', drip);
-  h += sec('🕒 В дату', '', dates);
-  h += sec('💬 Бонус за отзыв', 'Уходит сразу после отзыва о прототипе кабинета.', S.posts.filter((p) => p.kind === 'fb').sort((a, b) => a.pos - b.pos || a.id - b.id));
-  const lost = S.posts.filter((p) => p.kind === 'node' && !shown.has(p.id));
-  if (lost.length) h += sec('🔘 Посты-ответы без кнопки', 'На них пока не ведёт ни одна кнопка — человек их не получит. Привяжи: открой нужный пост → «＋ кнопка» → «Пост».', lost);
+  h += viewBox() + runBox();
+  const sec = (title, note, list, kind) => '<div class="grp">' + title + '</div>' + (note ? '<p class="small muted" style="margin:-2px 2px 10px">' + note + '</p>' : '') +
+    (list.length ? list.map((p) => '<div class="tree">' + node(p, 0, []) + '</div>').join('') : '<p class="small muted dash">Пока пусто.</p>') +
+    (kind ? '<div class="btns two" style="margin:8px 0 4px"><button type="button" class="btn ghost" data-newk="' + kind + '">＋ Новый пост</button><button type="button" class="btn ghost" data-pickk="' + kind + '">📋 Из существующих</button></div>' + (kind === 'fb' ? '<button type="button" class="btn ghost" data-fbback="1" style="margin:0 0 4px">📤 Отправить тем, кто уже оставил отзыв</button>' : '') : '');
+  h += sec('🎁 После теста', 'Подарок уходит сразу после аудит-теста.', gifts, 'gift');
+  drip.forEach((p) => node(p, 0, [])); // обходим цепочки, чтобы не считать посты-ответы потерянными
+  h += '<div class="grp">📅 Лента по дням</div><p class="small muted" style="margin:-2px 2px 10px">Тяни пост за ⋮⋮ на другой день — время подстроится. Нажми на пост, чтобы поменять день, время, кнопки и кому он уходит.</p>' + daysHtml() +
+    '<div class="btns two" style="margin:8px 0 4px"><button type="button" class="btn ghost" data-newk="drip">＋ Новый пост</button><button type="button" class="btn ghost" data-pickk="drip">📋 Из существующих</button></div>';
+  h += sec('🕒 В дату', 'Уходит один раз в выбранные дату и время всем, кто уже в боте. Для эфиров и анонсов.', dates, 'date');
+  h += sec('💬 Бонус за отзыв', 'Уходит сразу после отзыва о прототипе кабинета.', S.posts.filter((p) => p.kind === 'fb').sort((a, b) => a.pos - b.pos || a.id - b.id), 'fb');
+  const stepPosts = new Set((S.msgs || []).map((m) => m.post).filter(Boolean));
+  const lost = S.posts.filter((p) => p.kind === 'node' && !shown.has(p.id) && !stepPosts.has(p.id));
+  if (lost.length) h += sec('🔘 Посты-ответы без кнопки', 'На них пока не ведёт ни одна кнопка и они не стоят на шаге входа — человек их не получит. Привяжи кнопкой («＋ кнопка» → «Пост») или перетащи на шаг входа выше.', lost);
   $('body').innerHTML = h;
-  $('newPost').onclick = openNew;
-  bindEntry();
+  $('newPost').onclick = () => openNew();
+  document.querySelectorAll('[data-newk]').forEach((el) => el.onclick = () => { haptic(); openNew({ kind: el.dataset.newk }); });
+  document.querySelectorAll('[data-fbback]').forEach((el) => el.onclick = () => { haptic(); fbBackfill(); });
+  document.querySelectorAll('[data-pickk]').forEach((el) => el.onclick = () => { haptic(); pickExisting(el.dataset.pickk); });
+  bindEntry(); bindPool(); bindView(); bindRun(); bindDays();
   document.querySelectorAll('.fn,.ref').forEach((el) => el.onclick = () => openPost(+el.dataset.id));
   document.querySelectorAll('[data-add]').forEach((el) => el.onclick = () => openPost(+el.dataset.add, { focus: 'buttons' }));
+}
+
+
+// «свои посты для шагов»: посты без дня (kind = node). Тащи за ⋮⋮ на шаг входа — пост встанет вместо шаблонного сообщения
+function poolBox() {
+  const nodes = S.posts.filter((p) => p.kind === 'node' && p.status !== 'archived');
+  const usedBy = (id) => (S.msgs || []).filter((m) => m.post === id).map((m) => (ENTRY[m.key] ? ENTRY[m.key][0] : m.key));
+  return '<div class="box"><h3>Свои посты для шагов</h3><p class="small muted" style="margin:0 0 6px">Посты без дня. Перетащи за ⋮⋮ на шаг входа — он заменит шаблонное сообщение. Перетащи в день ленты ниже — пост станет обычным постом ленты, а пост из ленты можно перетащить сюда.</p>' +
+    '<div class="list poolList" data-pool="1">' + nodes.map((p) => { const u = usedBy(p.id); return '<div class="pool-card" data-id="' + p.id + '"><div class="handle" aria-label="перетащить">⋮⋮</div>' + mediaStrip(p, 2) + '<span class="pt">' + esc(postName(p)) + '</span>' + (u.length ? '<span class="small muted">на шаге: ' + esc(u.join(', ').slice(0, 40)) + '</span>' : '') + '</div>'; }).join('') + '</div>' + (nodes.length ? '' : '<p class="small muted" style="margin:6px 2px 0">Пока пусто. Создай пост кнопкой ниже или перетащи сюда пост из ленты по дням.</p>') +
+    '<div class="btns" style="margin:8px 0 0"><button type="button" class="btn ghost" id="poolNew">＋ Новый пост для шага</button></div></div>';
+}
+function bindPool() {
+  if ($('poolNew')) $('poolNew').onclick = () => { haptic(); openNew({ kind: 'node' }); };
+  document.querySelectorAll('.pool-card').forEach((card) => { card.onclick = (e) => { if (!e.target.closest('.handle')) openPost(+card.dataset.id); }; });
+}
+// шаг входа под курсором/пальцем (для сброса поста из пула на шаг)
+function ptOf(e) { const t = e && (e.changedTouches && e.changedTouches[0] || e.touches && e.touches[0]) || e; return t && t.clientX != null ? { x: t.clientX, y: t.clientY } : null; }
+function stepRowAt(e) {
+  const pt = ptOf(e); if (!pt) return null;
+  const el = document.elementFromPoint(pt.x, pt.y);
+  const row = el && el.closest('.stp[data-k]');
+  return row && (S.msgs.find((m) => m.key === row.dataset.k) || {}).canMedia ? row : null;
+}
+let dragHl = null;
+function dragWatch(on) {
+  if (!on) { document.removeEventListener('pointermove', dragWatch.fn); document.removeEventListener('mousemove', dragWatch.fn); document.removeEventListener('touchmove', dragWatch.fn); document.querySelectorAll('.stp.drop').forEach((x) => x.classList.remove('drop')); clearInterval(dragWatch.t); return; }
+  let cy = 0;
+  dragWatch.fn = (e) => { const pt = ptOf(e); if (!pt) return; cy = pt.y; const row = stepRowAt(e); if (dragHl && dragHl !== row) dragHl.classList.remove('drop'); dragHl = row; if (row) row.classList.add('drop'); };
+  dragWatch.t = setInterval(() => { if (cy && cy < 80) window.scrollBy(0, -14); else if (cy && cy > innerHeight - 80) window.scrollBy(0, 14); }, 16);
+  document.addEventListener('pointermove', dragWatch.fn); document.addEventListener('mousemove', dragWatch.fn); document.addEventListener('touchmove', dragWatch.fn, { passive: true });
 }
 
 // вход в бот: служебные шаги по порядку + документы
@@ -3649,12 +4214,13 @@ function entryBox() {
     '<b>' + i + '</b><span class="st-t">' + t + (sub ? '<i>' + sub + '</i>' : '') + '</span>' +
     (o.mv && !window.Sortable ? '<span class="mv"><button type="button" class="chip" data-up="' + k + '" aria-label="выше">▲</button><button type="button" class="chip" data-down="' + k + '" aria-label="ниже">▼</button></span>' : '') +
     (o.sw ? '<button type="button" class="chip sw' + (o.off ? '' : ' on') + '" data-sw="' + k + '">' + (o.off ? 'выкл' : 'вкл') + '</button>' : '') + '</div>';
+  const pt = (k) => { const m = S.msgs.find((x) => x.key === k); const p = m && m.post && S.posts.find((x) => x.id === m.post); return p ? ' · 🔁 твой пост «' + esc((p.title || p.text || '#' + p.id).slice(0, 30)) + '»' : ''; };
   let n = 1;
-  let h = row('hello', '👋 Приветствие', 'из аудита приходит выбор: мини-курс или материалы', n++, {});
-  fl.order.forEach((k) => { h += row(k, ENTRY[k][0], ENTRY[k][1](), n++, { mv: k !== 'consentPd', sw: opt.includes(k), off: fl.off.includes(k) }); });
-  h += row('schedCourse', '🗓 Пост-расписание по треку', 'последний шаг: отсюда считается лента', n++, {});
+  let h = row('hello', '👋 Приветствие', 'из аудита приходит выбор: мини-курс или материалы' + pt('hello'), n++, {});
+  fl.order.forEach((k) => { h += row(k, ENTRY[k][0], ENTRY[k][1]() + pt(k), n++, { mv: k !== 'consentPd', sw: opt.includes(k), off: fl.off.includes(k) }); });
+  h += row('schedCourse', '🗓 Пост-расписание по треку', 'последний шаг: отсюда считается лента' + pt('schedCourse'), n++, {});
   const miss = !d.policy || !d.consent;
-  return '<div class="box"><h3>Вход в бот</h3><p class="small muted" style="margin:0 0 10px">Так бот встречает нового человека. Тяни за ⋮⋮, чтобы поменять порядок; «вкл/выкл» — показывать шаг или пропускать. Нажми на шаг — поменять текст, паузу и кнопки-ссылки. Первым всегда стоит согласие на данные — по закону сначала оно.</p><div class="steps" id="flowList">' + h + '</div>' +
+  return '<div class="box"><h3>Вход в бот</h3><p class="small muted" style="margin:0 0 10px">Так бот встречает нового человека. Тяни за ⋮⋮, чтобы поменять порядок; «вкл/выкл» — показывать шаг или пропускать. Нажми на шаг — поменять текст, паузу и кнопки или подставить вместо него свой пост из ленты. Первым всегда стоит согласие на данные — по закону сначала оно.</p><div class="steps" id="flowList">' + h + '</div>' +
     '<div class="arr">↓</div><div class="stp last"><b>→</b><span class="st-t">дальше — лента по треку и посты ниже</span></div>' +
     '<div class="docs-row"><div><b>Люди и отзывы</b><div class="small muted">контакты, выбор из аудита, отзывы о кабинете: ' + (S.fbCount || 0) + '</div></div><button type="button" class="chip" id="peopleBtn">открыть</button></div>' +
     '<div class="docs-row"><div><b>Документы</b><div class="small muted">политика ' + ok('policy') + ' · согласие ' + ok('consent') + ' · оферта ' + ok('offer') + '</div></div><button type="button" class="chip" id="docsBtn">изменить</button></div>' +
@@ -3734,6 +4300,32 @@ function openDocs() {
 }
 
 // ---------- новый пост ----------
+// бонус за отзыв — тем, кто оставил отзыв раньше: сначала считаем, потом спрашиваем
+async function fbBackfill() {
+  try {
+    const t = await api('/fb/backfill', { since: 'today', dry: true }), a = await api('/fb/backfill', { since: 'all', dry: true });
+    const row = (k, r, label) => r.people ? '<button type="button" class="btn" data-go="' + k + '" style="margin-top:8px">' + label + ': ' + r.people + ' чел.</button>' : '<p class="small muted" style="margin:8px 0 0">' + label + ': никому, все уже получили или постов нет.</p>';
+    sheet('<span class="pill">Бонус за отзыв</span><h2>Кому отправить?</h2><p class="small muted" style="margin:0 0 6px">Отправлю всем включённым постам «бонус за отзыв» тех, кто уже прошёл отзыв и ещё не получал этот пост. Дважды никому не уйдёт.</p>' + row('today', t, 'Кто оставил отзыв сегодня') + row('all', a, 'Все, кто оставлял отзыв раньше') + '<div class="btns"><button class="btn ghost" id="fbX">Закрыть</button></div>');
+    $('fbX').onclick = closeSheet;
+    document.querySelectorAll('[data-go]').forEach((el) => el.onclick = async () => {
+      el.disabled = true; el.textContent = 'Отправляю…';
+      try { const r = await api('/fb/backfill', { since: el.dataset.go }); closeSheet(); haptic('medium'); toast('Отправлено: ' + r.people + ' чел.' + (r.failed ? ' · не дошло: ' + r.failed : '')); await reload(); }
+      catch (e) { toast(e.message); el.disabled = false; }
+    });
+  } catch (e) { toast(e.message); }
+}
+// выбрать готовый пост и положить его копию в раздел (оригинал остаётся)
+function pickExisting(kind) {
+  const list = S.posts.filter((p) => p.kind !== kind || true).sort((a, b) => b.id - a.id);
+  sheet('<span class="pill">Из существующих</span><h2>Какой пост добавить в «' + KIND[kind].replace(/^\\S+\\s/, '') + '»?</h2><p class="small muted" style="margin:0 0 8px">Сделаю копию с текстом, картинками, оформлением и кнопками. Оригинал останется на месте. Дальше поставишь дату или время и включишь.</p><div class="pk">' +
+    (list.length ? list.map((p) => '<button type="button" class="kind" data-id="' + p.id + '"><b>' + esc(postName(p).slice(0, 60)) + '</b><span>' + KIND[p.kind] + ' · #' + p.id + (p.status !== 'active' ? ' · ' + (p.status === 'draft' ? 'черновик' : 'пауза') : '') + '</span></button>').join('') : '<p class="small muted">Постов пока нет.</p>') +
+    '</div><div class="btns"><button class="btn ghost" id="pkClose">Закрыть</button></div>');
+  $('pkClose').onclick = closeSheet;
+  document.querySelectorAll('.pk .kind').forEach((el) => el.onclick = async () => {
+    try { const r = await api('/post/' + el.dataset.id + '/copy', { kind }); await reload(); haptic('medium'); openPost(r.post.id); toast('Копия готова — поставь дату и включи'); }
+    catch (e) { toast(e.message); }
+  });
+}
 function openNew(preset) {
   preset = preset || {};
   if (preset.kind) return openPost(null, { draft: Object.assign(blankPost(preset.kind), preset) });
@@ -3795,6 +4387,13 @@ function openPost(id, opt) {
     '<label class="f">Трек из аудита</label>' + segHtml('fTrack', [['all', 'Всем'], ['course', '🎓 Мини-курс'], ['mat', '📚 Материалы']], st.track) +
     '<p class="small muted" style="margin:6px 2px 0">Мини-курс или материалы — что человек выбрал в аудите или в боте.</p>';
   h += '<label class="f">Статус</label>' + segHtml('fSt', [['active', '✅ Включён'], ['paused', '⏸ Пауза'], ['draft', '📝 Черновик']], st.status);
+  if (!isNew && p.kind === 'drip') h += '<div class="box" style="margin-top:14px"><h3>Пост для шага входа</h3><p class="small muted" style="margin:0 0 8px">Уберёт пост из ленты по дням и положит в блок «Свои посты для шагов»: его можно будет поставить вместо шаблонного сообщения на любом шаге входа.</p><button class="btn ghost" id="bToStep" type="button">↔ Перевести в пост для шага</button></div>';
+  if (!isNew && p.kind === 'node') {
+    const steps = (S.msgs || []).filter((m) => m.canMedia);
+    h += '<div class="box" style="margin-top:14px"><h3>Куда поставить этот пост</h3><p class="small muted" style="margin:0 0 8px">Выбери шаг входа: пост заменит шаблонное сообщение (или другой свой пост, если он там уже стоял).</p>' +
+      '<select id="bStepSel"><option value="">— выбери шаг —</option>' + steps.map((m) => '<option value="' + m.key + '">' + esc(m.title) + (m.post && m.post !== p.id ? ' (там уже пост #' + m.post + ')' : '') + (m.post === p.id ? ' (уже стоит)' : '') + '</option>').join('') + '</select>' +
+      '<div class="btns two" style="margin-top:8px"><button class="btn ghost" id="bToSlot" type="button">🔁 Поставить на шаг</button><button class="btn ghost" id="bToFeed" type="button">↔ В ленту по дням</button></div></div>';
+  }
   h += '<div class="btns"><button class="btn" id="bSave">' + (isNew ? 'Создать пост' : 'Сохранить') + '</button>' +
     (isNew ? '<button class="btn ghost" id="bClose">Отмена</button>' : '<div class="btns two" style="margin:0"><button class="btn ghost" id="bPrev">👁 Прислать мне</button><button class="btn ghost" id="bClose">Закрыть</button></div><button class="btn danger" id="bArch">🗄 Убрать в архив</button>') + '</div>';
   sheet(h);
@@ -3862,7 +4461,7 @@ function openPost(id, opt) {
   segBind('fSt', (v) => st.status = v);
 
   // кнопки: ссылка / пост / документ / оплата
-  let rows = JSON.parse(JSON.stringify(p.rows || [])).map((row) => row.map((b) => Object.assign({ t: b.go ? 'go' : b.doc ? 'doc' : b.pay ? 'pay' : 'url' }, b)));
+  let rows = JSON.parse(JSON.stringify(p.rows || [])).map((row) => row.map((b) => Object.assign({ t: b.go ? 'go' : b.doc ? 'doc' : b.pay ? 'pay' : b.file ? 'file' : 'url' }, b)));
   const targets = S.posts.filter((x) => x.id !== p.id);
   const optPosts = (cur) => '<option value="">— выбери пост —</option><option value="new"' + (cur === 'new' ? ' selected' : '') + '>＋ Новый пост-ответ (создам пустой)</option>' +
     ['node', 'drip', 'date', 'gift'].map((k) => { const l = targets.filter((x) => x.kind === k); return l.length ? '<optgroup label="' + KIND[k] + '">' + l.map((x) => '<option value="' + x.id + '"' + (+cur === x.id ? ' selected' : '') + '>' + esc(postName(x).slice(0, 44)) + (x.status !== 'active' ? ' · ' + (x.status === 'draft' ? 'черновик' : 'пауза') : '') + '</option>').join('') + '</optgroup>' : ''; }).join('');
@@ -3870,6 +4469,7 @@ function openPost(id, opt) {
     const a = 'data-r="' + r + '" data-i="' + i + '"';
     if (b.t === 'go') return '<select ' + a + ' data-f="go">' + optPosts(b.go) + '</select>';
     if (b.t === 'doc') return '<select ' + a + ' data-f="doc">' + Object.keys(S.docNames).map((k) => '<option value="' + k + '"' + (b.doc === k ? ' selected' : '') + '>' + esc(S.docNames[k]) + (S.docs[k] ? '' : ' — ссылка не задана') + '</option>').join('') + '</select>';
+    if (b.t === 'file') return '<div class="small" style="margin:4px 2px">' + (b.file ? '📎 ' + esc(b.file.name || b.file.type) : 'файл не выбран') + '</div><button type="button" class="chip" data-pick="' + r + ':' + i + '">' + (b.file ? 'заменить файл' : '＋ выбрать файл') + '</button><p class="small muted" style="margin:4px 2px 0">По нажатию бот пришлёт этот файл в чат (до 50 МБ).</p>';
     if (b.t === 'pay') return '<select ' + a + ' data-f="pay">' + Object.keys(TARIFF).map((k) => '<option value="' + k + '"' + (b.pay === k ? ' selected' : '') + '>' + TARIFF[k] + '</option>').join('') + '</select><p class="small muted" style="margin:2px">Оплату через продамус подключим позже — пока кнопка отвечает «откроется в день продаж».</p>';
     return '<input type="text" placeholder="https://ссылка" inputmode="url" ' + a + ' data-f="url" value="' + esc(b.url || '') + '">';
   };
@@ -3879,16 +4479,17 @@ function openPost(id, opt) {
       '<div class="brow"><div class="row" style="justify-content:space-between;margin-bottom:6px"><span class="small muted">' + (row.length > 1 ? 'Ряд ' + (r + 1) + ' · кнопки рядом' : 'Ряд ' + (r + 1)) + '</span><span>' +
       (r > 0 ? '<button type="button" class="chip" data-up="' + r + '" aria-label="выше">↑</button> ' : '') + (r < rows.length - 1 ? '<button type="button" class="chip" data-down="' + r + '" aria-label="ниже">↓</button>' : '') + '</span></div>' +
       row.map((b, i) => '<div class="bcard"><div style="display:grid;grid-template-columns:1fr auto;gap:6px"><input type="text" placeholder="Текст кнопки" maxlength="60" data-r="' + r + '" data-i="' + i + '" data-f="text" value="' + esc(b.text || '') + '"><button type="button" class="chip" data-del="' + r + ':' + i + '" aria-label="убрать кнопку">✕</button></div>' +
-        '<div class="btype">' + [['url', '🔗 Ссылка'], ['go', '➡️ Пост'], ['doc', '📄 Документ'], ['pay', '💳 Оплата']].map(([k, t]) => '<button type="button" data-type="' + k + '" data-r="' + r + '" data-i="' + i + '" class="' + (b.t === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>' + valueField(b, r, i) + '</div>').join('') +
+        '<div class="btype">' + [['url', '🔗 Ссылка'], ['go', '➡️ Пост'], ['doc', '📄 Документ'], ['pay', '💳 Оплата'], ['file', '📎 Файл']].map(([k, t]) => '<button type="button" data-type="' + k + '" data-r="' + r + '" data-i="' + i + '" class="' + (b.t === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>' + valueField(b, r, i) + '</div>').join('') +
       (row.length < 4 ? '<button type="button" class="chip" data-add="' + r + '">＋ кнопка рядом</button>' : '') + '</div>').join('')
       + '<button type="button" class="addb" id="bClear" data-clear="1">убрать все кнопки</button>'
-      : '<p class="small muted" style="margin:2px">Кнопок нет. Кнопка может вести на ссылку, на другой пост бота (развилка), на документ или на оплату тарифа.</p>';
+      : '<p class="small muted" style="margin:2px">Кнопок нет. Кнопка может вести на ссылку, на другой пост бота (развилка), на документ, на оплату тарифа или отдавать файл.</p>';
     $('onceWrap').style.display = rows.some((row) => row.some((b) => b.t === 'go')) ? '' : 'none';
   };
   $('bEd').addEventListener('input', sync);
   $('bEd').addEventListener('change', sync);
   $('bEd').addEventListener('click', (e) => {
     const t = e.target.closest('button'); if (!t) return; sync();
+    if (t.dataset.pick) { const [r, i] = t.dataset.pick.split(':').map(Number); pickBtnFile((f) => { rows[r][i].file = f; drawRows(); }); return; }
     if (t.dataset.type) { const b = rows[+t.dataset.r][+t.dataset.i]; b.t = t.dataset.type; if (b.t === 'doc' && !b.doc) b.doc = 'policy'; if (b.t === 'pay' && !b.pay) b.pay = 'curator'; }
     if (t.dataset.add !== undefined) { const rr = rows[+t.dataset.add]; rr.push({ t: rr[rr.length - 1].t, text: '', url: '', go: '', doc: 'policy', pay: 'curator' }); }
     if (t.dataset.clear) rows = [];
@@ -3909,6 +4510,9 @@ function openPost(id, opt) {
   const close = () => closeSheet();
   $('bX').onclick = close; $('bClose').onclick = close;
   if ($('bPrev')) $('bPrev').onclick = async () => { try { const r = await api('/post/' + p.id + '/preview', {}); toast(r.warn ? '⚠️ ' + r.warn : 'Отправила тебе в бот 👀'); } catch (e) { toast(e.message); } };
+  if ($('bToStep')) $('bToStep').onclick = async () => { try { await api('/post/' + p.id + '/move', { to: 'node' }); closeSheet(); haptic('medium'); toast('Теперь это пост для шага: он в блоке «Свои посты для шагов»'); await reload(); } catch (e) { toast(e.message); } };
+  if ($('bToFeed')) $('bToFeed').onclick = async () => { try { await api('/post/' + p.id + '/move', { to: 'drip', day: 1 }); closeSheet(); haptic('medium'); toast('Пост в ленте: день 1, 11:00. Нажми на него — поменяй день и время'); await reload(); } catch (e) { toast(e.message); } };
+  if ($('bToSlot')) $('bToSlot').onclick = async () => { const k = $('bStepSel').value; if (!k) { toast('Выбери шаг'); return; } try { const r = await api('/msg/' + k, { post: p.id }); S.msgs = r.msgs; closeSheet(); haptic('medium'); toast('Готово: на этом шаге теперь твой пост'); render(); } catch (e) { toast(e.message); } };
   if ($('bArch')) $('bArch').onclick = async () => { try { await api('/post/' + p.id, { status: 'archived' }); closeSheet(); toast('В архиве. Вернуть можно в боте: /posts → 🗄 Архив'); await reload(); } catch (e) { toast(e.message); } };
   $('bSave').onclick = async () => {
     sync();
@@ -3923,8 +4527,8 @@ function openPost(id, opt) {
           b.go = r.post.id; created.push(r.post.id);
         }
       }
-      const outRows = rows.map((row) => row.map((b) => b.t === 'go' ? { text: b.text, go: +b.go || null } : b.t === 'doc' ? { text: b.text, doc: b.doc } : b.t === 'pay' ? { text: b.text, pay: b.pay } : { text: b.text, url: b.url }));
-      for (const b of outRows.flat()) if (b.go === null && b.text) throw new Error('У кнопки «' + b.text + '» не выбран пост');
+      const outRows = rows.map((row) => row.map((b) => b.t === 'go' ? { text: b.text, go: +b.go || null } : b.t === 'doc' ? { text: b.text, doc: b.doc } : b.t === 'pay' ? { text: b.text, pay: b.pay } : b.t === 'file' ? { text: b.text, file: b.file || null } : { text: b.text, url: b.url }));
+      for (const b of outRows.flat()) { if (b.go === null && b.text) throw new Error('У кнопки «' + b.text + '» не выбран пост'); if (b.file === null) throw new Error('У кнопки «' + b.text + '» не выбран файл'); }
       const body = { title: $('fTitle').value.trim(), status: st.status, rows: outRows, once: $('fOnce').checked, files: st.files };
       if (!p.rich || st.editRich) body.md = ta.value;
       if (p.kind !== 'node' && p.kind !== 'fb') { body.audience = st.audience; body.track = st.track; }
@@ -3948,6 +4552,12 @@ function openPost(id, opt) {
 }
 async function reload() { try { S = await api('/state'); render(); } catch (e) { toast(e.message); } }
 
+function builtinBtns(key) {
+  const st = FLOW.find((x) => x.key === key);
+  const bs = ((st && st.btns) || []).map((b) => mOf(b)).filter(Boolean);
+  return bs.length ? '<p class="small muted" style="margin:0 2px 6px">Встроенные кнопки шага. Менять можно текст; убрать или перенаправить нельзя — на них держится путь ученика (что бот делает после нажатия).</p>' +
+    bs.map((b) => '<div class="bcard" style="margin-bottom:6px"><div class="small muted" style="margin-bottom:4px">🔘 ' + esc(b.title) + '</div><input type="text" maxlength="64" data-bk="' + b.key + '" data-orig="' + esc(b.text) + '" value="' + esc(b.text) + '"></div>').join('') : '';
+}
 function openMsg(key) {
   const m = S.msgs.find((x) => x.key === key); if (!m) return;
   let h = '<span class="pill">' + (m.button ? 'Кнопка' : m.group === 'profile' ? 'Профиль бота' : 'Сообщение') + '</span><h2>' + esc(m.title) + '</h2>' +
@@ -3960,15 +4570,16 @@ function openMsg(key) {
         '<div class="btns two" style="margin-top:8px"><button class="btn ghost" id="mAdd" type="button">Заменить</button><button class="btn ghost" id="mDelImg" type="button">Убрать</button></div>'
       : '<button class="btn ghost" id="mAdd" type="button">＋ Добавить картинку, гифку или видео</button>') +
       '<input type="file" id="mFile" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4" hidden><p class="small muted" style="margin:6px 2px 0">Текст станет подписью под картинкой (до 1024 знаков — длиннее уйдёт следующим сообщением).</p>' : '') +
+    (m.canMedia ? '<label class="f">Подставить свой пост вместо этого шаблона</label><select id="mPost"><option value="">— нет, оставить шаблон —</option>' + (S.posts || []).map((p) => '<option value="' + p.id + '"' + (m.post === p.id ? ' selected' : '') + '>#' + p.id + ' · ' + esc((p.title || p.text || 'без названия').slice(0, 40)) + '</option>').join('') + '</select><p class="small muted" style="margin:6px 2px 0">Ученик получит выбранный пост (текст, картинки и все его кнопки: ссылки, другие посты, документы). Кнопки самого шага — «Даю согласие», «Всё верно» и т.п. — встанут под кнопками поста, чтобы путь не сломался. Пока выбран пост, текст шаблона выше не показывается.</p>' : '') +
     (m.canMedia ? '<label class="f">Пауза перед сообщением</label><div class="row"><input type="text" inputmode="decimal" id="mDelay" style="width:90px" value="' + String(m.delay).replace('.', ',') + '"><span class="muted">сек — столько бот «печатает» (• • •) перед ним' + (m.delay !== m.defDelay ? ' · было ' + String(m.defDelay).replace('.', ',') : '') + '</span></div>' +
-      '<label class="f">Свои кнопки-ссылки под сообщением</label><div id="mLinks"></div><p class="small muted" style="margin:6px 2px 0">Например «Наш канал» или «Сайт школы». Встают под встроенными кнопками.</p>' : '') +
+      '<label class="f">Кнопки под сообщением</label>' + builtinBtns(m.key) + '<div id="mLinks"></div><p class="small muted" style="margin:6px 2px 0">Кнопка может вести на ссылку, на другой пост бота, на документ, на оплату тарифа или отдавать файл. Встают под встроенными кнопками шага.</p>' : '') +
     (m.vars.length ? '<p class="small muted" style="margin:10px 2px 0">Нажми, чтобы вставить — бот подставит сам:</p><div class="vars" id="mVars">' + m.vars.map((v) => '<button type="button" data-v="{' + v + '}">{' + v + '}</button>').join('') + '</div>' : '') +
     '<div class="btns"><button class="btn" id="mSave">Сохранить</button><div class="btns two" style="margin:0"><button class="btn ghost" id="mPrev">👁 Прислать мне</button><button class="btn ghost" id="mClose">Закрыть</button></div>' +
     (m.changed ? '<button class="btn danger" id="mReset">↩️ Вернуть текст по умолчанию</button>' : '') + '</div>' +
     (m.changed ? '<p class="small muted" style="margin-top:12px">По умолчанию было:</p><div class="preview">' + esc(m.def) + '</div>' : '');
   sheet(h);
   const ta = $('mText');
-  const getLinks = $('mLinks') ? rowsEditor($('mLinks'), JSON.parse(JSON.stringify(m.links || []))) : null;
+  const getLinks = $('mLinks') ? stepBtnEditor($('mLinks'), JSON.parse(JSON.stringify(m.links || []))) : null;
   if ($('mImg')) fetch('/api/panel/msg/' + key + '/img', { headers: { 'x-init-data': INIT } }).then((r) => r.ok ? r.blob() : null).then((b) => {
     if (!b) { $('mImgInfo').textContent = 'превью не загрузилось — в боте картинка есть'; return; }
     const img = $('mImg');
@@ -4007,6 +4618,8 @@ function openMsg(key) {
     const body = {};
     if (ta.value !== m.text) body.text = ta.value;
     if ($('mDelay')) { body.delay = parseFloat(String($('mDelay').value).replace(',', '.')) || 0; body.links = getLinks(); }
+    try { for (const el of document.querySelectorAll('#sheet [data-bk]')) if (el.value.trim() && el.value !== el.dataset.orig) { const r0 = await api('/msg/' + el.dataset.bk, { text: el.value }); S.msgs = r0.msgs; } } catch (e) { return toast(e.message); }
+    if ($('mPost')) { const pv = $('mPost').value; if ((pv ? +pv : null) !== (m.post || null)) body.post = pv ? +pv : null; }
     try { const r = await api('/msg/' + key, body); S.msgs = r.msgs; closeSheet(); haptic('medium'); toast('Сохранено ✓'); render(); } catch (e) { toast(e.message); }
   };
   if ($('mReset')) $('mReset').onclick = async () => { try { const r = await api('/msg/' + key, { reset: true }); S.msgs = r.msgs; closeSheet(); toast('Вернули как было ↩️'); render(); } catch (e) { toast(e.message); } };

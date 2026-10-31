@@ -61,7 +61,16 @@ export function makeTg({ token, root, fetchFn, relayKey }) {
     // скачать файл по file_id (превью картинки в панели)
     async download(fileId) {
       const file = await tg.call('getFile', { file_id: fileId });
-      return viaRoots(`/file/bot${token}/${file.file_path}`, (key) => ({ headers: key ? { 'x-relay-key': key } : {} }));
+      // мост может не уметь отдавать файлы (старая версия) — тогда пробуем следующий
+      let last;
+      for (let i = 0; i < roots.length; i++) {
+        try {
+          const res = await f(`${roots[i]}/file/bot${token}/${file.file_path}`, { headers: keyOf(i) ? { 'x-relay-key': keyOf(i) } : {} });
+          if (res.ok) return res;
+          last = new Error('мост отдал ' + res.status);
+        } catch (e) { last = e; }
+      }
+      throw last || new Error('файл недоступен');
     },
   };
   return tg;

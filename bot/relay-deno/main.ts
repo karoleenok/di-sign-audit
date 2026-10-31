@@ -4,6 +4,10 @@ Deno.serve(async (req: Request) => {
   const key = Deno.env.get("RELAY_KEY");
   if (!key || req.headers.get("x-relay-key") !== key) return new Response("forbidden", { status: 403 });
   const path = new URL(req.url).pathname;
+  if (req.method === "GET" && /^\/file\/bot\d+:[\w-]+\/[\w\/.-]+$/.test(path) && !path.includes("..")) {
+    const f = await fetch("https://api.telegram.org" + path);
+    return new Response(f.body, { status: f.status, headers: { "content-type": f.headers.get("content-type") || "application/octet-stream" } });
+  }
   if (!/^\/bot\d+:[\w-]+\/\w+$/.test(path)) return new Response("bad path", { status: 400 });
   const res = await fetch("https://api.telegram.org" + path, {
     method: "POST",
