@@ -713,6 +713,14 @@ step('кнопка «файл»: у шага и у поста по нажати�
     await api('/flow', { order: [], off: [] });
     await db.run(`UPDATE posts SET status = 'archived' WHERE id = ?`, [sp.id]);
   }
+  // выбор уровня в середине входа не обрывает вход
+  {
+    const L = 1700;
+    await msg(L, '/start'); await cb(L, 'c:pd'); await cb(L, 'c:ads:1');
+    await cb(L, 'lv:start');
+    assert.ok(!/Готово, уровень/.test(lastText(L)), 'во время входа это не ответ команды /level');
+    assert.match(lastText(L), /имя|зовут|называть/i, 'после уровня вход идёт дальше');
+  }
   // перенос между лентой и постами для шагов
   {
     const np = (await api('/post/new', { kind: 'drip', title: 'Переносимый', md: 'текст', status: 'active', day: 2, time: '12:00' })).post;

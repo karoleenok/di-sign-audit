@@ -468,7 +468,7 @@ export async function onUserCallback(ctx, cq) {
     await answer();
     const lv = d.slice(3) === 'start' ? 'start' : 'pro';
     await ctx.db.run(`UPDATE users SET level = ?, level_raw = COALESCE(level_raw, ?) WHERE tg_id = ?`, [lv, lv === 'start' ? 'start' : 'free', id]);
-    if (u.consent_pd_at && u.consent_ads_at) { await done('levelChanged', { уровень: LEVELS[lv] }); return; }
+    if (u.sched_at) { await done('levelChanged', { уровень: LEVELS[lv] }); return; }
     await done();
     return nextStep(ctx, await getUser(ctx, id));
   }
