@@ -35,13 +35,9 @@ assert.deepEqual(days.slice(0, 5), [['0', 2], ['1', 2], ['2', 2], ['3', 1], ['4'
 assert.match(await page.textContent('.list[data-day="0"]'), /⏱ через 2 ч после входа/, 'пост по таймеру — в дне 0 с подписью');
 step('лента по дням: ' + JSON.stringify(days.slice(0, 5)));
 
-// 3. фильтр «как увидит человек»
-await page.click('#lvl button[data-v="start"]');
-const offs = await page.$$eval('.card.off .ttl', (e) => e.map((x) => x.textContent));
-assert.ok(offs.includes('Скрипты ответов') && !offs.includes('Про обучение · портфолио'), 'начинающий не получит только посты для продолжающих: ' + offs);
-await page.screenshot({ path: OUT + '/panel-2-filter.png', fullPage: false });
-await page.click('#lvl button[data-v="all"]');
-step('фильтр: начинающий не получит посты для продолжающих');
+// 3. деления на начинающих и продолжающих в панели больше нет
+assert.equal(await page.locator('#lvl').count(), 0, 'переключателя уровня нет');
+step('панель без деления по уровню');
 
 // 4. перетаскивание: пост «20 промптов» (день 2, 11:00) — на день 1 после «Чек-лист новичка»
 const card = page.locator('.card', { hasText: '20 промптов' }).locator('.handle');
@@ -67,7 +63,7 @@ await page.waitForTimeout(300);
 await page.screenshot({ path: OUT + '/panel-4-sheet.png' });
 await page.click('#dPlus'); await page.click('#dPlus');
 await page.fill('#fTime', '19:30');
-await page.click('#fAud button[data-v="all"]');
+assert.equal(await page.locator('#fAud').count(), 0, 'поля «Кому» нет');
 await page.click('#fSt button[data-v="paused"]');
 await page.click('#bSave');
 await page.waitForTimeout(500);
@@ -148,30 +144,30 @@ step('«прислать мне» отправляет пост админу');
 await page.click('#tabs button[data-t="dates"]'); await page.waitForTimeout(200);
 await page.screenshot({ path: OUT + '/panel-5-dates.png' });
 await page.click('#tabs button[data-t="gifts"]'); await page.waitForTimeout(200);
-assert.ok((await page.textContent('#body')).includes('Продолжающим'), 'подарки по уровням');
+assert.ok((await page.textContent('#body')).includes('Мини-курс'), 'подарки по трекам');
 await page.screenshot({ path: OUT + '/panel-6-gifts.png', fullPage: true });
 step('вкладки «Даты» и «Подарки»');
 
 // 8. тексты
 await page.click('#tabs button[data-t="texts"]'); await page.waitForTimeout(200);
 await page.screenshot({ path: OUT + '/panel-7-texts.png' });
-await page.click('.msg[data-k="askLevel"] .p'); await page.waitForSelector('.sheet.on');
+await page.click('.msg[data-k="askName"] .p'); await page.waitForSelector('.sheet.on');
 await page.fill('#mText', 'Где ты сейчас, ');
 await page.click('#mVars button[data-v="{имя}"]');
 await page.locator('#mText').press('End'); await page.locator('#mText').type('?');
 await page.screenshot({ path: OUT + '/panel-8-text-edit.png' });
 await page.click('#mSave'); await page.waitForTimeout(400);
-let m = await db.first(`SELECT value FROM settings WHERE key = 'msg:askLevel'`);
+let m = await db.first(`SELECT value FROM settings WHERE key = 'msg:askName'`);
 assert.equal(JSON.parse(m.value).text, 'Где ты сейчас, {имя}?');
-await page.click('.msg[data-k="askLevel"] .p'); await page.waitForSelector('#mReset'); await page.click('#mReset'); await page.waitForTimeout(400);
-m = await db.first(`SELECT value FROM settings WHERE key = 'msg:askLevel'`);
+await page.click('.msg[data-k="askName"] .p'); await page.waitForSelector('#mReset'); await page.click('#mReset'); await page.waitForTimeout(400);
+m = await db.first(`SELECT value FROM settings WHERE key = 'msg:askName'`);
 assert.equal(m, null);
 step('тексты: правка с подстановкой {имя} и возврат по умолчанию');
 
 // 8а. путь ученика: пауза, кнопки-ссылки, пройти заново
 assert.match(await page.textContent('#body'), /Путь ученика/);
 const stepsTxt = await page.$$eval('#body .day .dayh span', (e) => e.map((x) => x.textContent));
-assert.deepEqual(stepsTxt.slice(0, 5), ['Приветствие', 'Согласие на обработку данных', 'Согласие на рассылку', 'Уровень', 'Имя']);
+assert.deepEqual(stepsTxt.slice(0, 5), ['Приветствие', 'Согласие на обработку данных', 'Согласие на рассылку', 'Имя', 'Контакт: Telegram, телефон или почта']);
 await page.click('.msg[data-k="consentPd"] .p'); await page.waitForSelector('#mDelay');
 await page.fill('#mDelay', '2,5');
 await page.click('#mLinks [data-newrow]');
@@ -265,8 +261,8 @@ step('конструктор: развилка с нуля, пост-ответ 
 await page.click('#tabs button[data-t="flow"]'); await page.waitForSelector('#flowList');
 const keys = () => page.$$eval('#flowList .stp[data-k]', (els) => els.map((e) => e.dataset.k));
 assert.deepEqual((await keys()).slice(0, 3), ['hello', 'consentPd', 'consentAds']);
-await page.click('[data-up="askName"]'); await page.waitForTimeout(500);
-assert.equal(JSON.parse((await db.first(`SELECT value FROM settings WHERE key = 'flow:order'`)).value).indexOf('askName'), 2, 'имя поднялось выше уровня');
+await page.click('[data-up="askContact"]'); await page.waitForTimeout(500);
+assert.equal(JSON.parse((await db.first(`SELECT value FROM settings WHERE key = 'flow:order'`)).value).indexOf('askContact'), 2, 'контакт поднялся выше имени');
 await page.click('[data-up="consentAds"]'); await page.waitForTimeout(300); // выше согласия на данные нельзя
 assert.equal((await keys())[1], 'consentPd');
 await page.click('[data-sw="fbOffer"]'); await page.waitForTimeout(500);
@@ -277,7 +273,7 @@ await page.click('.stp[data-k="askName"] .st-t'); await page.waitForSelector('.s
 assert.match(await page.textContent('.sheet h2'), /имя|Имя|Как/i, 'по нажатию на шаг открывается его текст');
 await page.click('#mClose');
 await page.click('[data-sw="fbOffer"]'); await page.waitForTimeout(400);
-await page.click('[data-down="askName"]'); await page.waitForTimeout(400); // вернули как было
+await page.click('[data-down="askContact"]'); await page.waitForTimeout(400); // вернули как было
 step('шаги входа: порядок ▲▼, выключатель, согласие всегда первое, нажатие открывает текст');
 
 // 8б. свои посты без дня: пул показан, он же — список для перетаскивания из ленты и обратно

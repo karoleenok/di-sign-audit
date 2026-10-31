@@ -79,8 +79,6 @@ export async function sendPost(tg, chatId, post, { uid, publicUrl, arrow, docs, 
 function audienceSql(post) {
   let c = '';
   const p = [];
-  if (post.audience === 'start') c += ` AND u.level = 'start'`;
-  else if (post.audience === 'pro') c += ` AND u.level = 'pro'`;
   // трек из аудита: мини-курс или материалы
   if (post.track === 'course' || post.track === 'mat') { c += ` AND u.track = ?`; p.push(post.track); }
   return { c, p };

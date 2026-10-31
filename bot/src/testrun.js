@@ -7,7 +7,7 @@ import { AUD } from './texts.js';
 import { loadFlow, previewStep } from './users.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const fitsLevel = (p, level) => !level || level === 'all' || p.audience === 'all' || p.audience === level;
+const fitsLevel = () => true; // деление на начинающих и продолжающих убрано: важен только трек
 
 // Посты ленты по порядку (как их получит человек выбранного уровня)
 export async function feedOrder(db, level, { withDrafts = false } = {}) {
@@ -41,7 +41,7 @@ export async function runPreview(ctx, adminId, level, pauseMs = 900) {
   const items = [...gifts.map((p) => ({ p, off: -1 })), ...drip];
   const MAX = 14;
   const arrow = await btn(ctx, 'buttonsArrow');
-  await ctx.tg.call('sendMessage', { chat_id: adminId, text: `🧪 Предпросмотр ленты — как её получит ${level && level !== 'all' ? AUD[level].replace(/им$/, 'ий') : 'любой ученик'}.\nПостов: ${items.length}${items.length > MAX ? ` (покажу первые ${MAX})` : ''}. Подпись над каждым — когда он придёт.` });
+  await ctx.tg.call('sendMessage', { chat_id: adminId, text: `🧪 Предпросмотр ленты — как её получит ученик.\nПостов: ${items.length}${items.length > MAX ? ` (покажу первые ${MAX})` : ''}. Подпись над каждым — когда он придёт.` });
   let n = 0;
   for (const it of items.slice(0, MAX)) {
     const k = ctx.env.DELAY_FACTOR === undefined ? 1 : Number(ctx.env.DELAY_FACTOR);
@@ -75,7 +75,7 @@ export async function runFullPath(ctx, adminId, level, fromAudit, pauseMs = 900)
     try { await tg('🧪 ' + label); await fn(); n++; }
     catch (e) { await ctx.tg.call('sendMessage', { chat_id: adminId, text: `⚠️ ${label}: не отправилось — ${e.message}` }).catch(() => {}); }
   };
-  await tg(`🧪 Полный путь — ${fromAudit ? 'человек пришёл после аудита' : 'человек пришёл с сайта, не пройдя аудит'}, уровень: ${lv === 'pro' ? 'продолжающий' : 'начинающий'}.\nКнопки в этих сообщениях настоящие, но это только показ: нажимать не нужно. Подпись над каждым — что это и когда придёт.`);
+  await tg(`🧪 Полный путь — ${fromAudit ? 'человек пришёл после аудита' : 'человек пришёл с сайта, не пройдя аудит'}.\nКнопки в этих сообщениях настоящие, но это только показ: нажимать не нужно. Подпись над каждым — что это и когда придёт.`);
   await run(`шаг ${++step} · ${STEP_TITLE[fromAudit ? 'helloTest' : 'hello']}`, () => previewStep(ctx, adminId, fromAudit ? 'helloTest' : 'hello', me));
   for (const key of order) {
     if (off.includes(key)) continue;

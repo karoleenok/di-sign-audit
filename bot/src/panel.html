@@ -219,11 +219,10 @@ function whenShort(p, ids) {
 }
 // получит ли этот пост выбранный человек
 function gets(p) {
-  return view.level === 'all' || p.audience === 'all' || p.audience === view.level;
+  return true;
 }
 function tags(p) {
   let h = '';
-  if (p.audience !== 'all') h += '<span class="tag">' + esc(S.audiences[p.audience]) + '</span>';
   if (p.status === 'paused') h += '<span class="tag paused">⏸ пауза</span>';
   if (p.status === 'draft') h += '<span class="tag draft">📝 черновик</span>';
   if (p.media.length) h += '<span class="tag">🖼 ' + (p.media.length > 1 ? '×' + p.media.length : '') + '</span>';
@@ -286,16 +285,8 @@ function render() {
   setTimeout(() => loadThumbs($('body')), 0);
 }
 
-function viewBox() {
-  return '<div class="box"><h3>Как увидит человек</h3>' +
-    '<div class="seg sm" id="lvl">' + [['all','Все посты'],['start','Начинающий'],['pro','Продолжающий']].map(([k,t]) => '<button data-v="' + k + '" class="' + (view.level === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>' +
-    ((view.level !== 'all') ? '<div class="toggle"><span class="small">Прятать посты, которые этот человек не получит</span><label class="sw"><input type="checkbox" id="hide" ' + (view.hide ? 'checked' : '') + '><span></span></label></div>' : '') +
-    '</div>';
-}
-function bindView() {
-  $('lvl').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; view.level = b.dataset.v; saveView(); haptic(); render(); };
-  if ($('hide')) $('hide').onchange = (e) => { view.hide = e.target.checked; saveView(); render(); };
-}
+function viewBox() { return ''; }
+function bindView() {}
 
 function renderFeed() { renderFlow(); }
 // дни ленты: карточки можно тащить за ⋮⋮ между днями
@@ -390,10 +381,9 @@ async function onDrop(ev) {
 
 // ---------- проверить ленту на себе ----------
 function runBox() {
-  const who = view.level === 'start' ? 'начинающего' : view.level === 'pro' ? 'продолжающего' : 'любого ученика';
   const r = S.run;
   const src = S.runSrc || 'audit';
-  return '<div class="box"><h3>Проверить на себе</h3><p class="small muted" style="margin:0 0 10px">Весь путь придёт тебе в бот: вход, подарок, расписание, посты ленты и бонус за отзыв — с подписью «что и когда». Уровень — выше (' + who + ').</p>' +
+  return '<div class="box"><h3>Проверить на себе</h3><p class="small muted" style="margin:0 0 10px">Весь путь придёт тебе в бот: вход, подарок, расписание, посты ленты и бонус за отзыв — с подписью «что и когда». </p>' +
     '<div class="seg" style="margin-bottom:10px"><button type="button" class="' + (src === 'audit' ? 'on' : '') + '" data-rsrc="audit">после аудита</button><button type="button" class="' + (src === 'site' ? 'on' : '') + '" data-rsrc="site">с сайта, без аудита</button></div>' +
     '<div class="btns" style="margin-top:0"><button class="btn" id="runPrev" type="button">▶️ Посмотреть весь путь сейчас</button>' +
     (r ? '<div class="note" style="margin:0">⏩ Идёт ускоренный тест (1 день = 1 минута) · уже пришло: ' + r.sent + '</div><button class="btn danger" id="runStop" type="button">⏹ Остановить тест</button>'
@@ -422,9 +412,9 @@ function renderDates() {
 
 function renderGifts() {
   const gs = S.posts.filter((p) => p.kind === 'gift');
-  let h = '<p class="muted" style="margin-top:16px">Подарок уходит сразу после теста. Начинающий получит подарки «всем» и «начинающим», продолжающий — «всем» и «продолжающим», по порядку.</p>';
-  [['all','Всем'],['start','Начинающим'],['pro','Продолжающим']].forEach(([a, t]) => {
-    const list = gs.filter((p) => p.audience === a);
+  let h = '<p class="muted" style="margin-top:16px">Подарок уходит сразу после теста. Кто выбрал мини-курс, получит подарки «всем» и «мини-курс», кто выбрал материалы — «всем» и «материалы», по порядку.</p>';
+  [['all','Всем'],['course','🎓 Мини-курс'],['mat','📚 Материалы']].forEach(([a, t]) => {
+    const list = gs.filter((p) => (p.track || 'all') === a);
     h += '<div class="grp">' + t + '</div>' + (list.length ? list.map((p) => cardHtml(p)).join('<div style="height:8px"></div>') : '<p class="small muted" style="margin:6px 2px;border:1.5px dashed var(--line);border-radius:16px;padding:12px">Пока нет. Создай в боте: <b>/new</b> → «Подарок после теста».</p>');
   });
   if (!gs.length) h += '<div class="note warn" style="margin-top:16px">Подарков нет — после теста люди получат «Подарок скоро появится здесь 🎁».</div>';
@@ -466,7 +456,6 @@ const FLOW = [
   { key: 'hello', alt: ['helloTest'], title: 'Приветствие', note: 'Сразу после «Старт». Если человек пришёл из аудита — вариант «после теста».' },
   { key: 'consentPd', btns: ['consentPdBtn'], alt: ['consentThanks'], title: 'Согласие на обработку данных', note: 'Всегда первым: без согласия бот не имеет права ничего присылать и спрашивать контакты.' },
   { key: 'consentAds', btns: ['consentAdsYes', 'consentAdsNo'], alt: ['adsNo'], title: 'Согласие на рассылку', note: 'Отдельное согласие (закон о рекламе). Если «нет» — вход заканчивается.' },
-  { key: 'askLevel', btns: ['levelBtnStart', 'levelBtnPro'], alt: ['levelChanged'], title: 'Уровень', note: 'Только если человек пришёл не из аудита.' },
   { key: 'askName', btns: ['nameOk'], title: 'Имя', note: 'Человек жмёт «Всё верно» или пишет имя.' },
   { key: 'askContact', btns: ['contactTg', 'contactPhone', 'contactEmail'], alt: ['askPhone', 'askEmail', 'badPhone', 'badEmail', 'contactSaved'], title: 'Контакт: Telegram, телефон или почта', note: 'Кнопка «Telegram» видна, только если у человека есть ник.' },
   { key: 'fbOffer', btns: ['fbYes', 'fbNo'], alt: ['fbQ1', 'fbQ2', 'fbThanks', 'fbNoBonus'], title: 'Отзыв о кабинете — по желанию', note: 'За отзыв уходит бонус: посты вида «💬 Бонус за отзыв» во вкладке «Сценарий». Отзывы приходят вам в бот и видны в «Сценарии» → «Люди и отзывы».' },
@@ -491,7 +480,7 @@ function renderTexts() {
       (st.note ? '<p class="small muted" style="margin:6px 2px 0">' + esc(st.note) + '</p>' : '') + '</div>';
   });
   const groups = {};
-  S.msgs.filter((m) => !used.has(m.key)).forEach((m) => { const g = m.group === 'cmd' || m.group === 'profile' ? m.group : 'other'; (groups[g] = groups[g] || []).push(m); });
+  S.msgs.filter((m) => !used.has(m.key) && !['askLevel', 'levelBtnStart', 'levelBtnPro', 'levelChanged'].includes(m.key)).forEach((m) => { const g = m.group === 'cmd' || m.group === 'profile' ? m.group : 'other'; (groups[g] = groups[g] || []).push(m); });
   const names = { other: '🧩 Прочее', cmd: '⚙️ Команды ученика', profile: '🤖 Профиль бота и меню команд' };
   Object.keys(names).forEach((g) => {
     if (!groups[g]) return;
@@ -748,7 +737,6 @@ function dragWatch(on) {
 const ENTRY = {
   consentPd: ['✅ Согласие на данные', () => { const d = S.docs || {}; return 'политика ' + (d.policy ? '✓' : 'не задана') + ' · согласие ' + (d.consent ? '✓' : 'не задана'); }],
   consentAds: ['📬 Согласие на рассылку', () => 'без него рассылку не отправляем'],
-  askLevel: ['🎚 Уровень', () => 'спрашиваем, если не пришёл из аудита'],
   askName: ['📇 Имя', () => 'человек жмёт «Всё верно» или пишет имя'],
   askContact: ['📱 Контакт', () => 'Telegram, телефон или почта'],
   fbOffer: ['💬 Отзыв о кабинете — по желанию', () => 'бонусов за отзыв включено: ' + S.posts.filter((p) => p.kind === 'fb' && p.status === 'active').length],
@@ -963,8 +951,7 @@ function openPost(id, opt) {
   h += '<label class="f" id="btnsLbl">Кнопки под постом</label><div id="bEd"></div>' +
     '<div class="btns two" style="margin-top:8px"><button class="btn ghost" type="button" id="bRow">＋ Кнопка</button><button class="btn ghost" type="button" id="bNext">＋ Следующий пост</button></div>' +
     '<div class="toggle" id="onceWrap"><span><b>Кнопки-выбор</b><br><span class="small muted">После нажатия под постом остаётся только выбранный вариант с ✓ — человек не нажмёт второй</span></span><label class="sw"><input type="checkbox" id="fOnce" ' + (st.once ? 'checked' : '') + '><span></span></label></div>';
-  if (p.kind !== 'node' && p.kind !== 'fb') h += '<label class="f">Кому</label>' + segHtml('fAud', [['all', 'Всем'], ['start', 'Начинающим'], ['pro', 'Продолжающим']], st.audience) +
-    '<label class="f">Трек из аудита</label>' + segHtml('fTrack', [['all', 'Всем'], ['course', '🎓 Мини-курс'], ['mat', '📚 Материалы']], st.track) +
+  if (p.kind !== 'node' && p.kind !== 'fb') h += '<label class="f">Трек из аудита</label>' + segHtml('fTrack', [['all', 'Всем'], ['course', '🎓 Мини-курс'], ['mat', '📚 Материалы']], st.track) +
     '<p class="small muted" style="margin:6px 2px 0">Мини-курс или материалы — что человек выбрал в аудите или в боте.</p>';
   h += '<label class="f">Статус</label>' + segHtml('fSt', [['active', '✅ Включён'], ['paused', '⏸ Пауза'], ['draft', '📝 Черновик']], st.status);
   if (!isNew && p.kind === 'drip') h += '<div class="box" style="margin-top:14px"><h3>Пост для шага входа</h3><p class="small muted" style="margin:0 0 8px">Уберёт пост из ленты по дням и положит в блок «Свои посты для шагов»: его можно будет поставить вместо шаблонного сообщения на любом шаге входа.</p><button class="btn ghost" id="bToStep" type="button">↔ Перевести в пост для шага</button></div>';
@@ -1139,7 +1126,7 @@ function openPost(id, opt) {
       for (const b of outRows.flat()) { if (b.go === null && b.text) throw new Error('У кнопки «' + b.text + '» не выбран пост'); if (b.file === null) throw new Error('У кнопки «' + b.text + '» не выбран файл'); }
       const body = { title: $('fTitle').value.trim(), status: st.status, rows: outRows, once: $('fOnce').checked, files: st.files };
       if (!p.rich || st.editRich) body.md = ta.value;
-      if (p.kind !== 'node' && p.kind !== 'fb') { body.audience = st.audience; body.track = st.track; }
+      if (p.kind !== 'node' && p.kind !== 'fb') { body.audience = 'all'; body.track = st.track; }
       if (p.kind === 'drip') {
         body.mode = st.mode; body.catchup = $('fCatch').checked;
         if (st.mode === 'day') { body.day = st.day; body.time = st.day > 0 ? ($('fTime').value || st.time) : '00:00'; }

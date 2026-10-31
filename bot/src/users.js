@@ -136,7 +136,7 @@ export async function onStart(ctx, msg, payload) {
 //   -> отзыв о прототипе кабинета (по желанию, за бонус) -> мини-курс или материалы (если не выбрал в аудите)
 //   -> (тест, если не проходил) -> подарок -> пост-расписание по треку -> дальше лента
 // ---------- порядок шагов входа (меняется в панели: Сценарий → Вход в бот) ----------
-export const FLOW_STEPS = ['consentPd', 'consentAds', 'askLevel', 'askName', 'askContact', 'fbOffer', 'askTrack', 'testOffer'];
+export const FLOW_STEPS = ['consentPd', 'consentAds', 'askName', 'askContact', 'fbOffer', 'askTrack', 'testOffer'];
 export const FLOW_OPTIONAL = ['askName', 'askContact', 'fbOffer', 'askTrack', 'testOffer']; // эти можно выключить
 // свой пост, вставленный в сценарий входа новым шагом: ключ «post:<id>»
 export const isPostStep = (k) => /^post:\d+$/.test(String(k));
@@ -420,11 +420,10 @@ async function notifyAdmins(ctx, u) {
 async function sendGift(ctx, u, pauseMs) {
   const gifts = await ctx.db.all(
     `SELECT * FROM posts WHERE kind = 'gift' AND status = 'active'
-       AND (audience = 'all' OR audience = ?)
        AND (track = 'all' OR track = ?)
        AND NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.post_id = posts.id AND d.tg_id = ?)
      ORDER BY id`,
-    [u.level || 'all', u.track || 'all', u.tg_id],
+    [u.track || 'all', u.tg_id],
   );
   if (!gifts.length) {
     // подарков ещё нет — говорим об этом один раз, и это служебное сообщение (уберётся при следующем /start)
