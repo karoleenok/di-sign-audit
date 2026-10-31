@@ -4,7 +4,7 @@ set -euo pipefail
 ENVF=/etc/di-sign-bot.env
 grep -q '^ADMIN_IDS="' "$ENVF" || sed -i 's/^ADMIN_IDS=\(.*\)$/ADMIN_IDS="\1"/' "$ENVF"
 set -a; . "$ENVF"; set +a
-KEY=$(head -c 24 /dev/urandom | base64 | tr -dc 'a-km-np-z2-9' | head -c 24)
+KEY=${RELAY_KEY_NEW:-$(head -c 24 /dev/urandom | base64 | tr -dc 'a-km-np-z2-9' | head -c 24)}
 echo
 echo "Ключ для моста (переменная RELAY_KEY):"
 echo
@@ -12,6 +12,7 @@ echo "    $KEY"
 echo
 read -r -p "Адрес второго моста (https://....deno.net или .deno.dev): " URL
 URL=${URL%/}
+case "$URL" in http*) ;; *) URL="https://$URL" ;; esac
 [ -n "$URL" ] || { echo "адрес пустой"; exit 1; }
 echo "проверяю мост..."
 R=$(curl -sS -m 25 -X POST -H "x-relay-key: $KEY" -H 'content-type: application/json' -d '{}' "$URL/bot$BOT_TOKEN/getMe" 2>&1) || true
