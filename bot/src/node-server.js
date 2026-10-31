@@ -25,8 +25,8 @@ await migrate(db);
 async function tgFetch(url, opts) {
   const isPoll = String(url).endsWith('/getUpdates');
   let last;
-  for (let i = 0; i < 3; i++) {
-    try { return await fetch(url, { ...opts, signal: AbortSignal.timeout(isPoll ? 40_000 : 25_000) }); }
+  for (let i = 0; i < (isPoll ? 1 : 3); i++) {
+    try { return await fetch(url, { ...opts, signal: AbortSignal.timeout(isPoll ? 9_000 : 25_000) }); }
     catch (e) {
       last = e;
       const code = e && e.cause && e.cause.code;
@@ -127,13 +127,13 @@ if (polling) {
     for (;;) {
       try {
         const ctx = ctxFor();
-        const ups = await ctx.tg.call('getUpdates', { offset, timeout: 25, allowed_updates: ['message', 'callback_query', 'my_chat_member'] });
+        const ups = await ctx.tg.call('getUpdates', { offset, timeout: Number(env.POLL_TIMEOUT) || 4, allowed_updates: ['message', 'callback_query', 'my_chat_member'] });
         for (const u of ups) {
           offset = u.update_id + 1;
           dispatch(u);
         }
         if (ups.length) await db.run(`INSERT INTO settings (key, value) VALUES ('poll_offset', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(offset)]);
-      } catch (e) { console.error('poll', e.message); await new Promise((r) => setTimeout(r, 2000)); }
+      } catch (e) { console.error('poll', e.message, e.cause && e.cause.code); await new Promise((r) => setTimeout(r, 500)); }
     }
   })();
 }
