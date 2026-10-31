@@ -83,41 +83,55 @@ assert.equal(fmtWhen(posts[3].run_at), '03.11.2026 19:00');
 step('админ: посты по дням (начинающим / продолжающим) и в дату, время и кнопки');
 
 // ---------- ученики ----------
+// проход входа после согласий: уровень (если не из аудита) → имя → контакт → отзыв → трек
+const pass = async (id, { level = 'start', track = 'mat', fb = null, email = null } = {}) => {
+  let u = await db.first('SELECT * FROM users WHERE tg_id = ?', [id]);
+  if (!u.level) await cb(id, 'lv:' + level);
+  await cb(id, 'n:ok');
+  await cb(id, 'ct:email'); await msg(id, email || `u${id}@mail.ru`);
+  if (fb) { await cb(id, 'fb:yes'); await msg(id, fb[0]); await msg(id, fb[1]); } else await cb(id, 'fb:no');
+  u = await db.first('SELECT * FROM users WHERE tg_id = ?', [id]);
+  if (!u.track) await cb(id, 'tr:' + track);
+};
 // 200: из теста, зона P, уровень start
 await msg(200, '/start audit_P_start');
 assert.match(lastText(200), /согласие/);
-const before = calls.length;
 await cb(200, 'c:pd');
+assert.match(lastText(200), /рекламная рассылка/, 'сразу после согласия на данные — согласие на рассылку');
+await cb(200, 'c:ads:1');
+assert.match(lastText(200), /Как к тебе обращаться\? Сейчас: U200/, 'уровень известен из аудита — сразу имя');
+const before = calls.length;
+await pass(200);
 const g = sentTo(200, before);
 assert.ok(g.some((c) => c.method === 'sendMediaGroup'), 'получил подарок-альбом');
-assert.match(lastText(200), /рекламная рассылка/);
-await cb(200, 'c:ads:1');
+assert.match(lastText(200), /предзаписи[\s\S]*Полезные материалы/, 'последним — расписание материалов');
 let u = await db.first('SELECT * FROM users WHERE tg_id = 200');
-assert.equal(u.status, 'active'); assert.equal(u.level, 'start'); assert.equal(u.zone, 'P');
-step('ученик из теста: согласие → подарок после теста → согласие на рассылку');
+assert.equal(u.status, 'active'); assert.equal(u.level, 'start'); assert.equal(u.zone, 'P'); assert.equal(u.track, 'mat'); assert.equal(u.email, 'u200@mail.ru'); assert.equal(u.contact_name, 'U200');
+step('ученик из теста: согласия → имя → почта → отзыв пропустил → трек → подарок → расписание');
 
-// 300: обычная ссылка, выбирает «продолжающий» и зону
+// 300: обычная ссылка, выбирает «продолжающий»
 await msg(300, '/start');
-await cb(300, 'c:pd');
+await cb(300, 'c:pd'); await cb(300, 'c:ads:1');
 assert.match(lastText(300), /Где ты сейчас/);
-await cb(300, 'lv:pro');
-const off = last(300, 2)[0];
-assert.match(off.body.text, /аудит-тест/, 'после уровня — предложение пройти тест');
-assert.equal(off.body.reply_markup.inline_keyboard[0][0].text, 'Пройти тест');
-assert.match(lastText(300), /рекламная рассылка/, 'зону в боте не спрашиваем');
-await cb(300, 'c:ads:1');
+{ const c0 = calls.length;
+  await pass(300, { level: 'pro' });
+  const off = sentTo(300, c0).find((c) => /аудит-тест/.test(c.body.text || ''));
+  assert.ok(off, 'не проходил тест — предложение пройти тест');
+  assert.equal(off.body.reply_markup.inline_keyboard[0][0].text, 'Пройти тест');
+  assert.match(lastText(300), /предзаписи/); }
 // прошёл тест и вернулся по ссылке из теста
 { const c0 = calls.length;
   await msg(300, '/start audit_S_pro');
   assert.ok(sentTo(300, c0).some((c) => c.method === 'sendMediaGroup'), 'после теста пришёл общий подарок (зона не важна)');
-  assert.match(sentTo(300, c0)[0].body.text, /аудит пройден/); }
+  assert.match(sentTo(300, c0)[0].body.text, /аудит пройден/);
+  assert.ok(!sentTo(300, c0).some((c) => /предзаписи|обращаться/.test(c.body.text || '')), 'повторно вход не спрашивает'); }
 u = await db.first('SELECT * FROM users WHERE tg_id = 300');
 assert.equal(u.zone, 'S'); assert.equal(u.status, 'active');
 // 400: отказался от рекламы
 await msg(400, '/start audit_V_free'); await cb(400, 'c:pd'); await cb(400, 'c:ads:0');
 u = await db.first('SELECT * FROM users WHERE tg_id = 400');
 assert.equal(u.status, 'stopped'); assert.equal(u.level, 'pro');
-step('обычный вход: уровень → кнопка «Пройти тест» → рассылка; после теста — подарок; отказ от рассылки');
+step('обычный вход: уровень → контакты → «Пройти тест» → расписание; после теста — подарок; отказ от рассылки');
 
 // ---------- расписание ----------
 const tickAt = async (when) => { NOW = parseWhen(when, NOW); const c0 = calls.length; const r = await tick(C(), 40); return { r, c: calls.slice(c0) }; };
@@ -137,7 +151,7 @@ assert.deepEqual(t.c.filter((c) => c.method.startsWith('send')).map((c) => c.bod
 step('лента: день 1 в 11:00 начинающим, день 2 в 19:30 продолжающим, пост в дату всем; без повторов');
 
 // новый человек после даты эфира не получает старый пост
-await msg(500, '/start audit_P_start'); await cb(500, 'c:pd'); await cb(500, 'c:ads:1');
+await msg(500, '/start audit_P_start'); await cb(500, 'c:pd'); await cb(500, 'c:ads:1'); await pass(500);
 t = await tickAt('03.11.2026 19:35');
 assert.equal(t.c.length, 0, 'опоздавшему старый эфир не приходит');
 step('опоздавшим старый пост в дату не уходит');
@@ -248,13 +262,13 @@ await cb(100, 't:e:askLevel');
 { const t = 'Привет, {имя}! На каком ты уровне? ✨'; const c0 = calls.length;
   await msg(100, t, { entities: [{ type: 'custom_emoji', offset: t.indexOf('✨'), length: 1, custom_emoji_id: '777' }] });
   assert.match(sentTo(100, c0).map((c) => c.body.text).join('|'), /Сохранено/); }
-await msg(700, '/start'); await cb(700, 'c:pd');
+await msg(700, '/start'); await cb(700, 'c:pd'); await cb(700, 'c:ads:1');
 const lvMsg = last(700)[0].body;
 assert.equal(lvMsg.text, 'Привет, друг! На каком ты уровне? ✨', 'ученик видит новый текст с подстановкой');
 assert.equal(lvMsg.entities[0].custom_emoji_id, '777', 'премиум-эмодзи сохранились');
 assert.equal(lvMsg.text.substr(lvMsg.entities[0].offset, 1), '✨');
 await cb(100, 't:r:askLevel');
-await msg(701, '/start'); await cb(701, 'c:pd');
+await msg(701, '/start'); await cb(701, 'c:pd'); await cb(701, 'c:ads:1');
 assert.equal(lastText(701), 'Где ты сейчас в дизайне?', 'вернули как было');
 step('тексты: правка в боте с подстановкой и премиум-эмодзи, возврат по умолчанию');
 
@@ -265,14 +279,14 @@ step('тексты: правка в боте с подстановкой и пр
   const idOf = (re) => { const c = calls.slice(c0).find((x) => x.method === 'sendMessage' && x.body.chat_id === 800 && re.test(x.body.text || '')); return c && c.res; };
   await msg(800, '/start');
   await cb(800, 'c:pd');
-  await cb(800, 'lv:start');
   await cb(800, 'c:ads:1');
+  await pass(800);
   const after = calls.slice(c0).filter((x) => x.body.chat_id === 800);
   const dels = after.filter((x) => x.method === 'deleteMessage').map((x) => x.body.message_id);
   const thanks = calls.slice(c0).find((x) => x.method === 'answerCallbackQuery' && x.body.text);
   assert.equal(thanks.body.text, 'Спасибо! ✅', '«спасибо» — всплывающим уведомлением, а не сообщением');
   assert.ok(!after.some((x) => x.method === 'sendMessage' && /^Спасибо/.test(x.body.text || '')), 'отдельного сообщения «Спасибо» нет');
-  assert.equal(dels.length, 4, 'убраны: /start, согласие, вопрос про уровень, вопрос про рассылку — ' + dels);
+  assert.ok(dels.length >= 7, 'убраны: /start, согласия, вопросы про уровень, имя, контакт, почту, отзыв, трек — ' + dels);
   const offer = after.find((x) => x.method === 'sendMessage' && /аудит-тест/.test(x.body.text || ''));
   assert.ok(offer, 'предложение теста осталось, пока тест не пройден');
   // вернулся из теста: предложение теста и прошлое приветствие уходят, /start тоже
@@ -331,7 +345,7 @@ step('профиль бота: описание до «Старт», корот�
   await cb(100, 't:e:askLevel');
   await msg(100, undefined, { photo: [{ file_id: 'LV' }], caption: 'Кто ты сейчас, {имя}?' });
   const c2 = calls.length;
-  await msg(901, '/start'); await cb(901, 'c:pd');
+  await msg(901, '/start'); await cb(901, 'c:pd'); await cb(901, 'c:ads:1');
   const lp = calls.slice(c2).find((c) => c.method === 'sendPhoto' && c.body.chat_id === 901 && c.body.photo === 'LV');
   assert.ok(lp && lp.body.reply_markup && /Кто ты сейчас/.test(lp.body.caption), 'вопрос про уровень — картинка с подписью и кнопками');
   await cb(100, 't:x:hello');
@@ -369,8 +383,9 @@ step('без дублей: двойной «Старт» игнорируетс�
   assert.equal(bubbles, real, 'перед каждым сообщением ровно один пузырёк');
   // уже прошёл весь путь: «Старт» → только приветствие, без пустого «печатает…»
   await handleUpdate(S(), { callback_query: { id: 'x1', from: { id: 970 }, data: 'c:pd', message: { message_id: 1, chat: { id: 970 } } } });
-  await handleUpdate(S(), { callback_query: { id: 'x2', from: { id: 970 }, data: 'lv:pro', message: { message_id: 1, chat: { id: 970 } } } });
   await handleUpdate(S(), { callback_query: { id: 'x3', from: { id: 970 }, data: 'c:ads:1', message: { message_id: 1, chat: { id: 970 } } } });
+  await handleUpdate(S(), { callback_query: { id: 'x2', from: { id: 970 }, data: 'lv:pro', message: { message_id: 1, chat: { id: 970 } } } });
+  await db.run(`UPDATE users SET contact_name = 'Аня', contact_at = 1, fb_skip = 1, track = 'mat', sched_at = 1 WHERE tg_id = 970`);
   await db.run(`UPDATE users SET zone = 'B' WHERE tg_id = 970`);
   await db.run(`INSERT INTO settings (key, value) VALUES ('nogift:970', '1') ON CONFLICT(key) DO NOTHING`);
   await db.run(`UPDATE posts SET status = 'paused' WHERE kind = 'gift'`);
@@ -389,7 +404,7 @@ step('«печатает…» в чате: пузырёк • → • • → �
   const tA = await ins({ title: 'Таймер 2ч', mode: 'timer', delay: 120 });
   const tB = await ins({ title: 'После таймера +1ч', mode: 'after', delay: 60, after: tA });
   // новый ученик подписался сейчас
-  await msg(1100, '/start'); await cb(1100, 'c:pd'); await cb(1100, 'lv:start'); await cb(1100, 'c:ads:1');
+  await msg(1100, '/start'); await cb(1100, 'c:pd'); await cb(1100, 'c:ads:1'); await pass(1100);
   const base = NOW;
   const got = () => calls.filter((c) => c.body.chat_id === 1100 && c.method === 'sendMessage' && /Таймер 2ч|После таймера/.test(c.body.text || '')).map((c) => c.body.text);
   NOW = base + 119 * 60; await tick(C(), 40);
@@ -507,7 +522,7 @@ step('путь ученика: пауза перед шагом и свои кн
 
   // ученик в рассылке получает развилку
   const U = 1300;
-  await msg(U, '/start'); await cb(U, 'c:pd'); await cb(U, 'lv:start'); await cb(U, 'c:ads:1');
+  await msg(U, '/start'); await cb(U, 'c:pd'); await cb(U, 'c:ads:1'); await pass(U);
   NOW += 120; const t0 = calls.length;
   await tick(C(), 40);
   const ask = calls.slice(t0).find((c) => c.body.chat_id === U && c.body.text === 'Кто ты?');
@@ -561,5 +576,68 @@ step('путь ученика: пауза перед шагом и свои кн
   await db.run(`UPDATE posts SET status = 'archived' WHERE id IN (?, ?, ?, ?, ?)`, [a1.id, a2.id, q.id, fol.id, saved.id]);
 }
 step('конструктор сценариев: посты-ответы, кнопки-выбор, цепочка после ответа, документы из панели, оплата-заглушка, #номер в чате');
+
+// ---------- вход: выбор из аудита, телефон, отзыв с бонусом, лента по треку ----------
+{
+  await db.run(`UPDATE posts SET status = 'paused' WHERE kind IN ('drip', 'date', 'gift')`);
+  const ins = async (o) => { await db.run(`INSERT INTO posts (title, kind, audience, track, mode, delay_min, day, send_time, status, text, created_at) VALUES (?, ?, 'all', ?, 'timer', ?, 0, '11:00', 'active', ?, ?)`, [o.t, o.kind || 'drip', o.track || 'all', o.delay || 0, o.t, NOW - 10]); return (await db.first('SELECT MAX(id) AS id FROM posts')).id; };
+  const pc = await ins({ t: 'Урок 1 мини-курса', track: 'course', delay: 60 });
+  const pm = await ins({ t: 'Гайд по шрифтам', track: 'mat', delay: 60 });
+  const pa = await ins({ t: 'Новости школы', track: 'all', delay: 60 });
+  const fbp = await ins({ t: 'Секретный урок 🤫', kind: 'fb' });
+  const U = 1400, from = (x = {}) => ({ id: U, first_name: 'Лиза', username: 'liza_d', ...x });
+  const m = (text, extra = {}) => handleUpdate(C(), { message: { message_id: mid++, from: from(), chat: { id: U, type: 'private' }, text, ...extra } });
+  await m('/start audit_P_start_course');
+  let u = await db.first('SELECT * FROM users WHERE tg_id = ?', [U]);
+  assert.equal(u.zone, 'P'); assert.equal(u.track, 'course', 'выбор «мини-курс» из аудита запомнился'); assert.equal(u.level, 'start');
+  await cb(U, 'c:pd'); await cb(U, 'c:ads:1');
+  // имя пишет сама
+  await m('Елизавета');
+  assert.equal((await db.first('SELECT contact_name FROM users WHERE tg_id = ?', [U])).contact_name, 'Елизавета');
+  const ask = calls.filter((c) => c.body.chat_id === U && /Как с тобой связаться/.test(c.body.text || '')).pop();
+  assert.deepEqual(ask.body.reply_markup.inline_keyboard.map((r) => r[0].callback_data), ['ct:tg', 'ct:phone', 'ct:email'], 'есть ник — можно оставить Telegram');
+  // телефон кнопкой «Отправить телефон»
+  await cb(U, 'ct:phone');
+  const kb2 = calls.filter((c) => c.body.chat_id === U && c.body.reply_markup && c.body.reply_markup.keyboard).pop();
+  assert.ok(kb2.body.reply_markup.keyboard[0][0].request_contact, 'кнопка внизу экрана «Отправить телефон»');
+  await m(undefined, { contact: { phone_number: '79001234567', user_id: 999 } });
+  assert.equal((await db.first('SELECT phone FROM users WHERE tg_id = ?', [U])).phone, null, 'чужой контакт не принимаем');
+  await m(undefined, { contact: { phone_number: '79001234567', user_id: U } });
+  u = await db.first('SELECT * FROM users WHERE tg_id = ?', [U]);
+  assert.equal(u.phone, '+79001234567'); assert.ok(u.contact_at);
+  assert.ok(calls.some((c) => c.body.chat_id === U && c.body.reply_markup && c.body.reply_markup.remove_keyboard), 'кнопку телефона убрали');
+  // отзыв о кабинете → бонус → админам уведомление
+  assert.match(lastText(U), /прототип[\s\S]*kabinet/i);
+  const f0 = calls.length;
+  await cb(U, 'fb:yes'); await m('Карта кампуса и такса!'); await m('Добавить тёмную тему');
+  u = await db.first('SELECT * FROM users WHERE tg_id = ?', [U]);
+  assert.equal(u.fb_like, 'Карта кампуса и такса!'); assert.equal(u.fb_improve, 'Добавить тёмную тему'); assert.ok(u.fb_at);
+  const after = calls.slice(f0);
+  assert.ok(after.some((c) => c.body.chat_id === U && c.body.text === 'Секретный урок 🤫'), 'пришёл бонус за отзыв');
+  const note = after.find((c) => c.body.chat_id === 100 && /Новый отзыв/.test(c.body.text || ''));
+  assert.ok(note && /Елизавета · @liza_d · \+79001234567/.test(note.body.text) && /тёмную тему/.test(note.body.text), 'админу пришёл отзыв с контактом');
+  // трек уже выбран в аудите — не спрашиваем; дальше подарок и расписание мини-курса
+  assert.ok(!after.some((c) => c.body.chat_id === U && /Что тебе ближе/.test(c.body.text || '')), 'трек не спрашиваем повторно');
+  assert.match(lastText(U), /Мини-курс приходит сюда/);
+  u = await db.first('SELECT * FROM users WHERE tg_id = ?', [U]);
+  assert.equal(u.status, 'active'); assert.ok(u.joined_at && u.sched_at);
+  // лента по треку
+  NOW += 61 * 60; const t0 = calls.length;
+  await tick(C(), 40);
+  const got = calls.slice(t0).filter((c) => c.body.chat_id === U && c.method === 'sendMessage').map((c) => c.body.text);
+  assert.ok(got.includes('Урок 1 мини-курса') && got.includes('Новости школы') && !got.includes('Гайд по шрифтам'), 'выбрал мини-курс — получает курс и общее, без материалов: ' + got);
+  // повторный отзыв не просим, бонус не дублируем
+  const r0 = calls.length; NOW += 10; await m('/start');
+  assert.ok(!calls.slice(r0).some((c) => c.body.chat_id === U && /Секретный урок|прототип|обращаться/.test(c.body.text || '')), 'вход повторно не спрашивает');
+  // почта с ошибкой и без отзыва — материалы
+  const V = 1401;
+  await msg(V, '/start audit_top_pro_month'); await cb(V, 'c:pd'); await cb(V, 'c:ads:1'); await cb(V, 'n:ok'); await cb(V, 'ct:email');
+  await msg(V, 'мояпочта'); assert.match(lastText(V), /ошибка/);
+  await msg(V, 'Liza@Mail.ru'); await cb(V, 'fb:no');
+  const v = await db.first('SELECT * FROM users WHERE tg_id = ?', [V]);
+  assert.equal(v.email, 'liza@mail.ru'); assert.equal(v.track, 'mat'); assert.equal(v.fb_skip, 1); assert.match(lastText(V), /Полезные материалы приходят сюда/);
+  await db.run(`UPDATE posts SET status = 'archived' WHERE id IN (?, ?, ?, ?)`, [pc, pm, pa, fbp]);
+}
+step('вход: выбор из аудита (мини-курс/материалы), имя, телефон кнопкой или почта, отзыв о кабинете → бонус и уведомление админу, лента по треку');
 
 console.log('\nВсе сценарии прошли. Запросов к фейковому Telegram:', calls.length);

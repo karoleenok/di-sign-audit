@@ -3,7 +3,7 @@
 // (так подделать вход нельзя) и что человек — админ.
 import { isAdmin } from './admin.js';
 import { AUD, LEVELS } from './texts.js';
-import { sendPost, audienceCount, loadDocs, DOCS } from './posts.js';
+import { sendPost, audienceCount, loadDocs, DOCS, TRACKS } from './posts.js';
 import { mdToEntities, entitiesToMd } from './fmt.js';
 import { runPreview, startFastRun, stopRuns, stepRuns, activeRun } from './testrun.js';
 import { onStart, docVars } from './users.js';
@@ -46,7 +46,7 @@ function postOut(p, sent, clicks) {
   const f = entitiesToMd(p.text || '', j(p.entities, []));
   return {
     id: p.id, kind: p.kind, status: p.status, title: p.title || '', text: (p.text || '').slice(0, 400),
-    md: f.md, rich: f.rich, once: !!p.once, files: media,
+    md: f.md, rich: f.rich, once: !!p.once, files: media, track: p.track || 'all',
     day: p.day, time: p.send_time, mode: p.mode || 'day', delay: p.delay_min || 0, after: p.after_id || null, run_at: p.run_at, audience: p.audience, catchup: !!p.catchup, pos: p.pos || 0,
     media: media.map((m) => m.type), buttons: j(p.buttons, []).flat().map((b) => b.text), rows: j(p.buttons, []),
     emoji: j(p.entities, []).some((e) => e.type === 'custom_emoji'), sent: sent || 0, clicks: clicks || 0,
@@ -127,7 +127,8 @@ export async function handlePanelApi(ctx, request, url) {
       audiences: AUD, levels: LEVELS,
       posts: posts.map((p) => postOut(p, sent[p.id], clicks[p.id])),
       msgs: await listMsgs(ctx),
-      docs: await loadDocs(ctx), docNames: DOCS,
+      docs: await loadDocs(ctx), docNames: DOCS, tracks: TRACKS,
+      fbCount: ((await ctx.db.first(`SELECT COUNT(*) AS n FROM users WHERE fb_at IS NOT NULL`)) || {}).n || 0,
       people: { all: people.n || 0, active: people.active || 0 },
       run: await activeRun(ctx.db, user.id),
     });
@@ -177,6 +178,7 @@ export async function handlePanelApi(ctx, request, url) {
       put('buttons', r.rows.length ? JSON.stringify(r.rows) : null);
     }
     if (body.once !== undefined) put('once', body.once ? 1 : 0);
+    if (body.track !== undefined) { if (!TRACKS[body.track]) return json({ error: 'Неизвестный трек' }, 400); put('track', body.track); }
     if (body.md !== undefined) {
       const f = mdToEntities(body.md);
       if (f.text.length > 4096) return json({ error: 'Текст длиннее 4096 знаков — Telegram не примет' }, 400);
@@ -201,7 +203,7 @@ export async function handlePanelApi(ctx, request, url) {
   // новый пост прямо из панели
   if (path === '/post/new' && request.method === 'POST') {
     const kind = body.kind;
-    if (!['drip', 'date', 'gift', 'node'].includes(kind)) return json({ error: 'Выбери, когда уходит пост' }, 400);
+    if (!['drip', 'date', 'gift', 'node', 'fb'].includes(kind)) return json({ error: 'Выбери, когда уходит пост' }, 400);
     const f = mdToEntities(body.md || '');
     const files = cleanFiles(body.files || []);
     if (files.error) return json({ error: files.error }, 400);
@@ -221,6 +223,7 @@ export async function handlePanelApi(ctx, request, url) {
         kind === 'date' ? (Number(body.run_at) || null) : null, body.catchup ? 1 : 0, status, f.text, JSON.stringify(f.entities), JSON.stringify(files.files),
         user.id, ctx.now, kind === 'drip' ? mode : 'day', Math.max(0, parseInt(body.delay_min, 10) || 0), parseInt(body.after_id, 10) || null, body.once ? 1 : 0]);
     const row = await ctx.db.first(`SELECT * FROM posts WHERE created_by = ? ORDER BY id DESC LIMIT 1`, [user.id]);
+    if (TRACKS[body.track] && body.track !== 'all') await ctx.db.run(`UPDATE posts SET track = ? WHERE id = ?`, [body.track, row.id]);
     if (body.rows) {
       const r = await cleanButtons(ctx, body.rows, row.id);
       if (r.error) { await ctx.db.run(`UPDATE posts SET status = 'draft' WHERE id = ?`, [row.id]); return json({ error: r.error, post: postOut(row) }, 400); }
@@ -228,6 +231,13 @@ export async function handlePanelApi(ctx, request, url) {
     }
     const np = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [row.id]);
     return json({ ok: true, post: postOut(np), reach: await audienceCount(ctx.db, np) });
+  }
+
+  // люди: контакты, выбор из аудита, отзывы о кабинете (последние 200)
+  if (path === '/people') {
+    const rows = await ctx.db.all(`SELECT tg_id, first_name, username, contact_name, phone, email, level, zone, track, status, fb_like, fb_improve, fb_at, created_at, sched_at FROM users ORDER BY COALESCE(fb_at, 0) DESC, created_at DESC LIMIT 200`);
+    const n = await ctx.db.first(`SELECT COUNT(*) AS all_n, SUM(CASE WHEN sched_at IS NOT NULL THEN 1 ELSE 0 END) AS done, SUM(CASE WHEN track = 'course' THEN 1 ELSE 0 END) AS course, SUM(CASE WHEN track = 'mat' THEN 1 ELSE 0 END) AS mat, SUM(CASE WHEN fb_at IS NOT NULL THEN 1 ELSE 0 END) AS fb FROM users`);
+    return json({ people: rows, totals: n });
   }
 
   // ссылки на документы (политика, согласие, оферта) и данные владельца
@@ -278,10 +288,10 @@ export async function handlePanelApi(ctx, request, url) {
   if (path === '/run/onboarding' && request.method === 'POST') {
     const id = user.id;
     for (const t of ['users', 'consents', 'states']) await ctx.db.run(`DELETE FROM ${t} WHERE tg_id = ?`, [id]);
-    await ctx.db.run(`DELETE FROM deliveries WHERE tg_id = ? AND post_id IN (SELECT id FROM posts WHERE kind = 'gift')`, [id]);
+    await ctx.db.run(`DELETE FROM deliveries WHERE tg_id = ? AND post_id IN (SELECT id FROM posts WHERE kind IN ('gift', 'fb', 'node'))`, [id]);
     await ctx.db.run(`DELETE FROM settings WHERE key = ? OR key LIKE ?`, ['nogift:' + id, 'start:' + id + ':%']);
     await ctx.tg.call('sendMessage', { chat_id: id, text: '🧪 Проходим путь ученика заново' + (body.fromTest ? ' — как будто ты пришла из теста.' : ' — как будто ты пришла без теста.') + ' Твоя анкета сброшена, ответь на вопросы бота.', disable_notification: true }).catch(() => {});
-    const job = onStart(ctx, { from: { id, first_name: user.first_name }, message_id: 0 }, body.fromTest ? 'audit_P_' + (body.level === 'pro' ? 'pro' : 'start') : '').catch((e) => console.log('onboarding', e && e.stack));
+    const job = onStart(ctx, { from: { id, first_name: user.first_name, username: user.username }, message_id: 0 }, body.fromTest ? 'audit_P_' + (body.level === 'pro' ? 'pro' : 'start') + (body.track === 'course' ? '_course' : body.track === 'mat' ? '_month' : '') : '').catch((e) => console.log('onboarding', e && e.stack));
     if (ctx.waitUntil) ctx.waitUntil(job); else await job;
     return json({ ok: true });
   }

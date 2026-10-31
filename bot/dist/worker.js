@@ -109,6 +109,22 @@ var MIGRATIONS = [
   //     «кнопки-выбор»: после нажатия под постом остаётся только выбранная
   [
     `ALTER TABLE posts ADD COLUMN once INTEGER NOT NULL DEFAULT 0`
+  ],
+  // v6: вход в бота — выбор из аудита (мини-курс или материалы), имя и контакт, отзыв о кабинете;
+  //     посты по треку (всем / мини-курс / материалы); kind = 'fb' — бонус за отзыв
+  [
+    `ALTER TABLE users ADD COLUMN track TEXT`,
+    `ALTER TABLE users ADD COLUMN contact_name TEXT`,
+    `ALTER TABLE users ADD COLUMN phone TEXT`,
+    `ALTER TABLE users ADD COLUMN email TEXT`,
+    `ALTER TABLE users ADD COLUMN contact_at INTEGER`,
+    `ALTER TABLE users ADD COLUMN fb_like TEXT`,
+    `ALTER TABLE users ADD COLUMN fb_improve TEXT`,
+    `ALTER TABLE users ADD COLUMN fb_at INTEGER`,
+    `ALTER TABLE users ADD COLUMN fb_skip INTEGER`,
+    `ALTER TABLE users ADD COLUMN test_offered INTEGER`,
+    `ALTER TABLE users ADD COLUMN sched_at INTEGER`,
+    `ALTER TABLE posts ADD COLUMN track TEXT NOT NULL DEFAULT 'all'`
   ]
 ];
 var checked = false;
@@ -308,6 +324,9 @@ var MSG_GROUPS = [
   ["level", "🎚 Уровень"],
   ["test", "🧪 Аудит-тест и подарок"],
   ["ads", "📬 Согласие на рассылку"],
+  ["contact", "📇 Имя и контакт"],
+  ["fb", "💬 Отзыв о кабинете"],
+  ["track", "🎓 Мини-курс или материалы"],
   ["cmd", "⚙️ Команды ученика"],
   ["profile", "🤖 Профиль бота и меню команд"]
 ];
@@ -327,7 +346,7 @@ var MSG = {
   consentPd: [
     "consent",
     "Просьба о согласии на обработку данных",
-    "Чтобы присылать материалы, нам нужно твоё согласие на обработку персональных данных (имя и id в Telegram, ответы на вопросы бота).\n\nПолитика обработки данных: {политика}\nТекст согласия: {согласие}",
+    "Чтобы присылать материалы, нам нужно твоё согласие на обработку персональных данных: имя, ник и id в Telegram, телефон или почта (если оставишь), ответы на вопросы бота и отзывы.\n\nПолитика обработки данных: {политика}\nТекст согласия: {согласие}",
     ["политика", "согласие"]
   ],
   consentPdBtn: ["consent", "Кнопка согласия", "Даю согласие", [], true],
@@ -352,7 +371,56 @@ var MSG = {
   ],
   consentAdsYes: ["ads", "Кнопка «да»", "Да, присылай", [], true],
   consentAdsNo: ["ads", "Кнопка «нет»", "Нет, спасибо", [], true],
-  adsYes: ["ads", "Ответ на «да»", "Готово! Материалы будут приходить сюда ✨", []],
+  adsYes: ["ads", "Ответ на «да» (если вход уже пройден)", "Готово! Материалы будут приходить сюда ✨", []],
+  askName: [
+    "contact",
+    "Как обращаться",
+    "Как к тебе обращаться? Сейчас: {имя}.\n\nЕсли верно — жми кнопку. Если нет — напиши имя сообщением.",
+    ["имя"]
+  ],
+  nameOk: ["contact", "Кнопка «имя верно»", "Всё верно", [], true],
+  askContact: [
+    "contact",
+    "Как связаться",
+    "Как с тобой связаться, если понадобится? Например, чтобы напомнить про старт потока или ответить на вопрос. Выбери удобный способ 👇",
+    []
+  ],
+  contactTg: ["contact", "Кнопка «пишите в Telegram»", "Пишите в Telegram", [], true],
+  contactPhone: ["contact", "Кнопка «телефон»", "📱 Оставить телефон", [], true],
+  contactEmail: ["contact", "Кнопка «почта»", "✉️ Оставить почту", [], true],
+  askPhone: ["contact", "Просьба отправить телефон", "Нажми кнопку «Отправить телефон» внизу экрана 👇 Или напиши номер сообщением.", []],
+  phoneBtn: ["contact", "Кнопка внизу «Отправить телефон»", "Отправить телефон", [], true],
+  askEmail: ["contact", "Просьба написать почту", "Напиши почту одним сообщением 👇", []],
+  badEmail: ["contact", "Если почта с ошибкой", "Кажется, в почте ошибка. Пример: name@mail.ru", []],
+  badPhone: ["contact", "Если телефон с ошибкой", "Кажется, в номере ошибка. Пример: +7 900 123-45-67", []],
+  contactSaved: ["contact", "Контакт записан (всплывашка)", "Записали ✓", []],
+  fbOffer: [
+    "fb",
+    "Предложение оставить отзыв",
+    "Хочешь помочь нам сделать личный кабинет лучше? 🐾\n\nПосмотри прототип и ответь на 2 коротких вопроса — за это пришлём секретный урок.\n\nПрототип кабинета: {кабинет}",
+    ["кабинет"]
+  ],
+  fbYes: ["fb", "Кнопка «ответить»", "Ответить на 2 вопроса", [], true],
+  fbNo: ["fb", "Кнопка «пропустить»", "Пропустить", [], true],
+  fbQ1: ["fb", "Вопрос 1", "Что в кабинете понравилось больше всего?", []],
+  fbQ2: ["fb", "Вопрос 2", "А что хотелось бы улучшить или добавить?", []],
+  fbThanks: ["fb", "Спасибо за отзыв", "Спасибо! Это правда помогает нам 🐾 Лови бонус 👇", []],
+  fbNoBonus: ["fb", "Если бонус ещё не загружен", "Бонус скоро появится здесь 🎁", []],
+  askTrack: ["track", "Мини-курс или материалы", "Что тебе ближе?", []],
+  trackCourse: ["track", "Кнопка «мини-курс»", "Бесплатный мини-курс", [], true],
+  trackMat: ["track", "Кнопка «материалы»", "Полезные материалы", [], true],
+  schedCourse: [
+    "track",
+    "Расписание мини-курса (последний шаг входа)",
+    "Готово, ты в списке предзаписи 🐾\n\nМини-курс приходит сюда, в бот: 12 материалов за неделю — по уроку каждый день в 11:00.\n\n1–3 · Добро пожаловать в мир дизайна\n4–6 · Уверенно сразу к делу\n7–9 · Повяжите бантик и готово\n10–12 · Сикрет-бокс\n\nПервый урок — совсем скоро.",
+    []
+  ],
+  schedMat: [
+    "track",
+    "Расписание материалов (последний шаг входа)",
+    "Готово, ты в списке предзаписи 🐾\n\nПолезные материалы приходят сюда, в бот: гайды, чек-листы и шаблоны — новый материал каждые пару дней в 11:00, от шрифтов до продаж.\n\nПервый — совсем скоро.",
+    []
+  ],
   adsNo: ["ads", "Ответ на «нет»", "Хорошо, рассылки не будет. Если передумаешь — /start.", []],
   buttonsArrow: ["ads", "Подпись над кнопками под альбомом", "👇", []],
   stopped: ["cmd", "/stop — отписка", "Рассылка отключена. Вернуться: /start.", []],
@@ -399,7 +467,7 @@ async function loadMsgs(ctx) {
   ctx._msgx = x;
   return o;
 }
-var DEFAULT_DELAY = { hello: 0.6, helloTest: 0.6, consentPd: 0.9, askLevel: 0.7, testOffer: 0.8, noGift: 0.8, consentAds: 1.2, adsYes: 0.5, adsNo: 0.5, levelChanged: 0.5 };
+var DEFAULT_DELAY = { hello: 0.6, helloTest: 0.6, consentPd: 0.9, askLevel: 0.7, testOffer: 0.8, noGift: 0.8, consentAds: 1, adsYes: 0.5, adsNo: 0.5, levelChanged: 0.5, askName: 0.7, askContact: 0.7, askPhone: 0.4, askEmail: 0.4, fbOffer: 0.9, fbQ1: 0.5, fbQ2: 0.6, fbThanks: 0.6, askTrack: 0.7, schedCourse: 0.9, schedMat: 0.9 };
 async function extraOf(ctx, key) {
   await loadMsgs(ctx);
   return ctx._msgx && ctx._msgx[key] || {};
@@ -608,6 +676,7 @@ var j = (s, d) => {
     return d;
   }
 };
+var TRACKS = { all: "всем", course: "мини-курс", mat: "материалы" };
 var DOCS = { policy: "Политика обработки данных", consent: "Согласие на обработку данных", offer: "Оферта" };
 function keyboard(post, uid, publicUrl, docs) {
   const rows = j(post.buttons, []);
@@ -677,6 +746,10 @@ function audienceSql(post) {
   const p = [];
   if (post.audience === "start") c += ` AND u.level = 'start'`;
   else if (post.audience === "pro") c += ` AND u.level = 'pro'`;
+  if (post.track === "course" || post.track === "mat") {
+    c += ` AND u.track = ?`;
+    p.push(post.track);
+  }
   return { c, p };
 }
 var BASE = `u.status = 'active' AND u.consent_ads_at IS NOT NULL AND u.joined_at IS NOT NULL AND u.paid_at IS NULL`;
@@ -730,6 +803,7 @@ function postLabel(p) {
 function postWhen(p) {
   if (p.kind === "gift") return "подарок после теста";
   if (p.kind === "node") return "по нажатию кнопки";
+  if (p.kind === "fb") return "бонус за отзыв о кабинете";
   if (p.kind === "date") return p.run_at ? `дата ${fmtWhen(p.run_at)}` : "дата не задана";
   if (p.mode === "timer") return `через ${fmtDelay(p.delay_min)} после входа`;
   if (p.mode === "after") return `через ${fmtDelay(p.delay_min)} после поста #${p.after_id}`;
@@ -1679,12 +1753,13 @@ async function panelLink(ctx, id) {
 // src/users.js
 var CONSENT_VERSION = "v1";
 function parseStart(payload) {
-  const out = { source: payload || null, zone: null, levelRaw: null };
-  const m = /^audit_([A-Za-z]+)_([a-z]+)$/.exec(payload || "");
+  const out = { source: payload || null, zone: null, levelRaw: null, track: null };
+  const m = /^audit_([A-Za-z]+)_([a-z]+)(?:_(course|month))?$/.exec(payload || "");
   if (m) {
     const z = m[1] === "top" ? "top" : m[1].toUpperCase();
     if (ZONES[z]) out.zone = z;
     if (["start", "free", "pro"].includes(m[2])) out.levelRaw = m[2];
+    if (m[3]) out.track = m[3] === "course" ? "course" : "mat";
   }
   return out;
 }
@@ -1783,19 +1858,20 @@ async function onStart(ctx, msg2, payload) {
   let u = await getUser(ctx, from.id);
   if (!u) {
     await ctx.db.run(
-      `INSERT INTO users (tg_id, first_name, username, level_raw, level, zone, source, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'new', ?)`,
-      [from.id, from.first_name || null, from.username || null, st.levelRaw, normLevel(st.levelRaw), st.zone, st.source, ctx.now]
+      `INSERT INTO users (tg_id, first_name, username, level_raw, level, zone, source, track, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)`,
+      [from.id, from.first_name || null, from.username || null, st.levelRaw, normLevel(st.levelRaw), st.zone, st.source, st.track, ctx.now]
     );
   } else {
-    if (st.zone || st.levelRaw) {
+    if (st.zone || st.levelRaw || st.track) {
       await ctx.db.run(
-        `UPDATE users SET zone = COALESCE(?, zone), level_raw = COALESCE(?, level_raw), level = COALESCE(?, level), source = COALESCE(?, source) WHERE tg_id = ?`,
-        [st.zone, st.levelRaw, normLevel(st.levelRaw), st.source, from.id]
+        `UPDATE users SET zone = COALESCE(?, zone), level_raw = COALESCE(?, level_raw), level = COALESCE(?, level), source = COALESCE(?, source), track = COALESCE(?, track), username = COALESCE(?, username) WHERE tg_id = ?`,
+        [st.zone, st.levelRaw, normLevel(st.levelRaw), st.source, st.track, from.username || null, from.id]
       );
     }
     if (u.status === "stopped" || u.status === "blocked") await ctx.db.run(`UPDATE users SET status = 'new' WHERE tg_id = ?`, [from.id]);
   }
   await delMsg(ctx, from.id, msg2.message_id);
+  await setUState(ctx, from.id, null);
   await cleanAll(ctx, from.id);
   u = await getUser(ctx, from.id);
   const name = from.first_name || "друг";
@@ -1812,34 +1888,168 @@ async function nextStep(ctx, u) {
       reply_markup: kb2([[{ text: await btn(ctx, "consentPdBtn"), callback_data: "c:pd" }]])
     }));
   }
-  if (!u.level) {
-    await pauseFor(ctx, id, "askLevel");
-    return askLevel(ctx, id);
-  }
-  if (!u.zone) {
-    const url = ctx.env.TEST_URL;
-    await pauseFor(ctx, id, "testOffer");
-    await tech(ctx, id, say(ctx, id, "testOffer", {}, url ? { reply_markup: kb2([[{ text: await btn(ctx, "testBtn"), url }]]) } : {}));
-  } else {
-    await sendGift(ctx, u, await delayOf(ctx, "noGift") * 1e3);
-  }
-  if (!u.consent_ads_at && u.status !== "stopped") {
+  if (!u.consent_ads_at) {
+    if (u.status === "stopped") return;
     await pauseFor(ctx, id, "consentAds");
     return tech(ctx, id, say(ctx, id, "consentAds", {}, {
       reply_markup: kb2([[{ text: await btn(ctx, "consentAdsYes"), callback_data: "c:ads:1" }, { text: await btn(ctx, "consentAdsNo"), callback_data: "c:ads:0" }]])
     }));
   }
-  if (u.consent_ads_at && u.status !== "active") {
+  if (!u.level) {
+    await pauseFor(ctx, id, "askLevel");
+    return askLevel(ctx, id);
+  }
+  if (!u.contact_name) {
+    await pauseFor(ctx, id, "askName");
+    await setUState(ctx, id, "u:name");
+    return tech(ctx, id, say(ctx, id, "askName", { имя: u.first_name || "друг" }, { reply_markup: kb2([[{ text: await btn(ctx, "nameOk"), callback_data: "n:ok" }]]) }));
+  }
+  if (!u.contact_at) return askContact(ctx, u);
+  if (!u.fb_at && !u.fb_skip) {
+    await pauseFor(ctx, id, "fbOffer");
+    return tech(ctx, id, say(ctx, id, "fbOffer", { кабинет: ctx.env.KABINET_URL || "https://karoleenok.github.io/di-sign-audit/kabinet/" }, {
+      reply_markup: kb2([[{ text: await btn(ctx, "fbYes"), callback_data: "fb:yes" }], [{ text: await btn(ctx, "fbNo"), callback_data: "fb:no" }]])
+    }));
+  }
+  if (!u.track) {
+    await pauseFor(ctx, id, "askTrack");
+    return tech(ctx, id, say(ctx, id, "askTrack", {}, {
+      reply_markup: kb2([[{ text: await btn(ctx, "trackCourse"), callback_data: "tr:course" }], [{ text: await btn(ctx, "trackMat"), callback_data: "tr:mat" }]])
+    }));
+  }
+  if (!u.zone) {
+    const url = ctx.env.TEST_URL;
+    if (!u.test_offered) {
+      await ctx.db.run(`UPDATE users SET test_offered = 1 WHERE tg_id = ?`, [id]);
+      await pauseFor(ctx, id, "testOffer");
+      await tech(ctx, id, say(ctx, id, "testOffer", {}, url ? { reply_markup: kb2([[{ text: await btn(ctx, "testBtn"), url }]]) } : {}));
+    }
+  } else {
+    await sendGift(ctx, u, await delayOf(ctx, "noGift") * 1e3);
+  }
+  if (!u.sched_at) {
+    const key = u.track === "course" ? "schedCourse" : "schedMat";
+    await pauseFor(ctx, id, key);
+    await say(ctx, id, key, {});
+    await ctx.db.run(`UPDATE users SET sched_at = ?, status = 'active', joined_at = COALESCE(joined_at, ?) WHERE tg_id = ?`, [ctx.now, ctx.now, id]);
+  } else if (u.status !== "active") {
     await ctx.db.run(`UPDATE users SET status = 'active', joined_at = COALESCE(joined_at, ?) WHERE tg_id = ?`, [ctx.now, id]);
   }
+}
+async function askContact(ctx, u) {
+  const id = u.tg_id;
+  await pauseFor(ctx, id, "askContact");
+  const rows = [];
+  if (u.username) rows.push([{ text: await btn(ctx, "contactTg") + " · @" + u.username, callback_data: "ct:tg" }]);
+  rows.push([{ text: await btn(ctx, "contactPhone"), callback_data: "ct:phone" }], [{ text: await btn(ctx, "contactEmail"), callback_data: "ct:email" }]);
+  return tech(ctx, id, say(ctx, id, "askContact", {}, { reply_markup: kb2(rows) }));
+}
+async function getUState(ctx, id) {
+  const r = await ctx.db.first(`SELECT state FROM states WHERE tg_id = ?`, [id]);
+  return r && r.state && r.state.startsWith("u:") ? r.state : null;
+}
+async function setUState(ctx, id, state) {
+  if (!state) {
+    await ctx.db.run(`DELETE FROM states WHERE tg_id = ? AND state LIKE 'u:%'`, [id]);
+    return;
+  }
+  await ctx.db.run(`INSERT INTO states (tg_id, state, data, updated_at) VALUES (?, ?, NULL, ?) ON CONFLICT(tg_id) DO UPDATE SET state = excluded.state, data = NULL, updated_at = excluded.updated_at`, [id, state, ctx.now]);
+}
+var removeKb = { remove_keyboard: true };
+async function onUserText(ctx, msg2, state) {
+  const id = msg2.from.id;
+  const u = await getUser(ctx, id);
+  if (!u) {
+    await setUState(ctx, id, null);
+    return say(ctx, id, "needStart");
+  }
+  const txt = String(msg2.text || "").trim();
+  if (state === "u:name") {
+    if (!txt) return;
+    await ctx.db.run(`UPDATE users SET contact_name = ? WHERE tg_id = ?`, [txt.replace(/\s+/g, " ").slice(0, 60), id]);
+    await setUState(ctx, id, null);
+    await cleanAll(ctx, id);
+    return nextStep(ctx, await getUser(ctx, id));
+  }
+  if (state === "u:phone") {
+    let phone = null;
+    if (msg2.contact) {
+      if (msg2.contact.user_id && msg2.contact.user_id !== id) return say(ctx, id, "badPhone");
+      phone = msg2.contact.phone_number;
+    } else {
+      const d = txt.replace(/[^\d+]/g, "");
+      if (/^\+?\d{10,15}$/.test(d)) phone = d;
+    }
+    if (!phone) return tech(ctx, id, say(ctx, id, "badPhone"));
+    phone = phone.startsWith("+") ? phone : "+" + phone.replace(/^8(?=\d{10}$)/, "7");
+    await ctx.db.run(`UPDATE users SET phone = ?, contact_at = ? WHERE tg_id = ?`, [phone, ctx.now, id]);
+    await setUState(ctx, id, null);
+    const m = await ctx.tg.call("sendMessage", { chat_id: id, text: (await msg(ctx, "contactSaved")).text, reply_markup: removeKb, disable_notification: true }).catch(() => null);
+    if (m) await tech(ctx, id, Promise.resolve(m));
+    await cleanAll(ctx, id);
+    return nextStep(ctx, await getUser(ctx, id));
+  }
+  if (state === "u:email") {
+    const e = txt.toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e) || e.length > 120) return tech(ctx, id, say(ctx, id, "badEmail"));
+    await ctx.db.run(`UPDATE users SET email = ?, contact_at = ? WHERE tg_id = ?`, [e, ctx.now, id]);
+    await setUState(ctx, id, null);
+    await cleanAll(ctx, id);
+    return nextStep(ctx, await getUser(ctx, id));
+  }
+  if (state === "u:fb1") {
+    if (!txt) return;
+    await ctx.db.run(`UPDATE users SET fb_like = ? WHERE tg_id = ?`, [txt.slice(0, 1500), id]);
+    await setUState(ctx, id, "u:fb2");
+    await pauseFor(ctx, id, "fbQ2");
+    return tech(ctx, id, say(ctx, id, "fbQ2"));
+  }
+  if (state === "u:fb2") {
+    if (!txt) return;
+    await ctx.db.run(`UPDATE users SET fb_improve = ?, fb_at = ? WHERE tg_id = ?`, [txt.slice(0, 1500), ctx.now, id]);
+    await setUState(ctx, id, null);
+    await cleanAll(ctx, id);
+    await pauseFor(ctx, id, "fbThanks");
+    await sendFbBonus(ctx, await getUser(ctx, id));
+    await notifyAdmins(ctx, await getUser(ctx, id));
+    return nextStep(ctx, await getUser(ctx, id));
+  }
+}
+async function sendFbBonus(ctx, u) {
+  const posts = await ctx.db.all(`SELECT * FROM posts WHERE kind = 'fb' AND status = 'active' AND NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.post_id = posts.id AND d.tg_id = ?) ORDER BY pos, id`, [u.tg_id]);
+  if (!posts.length) {
+    await say(ctx, u.tg_id, "fbNoBonus");
+    return;
+  }
+  await say(ctx, u.tg_id, "fbThanks", { имя: u.contact_name || u.first_name || "" });
+  const docs = await loadDocs(ctx);
+  for (const p of posts) {
+    await sendPost(ctx.tg, u.tg_id, p, { uid: u.tg_id, publicUrl: ctx.publicUrl, arrow: await btn(ctx, "buttonsArrow"), docs });
+    await recordDeliveries(ctx.db, p.id, [{ tg_id: u.tg_id, ok: true }], ctx.now);
+  }
+}
+async function notifyAdmins(ctx, u) {
+  const ids = /* @__PURE__ */ new Set([...String(ctx.env.ADMIN_IDS || "").split(/[\s,;]+/).filter(Boolean).map(Number), ...(await ctx.db.all(`SELECT tg_id FROM admins`)).map((r) => r.tg_id)]);
+  const who = (u.contact_name || u.first_name || "без имени") + (u.username ? " · @" + u.username : "") + (u.phone ? " · " + u.phone : "") + (u.email ? " · " + u.email : "");
+  const text = `💬 Новый отзыв о кабинете
+${who}
+
+👍 Понравилось:
+${u.fb_like || "—"}
+
+🛠 Улучшить:
+${u.fb_improve || "—"}`;
+  for (const a of ids) if (a !== u.tg_id) await ctx.tg.call("sendMessage", { chat_id: a, text: text.slice(0, 4e3), disable_notification: true }).catch(() => {
+  });
 }
 async function sendGift(ctx, u, pauseMs) {
   const gifts = await ctx.db.all(
     `SELECT * FROM posts WHERE kind = 'gift' AND status = 'active'
        AND (audience = 'all' OR audience = ?)
+       AND (track = 'all' OR track = ?)
        AND NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.post_id = posts.id AND d.tg_id = ?)
      ORDER BY id`,
-    [u.level || "all", u.tg_id]
+    [u.level || "all", u.track || "all", u.tg_id]
   );
   if (!gifts.length) {
     const any = await ctx.db.first(`SELECT 1 FROM deliveries d JOIN posts p ON p.id = d.post_id WHERE p.kind = 'gift' AND d.tg_id = ?`, [u.tg_id]);
@@ -1900,8 +2110,13 @@ async function onUserCallback(ctx, cq) {
     const yes = d.endsWith(":1");
     await logConsent(ctx, id, "ads", yes);
     if (yes) {
-      await ctx.db.run(`UPDATE users SET consent_ads_at = ?, status = 'active', joined_at = COALESCE(joined_at, ?) WHERE tg_id = ?`, [ctx.now, ctx.now, id]);
-      return done("adsYes");
+      await ctx.db.run(`UPDATE users SET consent_ads_at = ? WHERE tg_id = ?`, [ctx.now, id]);
+      if (u.sched_at) {
+        await ctx.db.run(`UPDATE users SET status = 'active' WHERE tg_id = ?`, [id]);
+        return done("adsYes");
+      }
+      await done();
+      return nextStep(ctx, await getUser(ctx, id));
     }
     await ctx.db.run(`UPDATE users SET consent_ads_at = NULL, status = 'stopped' WHERE tg_id = ?`, [id]);
     return done("adsNo");
@@ -1919,6 +2134,49 @@ async function onUserCallback(ctx, cq) {
     return done();
   }
   if (d.startsWith("go:")) return onGo(ctx, cq, u, answer);
+  if (d === "n:ok") {
+    await answer();
+    await ctx.db.run(`UPDATE users SET contact_name = COALESCE(contact_name, ?) WHERE tg_id = ?`, [u.first_name || "друг", id]);
+    await setUState(ctx, id, null);
+    await done();
+    return nextStep(ctx, await getUser(ctx, id));
+  }
+  if (d.startsWith("ct:")) {
+    const how = d.slice(3);
+    if (how === "tg") {
+      await answer("contactSaved");
+      await ctx.db.run(`UPDATE users SET contact_at = ?, username = COALESCE(?, username) WHERE tg_id = ?`, [ctx.now, cq.from.username || null, id]);
+      await done();
+      return nextStep(ctx, await getUser(ctx, id));
+    }
+    await answer();
+    await done();
+    if (how === "phone") {
+      await setUState(ctx, id, "u:phone");
+      return tech(ctx, id, say(ctx, id, "askPhone", {}, { reply_markup: { keyboard: [[{ text: await btn(ctx, "phoneBtn"), request_contact: true }]], resize_keyboard: true, one_time_keyboard: true } }));
+    }
+    await setUState(ctx, id, "u:email");
+    return tech(ctx, id, say(ctx, id, "askEmail"));
+  }
+  if (d === "fb:yes") {
+    await answer();
+    await done();
+    await setUState(ctx, id, "u:fb1");
+    await pauseFor(ctx, id, "fbQ1");
+    return tech(ctx, id, say(ctx, id, "fbQ1"));
+  }
+  if (d === "fb:no") {
+    await answer();
+    await ctx.db.run(`UPDATE users SET fb_skip = 1 WHERE tg_id = ?`, [id]);
+    await done();
+    return nextStep(ctx, await getUser(ctx, id));
+  }
+  if (d.startsWith("tr:")) {
+    await answer();
+    await ctx.db.run(`UPDATE users SET track = ? WHERE tg_id = ?`, [d.slice(3) === "course" ? "course" : "mat", id]);
+    await done();
+    return nextStep(ctx, await getUser(ctx, id));
+  }
   if (d.startsWith("buy:")) {
     await ctx.tg.call("answerCallbackQuery", { callback_query_id: cq.id, text: (await msg(ctx, "payLater")).text.slice(0, 190), show_alert: true }).catch(() => {
     });
@@ -2042,6 +2300,8 @@ async function handleUpdate(ctx, upd) {
     }
     return onUserCommand(ctx, msg2, c.cmd);
   }
+  const us = await getUState(ctx, msg2.from.id);
+  if (us) return onUserText(ctx, msg2, us);
   if (admin && await onAdminMessage(ctx, msg2)) return;
   return onUserCommand(ctx, msg2, "");
 }
@@ -2379,6 +2639,7 @@ function postOut(p, sent, clicks) {
     rich: f.rich,
     once: !!p.once,
     files: media,
+    track: p.track || "all",
     day: p.day,
     time: p.send_time,
     mode: p.mode || "day",
@@ -2481,6 +2742,8 @@ async function handlePanelApi(ctx, request, url) {
       msgs: await listMsgs(ctx),
       docs: await loadDocs(ctx),
       docNames: DOCS,
+      tracks: TRACKS,
+      fbCount: (await ctx.db.first(`SELECT COUNT(*) AS n FROM users WHERE fb_at IS NOT NULL`) || {}).n || 0,
       people: { all: people.n || 0, active: people.active || 0 },
       run: await activeRun(ctx.db, user.id)
     });
@@ -2541,6 +2804,10 @@ async function handlePanelApi(ctx, request, url) {
       put("buttons", r.rows.length ? JSON.stringify(r.rows) : null);
     }
     if (body.once !== void 0) put("once", body.once ? 1 : 0);
+    if (body.track !== void 0) {
+      if (!TRACKS[body.track]) return json({ error: "Неизвестный трек" }, 400);
+      put("track", body.track);
+    }
     if (body.md !== void 0) {
       const f = mdToEntities(body.md);
       if (f.text.length > 4096) return json({ error: "Текст длиннее 4096 знаков — Telegram не примет" }, 400);
@@ -2568,7 +2835,7 @@ async function handlePanelApi(ctx, request, url) {
   }
   if (path === "/post/new" && request.method === "POST") {
     const kind = body.kind;
-    if (!["drip", "date", "gift", "node"].includes(kind)) return json({ error: "Выбери, когда уходит пост" }, 400);
+    if (!["drip", "date", "gift", "node", "fb"].includes(kind)) return json({ error: "Выбери, когда уходит пост" }, 400);
     const f = mdToEntities(body.md || "");
     const files = cleanFiles(body.files || []);
     if (files.error) return json({ error: files.error }, 400);
@@ -2604,6 +2871,7 @@ async function handlePanelApi(ctx, request, url) {
       ]
     );
     const row = await ctx.db.first(`SELECT * FROM posts WHERE created_by = ? ORDER BY id DESC LIMIT 1`, [user.id]);
+    if (TRACKS[body.track] && body.track !== "all") await ctx.db.run(`UPDATE posts SET track = ? WHERE id = ?`, [body.track, row.id]);
     if (body.rows) {
       const r = await cleanButtons(ctx, body.rows, row.id);
       if (r.error) {
@@ -2614,6 +2882,11 @@ async function handlePanelApi(ctx, request, url) {
     }
     const np = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [row.id]);
     return json({ ok: true, post: postOut(np), reach: await audienceCount(ctx.db, np) });
+  }
+  if (path === "/people") {
+    const rows = await ctx.db.all(`SELECT tg_id, first_name, username, contact_name, phone, email, level, zone, track, status, fb_like, fb_improve, fb_at, created_at, sched_at FROM users ORDER BY COALESCE(fb_at, 0) DESC, created_at DESC LIMIT 200`);
+    const n = await ctx.db.first(`SELECT COUNT(*) AS all_n, SUM(CASE WHEN sched_at IS NOT NULL THEN 1 ELSE 0 END) AS done, SUM(CASE WHEN track = 'course' THEN 1 ELSE 0 END) AS course, SUM(CASE WHEN track = 'mat' THEN 1 ELSE 0 END) AS mat, SUM(CASE WHEN fb_at IS NOT NULL THEN 1 ELSE 0 END) AS fb FROM users`);
+    return json({ people: rows, totals: n });
   }
   if (path === "/docs" && request.method === "POST") {
     for (const k of ["policy", "consent", "offer", "owner"]) {
@@ -2658,11 +2931,11 @@ async function handlePanelApi(ctx, request, url) {
   if (path === "/run/onboarding" && request.method === "POST") {
     const id = user.id;
     for (const t of ["users", "consents", "states"]) await ctx.db.run(`DELETE FROM ${t} WHERE tg_id = ?`, [id]);
-    await ctx.db.run(`DELETE FROM deliveries WHERE tg_id = ? AND post_id IN (SELECT id FROM posts WHERE kind = 'gift')`, [id]);
+    await ctx.db.run(`DELETE FROM deliveries WHERE tg_id = ? AND post_id IN (SELECT id FROM posts WHERE kind IN ('gift', 'fb', 'node'))`, [id]);
     await ctx.db.run(`DELETE FROM settings WHERE key = ? OR key LIKE ?`, ["nogift:" + id, "start:" + id + ":%"]);
     await ctx.tg.call("sendMessage", { chat_id: id, text: "🧪 Проходим путь ученика заново" + (body.fromTest ? " — как будто ты пришла из теста." : " — как будто ты пришла без теста.") + " Твоя анкета сброшена, ответь на вопросы бота.", disable_notification: true }).catch(() => {
     });
-    const job = onStart(ctx, { from: { id, first_name: user.first_name }, message_id: 0 }, body.fromTest ? "audit_P_" + (body.level === "pro" ? "pro" : "start") : "").catch((e) => console.log("onboarding", e && e.stack));
+    const job = onStart(ctx, { from: { id, first_name: user.first_name, username: user.username }, message_id: 0 }, body.fromTest ? "audit_P_" + (body.level === "pro" ? "pro" : "start") + (body.track === "course" ? "_course" : body.track === "mat" ? "_month" : "") : "").catch((e) => console.log("onboarding", e && e.stack));
     if (ctx.waitUntil) ctx.waitUntil(job);
     else await job;
     return json({ ok: true });
@@ -3145,12 +3418,16 @@ function renderGifts() {
 
 // путь ученика: служебные сообщения по порядку (порядок фиксирован — согласие на данные по закону первое)
 const FLOW = [
-  { key: 'hello', alt: ['helloTest'], title: 'Приветствие', note: 'Сразу после «Старт». Если человек пришёл из теста — вариант «после теста».' },
-  { key: 'consentPd', btns: ['consentPdBtn'], alt: ['consentThanks'], title: 'Согласие на обработку данных', note: 'Всегда первым вопросом: без согласия бот не имеет права ничего присылать.' },
-  { key: 'askLevel', btns: ['levelBtnStart', 'levelBtnPro'], alt: ['levelChanged'], title: 'Уровень' },
-  { key: 'testOffer', btns: ['testBtn'], alt: ['noGift'], title: 'Предложение пройти тест', note: 'Если человек пришёл из теста — вместо этого сообщения сразу подарок (вкладка «Подарки»).' },
-  { key: 'consentAds', btns: ['consentAdsYes', 'consentAdsNo'], title: 'Согласие на рассылку' },
-  { key: 'adsYes', alt: ['adsNo'], title: 'Ответ на «да» / «нет»', note: 'После «да» начинается лента (вкладка «Лента»).' },
+  { key: 'hello', alt: ['helloTest'], title: 'Приветствие', note: 'Сразу после «Старт». Если человек пришёл из аудита — вариант «после теста».' },
+  { key: 'consentPd', btns: ['consentPdBtn'], alt: ['consentThanks'], title: 'Согласие на обработку данных', note: 'Всегда первым: без согласия бот не имеет права ничего присылать и спрашивать контакты.' },
+  { key: 'consentAds', btns: ['consentAdsYes', 'consentAdsNo'], alt: ['adsNo'], title: 'Согласие на рассылку', note: 'Отдельное согласие (закон о рекламе). Если «нет» — вход заканчивается.' },
+  { key: 'askLevel', btns: ['levelBtnStart', 'levelBtnPro'], alt: ['levelChanged'], title: 'Уровень', note: 'Только если человек пришёл не из аудита.' },
+  { key: 'askName', btns: ['nameOk'], title: 'Имя', note: 'Человек жмёт «Всё верно» или пишет имя.' },
+  { key: 'askContact', btns: ['contactTg', 'contactPhone', 'contactEmail'], alt: ['askPhone', 'askEmail', 'badPhone', 'badEmail', 'contactSaved'], title: 'Контакт: Telegram, телефон или почта', note: 'Кнопка «Telegram» видна, только если у человека есть ник.' },
+  { key: 'fbOffer', btns: ['fbYes', 'fbNo'], alt: ['fbQ1', 'fbQ2', 'fbThanks', 'fbNoBonus'], title: 'Отзыв о кабинете — по желанию', note: 'За отзыв уходит бонус: посты вида «💬 Бонус за отзыв» во вкладке «Сценарий». Отзывы приходят вам в бот и видны в «Сценарии» → «Люди и отзывы».' },
+  { key: 'askTrack', btns: ['trackCourse', 'trackMat'], title: 'Мини-курс или материалы', note: 'Только если человек не выбрал в аудите.' },
+  { key: 'testOffer', btns: ['testBtn'], alt: ['noGift'], title: 'Предложение пройти тест', note: 'Один раз, если не проходил аудит. Прошёл — сразу подарок (вкладка «Подарки»).' },
+  { key: 'schedCourse', alt: ['schedMat'], title: 'Пост-расписание по треку', note: 'Последний шаг. Отсюда начинается лента (вкладка «Лента»).' },
 ];
 const mOf = (k) => S.msgs.find((x) => x.key === k);
 const mediaTag = (m) => m && m.media ? '<span class="tag">' + ({ photo: '🖼 картинка', video: '🎬 видео', animation: '🎞 гифка' }[m.media] || '🖼') + '</span>' : '';
@@ -3222,12 +3499,13 @@ function segHtml(id, opts, cur) { return '<div class="seg sm" id="' + id + '">' 
 function segBind(id, on) { $(id).onclick = (e) => { const b = e.target.closest('button'); if (!b) return; [...$(id).children].forEach((x) => x.classList.toggle('on', x === b)); on(b.dataset.v); }; }
 
 // ---------- сценарий: дерево постов и кнопок ----------
-const KIND = { drip: '📅 Пост ленты', date: '🕒 Пост на дату', gift: '🎁 Подарок после теста', node: '🔘 Пост-ответ' };
+const KIND = { drip: '📅 Пост ленты', date: '🕒 Пост на дату', gift: '🎁 Подарок после теста', node: '🔘 Пост-ответ', fb: '💬 Бонус за отзыв' };
 const KIND_NOTE = {
   drip: 'Уходит каждому в свой день после входа: в день и время, по таймеру или после другого поста.',
   date: 'Уходит один раз в выбранные дату и время всем, кто уже в боте. Для эфиров и анонсов.',
   gift: 'Уходит сразу после аудит-теста.',
   node: 'Приходит, только когда человек нажимает кнопку, которая ведёт сюда. Так строятся развилки: «выбери вариант → следующий пост».',
+  fb: 'Уходит сразу после отзыва о прототипе кабинета: гайд, секретный урок. Если таких несколько — по порядку.',
 };
 const TARIFF = { curator: 'Тариф с кураторами', mentor: 'Тариф с ментором' };
 const parentsOf = (id) => { const out = []; S.posts.forEach((p) => (p.rows || []).forEach((row) => row.forEach((b) => { if (+b.go === id) out.push({ p, b }); }))); return out; };
@@ -3238,6 +3516,7 @@ const emptyTag = (p) => !(p.text || '').trim() && !p.media.length ? '<span class
 function whenOf(p) {
   if (p.kind === 'gift') return '🎁 после теста';
   if (p.kind === 'node') return '🔘 по кнопке';
+  if (p.kind === 'fb') return '💬 за отзыв';
   if (p.kind === 'date') return '🕒 ' + fmtRun(p.run_at);
   if (p.mode === 'after') return '⏱ через ' + fmtDelay(p.delay);
   return '📅 ' + (p.mode === 'timer' ? 'через ' + fmtDelay(p.delay) + ' после входа' : p.day === 0 ? 'день 0 · сразу' : 'день ' + p.day + ' · ' + p.time);
@@ -3255,7 +3534,7 @@ function renderFlow() {
     const np = path.concat(p.id);
     let h = '<div class="fn' + (p.status !== 'active' ? ' dim' : '') + '" data-id="' + p.id + '"><div class="fn-top"><span class="time">' + esc(whenOf(p)) + '</span>' + stTag(p) + emptyTag(p) +
       '<span class="stat">' + (p.sent ? '↗ ' + p.sent : '') + (p.clicks ? ' · 👆 ' + p.clicks : '') + '</span></div>' +
-      '<div class="ttl">' + esc(postName(p)) + '</div>' + (p.media.length ? '<div class="meta"><span class="tag">🖼 ' + (p.media.length > 1 ? '×' + p.media.length : '') + '</span>' + (p.audience !== 'all' && p.kind !== 'node' ? '<span class="tag">' + esc(S.audiences[p.audience]) + '</span>' : '') + '</div>' : (p.audience !== 'all' && p.kind !== 'node' ? '<div class="meta"><span class="tag">' + esc(S.audiences[p.audience]) + '</span></div>' : '')) + '</div>';
+      '<div class="ttl">' + esc(postName(p)) + '</div>' + (p.track && p.track !== 'all' ? '<div class="meta"><span class="tag zone">' + (p.track === 'course' ? '🎓 мини-курс' : '📚 материалы') + '</span></div>' : '') + (p.media.length ? '<div class="meta"><span class="tag">🖼 ' + (p.media.length > 1 ? '×' + p.media.length : '') + '</span>' + (p.audience !== 'all' && p.kind !== 'node' ? '<span class="tag">' + esc(S.audiences[p.audience]) + '</span>' : '') + '</div>' : (p.audience !== 'all' && p.kind !== 'node' ? '<div class="meta"><span class="tag">' + esc(S.audiences[p.audience]) + '</span></div>' : '')) + '</div>';
     let kids = '';
     (p.rows || []).forEach((row) => row.forEach((b) => {
       if (b.go) { const t = ids[+b.go]; kids += '<div class="fb"><span class="fb-l">🔘 ' + esc(b.text) + (p.once ? ' <i class="muted small">выбор</i>' : '') + '</span>' + (t ? node(t, depth + 1, np) : '<span class="tag no">пост в архиве</span>') + '</div>'; }
@@ -3278,6 +3557,7 @@ function renderFlow() {
   h += sec('🎁 После теста', 'Подарок уходит сразу после аудит-теста.', gifts);
   h += sec('📅 Лента', 'По порядку от входа в бот. Дни и время удобно двигать во вкладке «Лента».', drip);
   h += sec('🕒 В дату', '', dates);
+  h += sec('💬 Бонус за отзыв', 'Уходит сразу после отзыва о прототипе кабинета.', S.posts.filter((p) => p.kind === 'fb').sort((a, b) => a.pos - b.pos || a.id - b.id));
   const lost = S.posts.filter((p) => p.kind === 'node' && !shown.has(p.id));
   if (lost.length) h += sec('🔘 Посты-ответы без кнопки', 'На них пока не ведёт ни одна кнопка — человек их не получит. Привяжи: открой нужный пост → «＋ кнопка» → «Пост».', lost);
   $('body').innerHTML = h;
@@ -3291,23 +3571,50 @@ function renderFlow() {
 function entryBox() {
   const d = S.docs || {};
   const ok = (k) => d[k] ? '<span class="ok-t">✓</span>' : '<span class="warn-t">не задана</span>';
+  const on = (k) => S.posts.filter((p) => p.kind === k && p.status === 'active').length;
   const steps = [
-    ['hello', '👋 Приветствие'],
+    ['hello', '👋 Приветствие', 'из аудита приходит выбор: мини-курс или материалы'],
     ['consentPd', '✅ Согласие на данные', 'политика ' + ok('policy') + ' · согласие ' + ok('consent')],
-    ['askLevel', '🎚 Уровень: начинающий / продолжающий'],
-    ['testOffer', '🧪 Тест → 🎁 подарок', S.posts.filter((p) => p.kind === 'gift' && p.status === 'active').length + ' подарк. включено'],
     ['consentAds', '📬 Согласие на рассылку'],
+    ['askLevel', '🎚 Уровень', 'если пришёл не из аудита'],
+    ['askName', '📇 Имя и контакт', 'Telegram, телефон или почта'],
+    ['fbOffer', '💬 Отзыв о кабинете — по желанию', 'бонусов за отзыв включено: ' + on('fb')],
+    ['askTrack', '🎓 Мини-курс или материалы', 'если не выбрал в аудите'],
+    ['testOffer', '🧪 Тест → 🎁 подарок', 'подарков включено: ' + on('gift')],
+    ['schedCourse', '🗓 Пост-расписание по треку'],
   ];
   const miss = !d.policy || !d.consent;
   return '<div class="box"><h3>Вход в бот</h3><p class="small muted" style="margin:0 0 10px">Так бот встречает нового человека. Порядок фиксированный: по закону сначала согласие. Нажми на шаг — поменять текст.</p><div class="steps">' +
     steps.map(([k, t, sub], i) => '<button type="button" class="stp" data-k="' + k + '"><b>' + (i + 1) + '</b><span class="st-t">' + t + (sub ? '<i>' + sub + '</i>' : '') + '</span></button>').join('<div class="arr">↓</div>') +
-    '<div class="arr">↓</div><div class="stp last"><b>→</b><span class="st-t">дальше — лента и посты ниже</span></div></div>' +
+    '<div class="arr">↓</div><div class="stp last"><b>→</b><span class="st-t">дальше — лента по треку и посты ниже</span></div></div>' +
+    '<div class="docs-row"><div><b>Люди и отзывы</b><div class="small muted">контакты, выбор из аудита, отзывы о кабинете: ' + (S.fbCount || 0) + '</div></div><button type="button" class="chip" id="peopleBtn">открыть</button></div>' +
     '<div class="docs-row"><div><b>Документы</b><div class="small muted">политика ' + ok('policy') + ' · согласие ' + ok('consent') + ' · оферта ' + ok('offer') + '</div></div><button type="button" class="chip" id="docsBtn">изменить</button></div>' +
     (miss ? '<div class="note warn">Без ссылок на политику и согласие бот нельзя открывать для всех (152-ФЗ). Пока бот только для своих.</div>' : '') + '</div>';
 }
 function bindEntry() {
   document.querySelectorAll('.stp[data-k]').forEach((el) => el.onclick = () => { if (el.dataset.k === 'testOffer') { tab = 'gifts'; render(); window.scrollTo(0, 0); return; } openMsg(el.dataset.k); });
   $('docsBtn').onclick = openDocs;
+  $('peopleBtn').onclick = openPeople;
+}
+async function openPeople() {
+  sheet('<div class="shd"><span class="pill">Люди и отзывы</span><button type="button" class="sx" id="pX" aria-label="закрыть">✕</button></div><h2>Кто пришёл в бот</h2><p class="muted small">Загружаю…</p>');
+  $('pX').onclick = closeSheet;
+  let d; try { d = await api('/people'); } catch (e) { toast(e.message); return; }
+  const t = d.totals || {};
+  const tr = { course: '🎓 мини-курс', mat: '📚 материалы' };
+  const st = { active: 'в рассылке', new: 'проходит вход', stopped: 'отписался', blocked: 'заблокировал бота' };
+  const fmtD = (x) => { if (!x) return ''; const dd = new Date((x + 10800) * 1000); return dd.getUTCDate() + '.' + String(dd.getUTCMonth() + 1).padStart(2, '0'); };
+  let h = '<div class="shd"><span class="pill">Люди и отзывы</span><button type="button" class="sx" id="pX" aria-label="закрыть">✕</button></div><h2>Кто пришёл в бот</h2>' +
+    '<div class="meta" style="margin:4px 0 12px"><span class="tag">всего ' + (t.all_n || 0) + '</span><span class="tag">прошли вход ' + (t.done || 0) + '</span><span class="tag zone">🎓 ' + (t.course || 0) + '</span><span class="tag zone">📚 ' + (t.mat || 0) + '</span><span class="tag">💬 отзывов ' + (t.fb || 0) + '</span></div>' +
+    '<p class="small muted">Это персональные данные: не пересылайте их в чаты и не скачивайте на чужие устройства.</p>';
+  h += d.people.map((u) => {
+    const name = u.contact_name || u.first_name || 'без имени';
+    const contact = [u.username ? '@' + u.username : '', u.phone || '', u.email || ''].filter(Boolean).join(' · ') || 'контакт не оставил';
+    return '<div class="msg" style="cursor:default"><div class="t">' + esc(name) + (u.track ? '<span class="tag zone">' + tr[u.track] + '</span>' : '') + '<span class="stat">' + fmtD(u.created_at) + '</span></div>' +
+      '<div class="small muted" style="margin-top:2px">' + esc(contact) + ' · ' + esc(st[u.status] || u.status) + (u.level ? ' · ' + esc(S.levels[u.level] || u.level) : '') + (u.zone ? ' · из аудита' : '') + '</div>' +
+      (u.fb_at ? '<div class="preview" style="margin-top:8px">👍 ' + esc(u.fb_like || '—') + '\\n\\n🛠 ' + esc(u.fb_improve || '—') + '</div>' : '') + '</div>';
+  }).join('') || '<p class="muted">Пока никого.</p>';
+  $('sheet').innerHTML = '<div class="grab"></div>' + h; $('pX').onclick = closeSheet;
 }
 function openDocs() {
   const d = S.docs || {};
@@ -3329,13 +3636,13 @@ function openNew(preset) {
   preset = preset || {};
   if (preset.kind) return openPost(null, { draft: Object.assign(blankPost(preset.kind), preset) });
   sheet('<span class="pill">Новый пост</span><h2>Когда он уходит?</h2><div class="kinds">' +
-    ['drip', 'node', 'date', 'gift'].map((k) => '<button type="button" class="kind" data-k="' + k + '"><b>' + KIND[k] + '</b><span>' + KIND_NOTE[k] + '</span></button>').join('') +
+    ['drip', 'node', 'date', 'gift', 'fb'].map((k) => '<button type="button" class="kind" data-k="' + k + '"><b>' + KIND[k] + '</b><span>' + KIND_NOTE[k] + '</span></button>').join('') +
     '</div><div class="btns"><button class="btn ghost" id="nClose">Закрыть</button></div>');
   document.querySelectorAll('.kind').forEach((el) => el.onclick = () => { haptic(); openPost(null, { draft: blankPost(el.dataset.k) }); });
   $('nClose').onclick = closeSheet;
 }
 function blankPost(kind) {
-  return { id: null, kind, status: 'draft', title: '', text: '', md: '', rich: false, once: false, files: [], media: [], day: 1, time: '11:00', mode: 'day', delay: 0, after: null, run_at: null, audience: 'all', catchup: false, pos: 0, rows: [], sent: 0, clicks: 0 };
+  return { id: null, kind, track: 'all', status: 'draft', title: '', text: '', md: '', rich: false, once: false, files: [], media: [], day: 1, time: '11:00', mode: 'day', delay: 0, after: null, run_at: null, audience: 'all', catchup: false, pos: 0, rows: [], sent: 0, clicks: 0 };
 }
 
 // превью картинки поста
@@ -3348,7 +3655,7 @@ function openPost(id, opt) {
   opt = opt || {};
   const p = opt.draft || S.posts.find((x) => x.id === id); if (!p) return;
   const isNew = !p.id;
-  const st = { day: p.day ?? 1, time: p.time || '11:00', audience: p.audience, status: p.status, catchup: p.catchup, run_at: p.run_at, mode: p.mode || 'day', delay: p.delay || 0, after: p.after, once: !!p.once, files: JSON.parse(JSON.stringify(p.files || [])), editRich: false };
+  const st = { track: p.track || 'all', day: p.day ?? 1, time: p.time || '11:00', audience: p.audience, status: p.status, catchup: p.catchup, run_at: p.run_at, mode: p.mode || 'day', delay: p.delay || 0, after: p.after, once: !!p.once, files: JSON.parse(JSON.stringify(p.files || [])), editRich: false };
   const unitOf = (m) => (m >= 1440 && m % 1440 === 0 ? 1440 : m >= 60 && m % 60 === 0 ? 60 : 1);
   const unitSel = (sid, m) => '<select id="' + sid + '" style="width:auto;flex:none">' + [[1, 'минут'], [60, 'часов'], [1440, 'дней']].map(([v, t]) => '<option value="' + v + '"' + (unitOf(m) === v ? ' selected' : '') + '>' + t + '</option>').join('') + '</select>';
   const others = S.posts.filter((x) => ['drip', 'node', 'gift'].includes(x.kind) && x.id !== p.id);
@@ -3382,7 +3689,9 @@ function openPost(id, opt) {
   h += '<label class="f" id="btnsLbl">Кнопки под постом</label><div id="bEd"></div>' +
     '<div class="btns two" style="margin-top:8px"><button class="btn ghost" type="button" id="bRow">＋ Кнопка</button><button class="btn ghost" type="button" id="bNext">＋ Следующий пост</button></div>' +
     '<div class="toggle" id="onceWrap"><span><b>Кнопки-выбор</b><br><span class="small muted">После нажатия под постом остаётся только выбранный вариант с ✓ — человек не нажмёт второй</span></span><label class="sw"><input type="checkbox" id="fOnce" ' + (st.once ? 'checked' : '') + '><span></span></label></div>';
-  if (p.kind !== 'node') h += '<label class="f">Кому</label>' + segHtml('fAud', [['all', 'Всем'], ['start', 'Начинающим'], ['pro', 'Продолжающим']], st.audience);
+  if (p.kind !== 'node' && p.kind !== 'fb') h += '<label class="f">Кому</label>' + segHtml('fAud', [['all', 'Всем'], ['start', 'Начинающим'], ['pro', 'Продолжающим']], st.audience) +
+    '<label class="f">Трек из аудита</label>' + segHtml('fTrack', [['all', 'Всем'], ['course', '🎓 Мини-курс'], ['mat', '📚 Материалы']], st.track) +
+    '<p class="small muted" style="margin:6px 2px 0">Мини-курс или материалы — что человек выбрал в аудите или в боте.</p>';
   h += '<label class="f">Статус</label>' + segHtml('fSt', [['active', '✅ Включён'], ['paused', '⏸ Пауза'], ['draft', '📝 Черновик']], st.status);
   h += '<div class="btns"><button class="btn" id="bSave">' + (isNew ? 'Создать пост' : 'Сохранить') + '</button>' +
     (isNew ? '<button class="btn ghost" id="bClose">Отмена</button>' : '<div class="btns two" style="margin:0"><button class="btn ghost" id="bPrev">👁 Прислать мне</button><button class="btn ghost" id="bClose">Закрыть</button></div><button class="btn danger" id="bArch">🗄 Убрать в архив</button>') + '</div>';
@@ -3447,6 +3756,7 @@ function openPost(id, opt) {
   const upd = () => { if (!$('dVal')) return; $('dVal').textContent = st.day; $('tWrap').style.display = st.day === 0 ? 'none' : ''; $('dHint').textContent = 'День ' + st.day + ' — ' + dayLabel(st.day) + (st.day ? ', в ' + ($('fTime').value || st.time) + ' по Москве' : ''); };
   if ($('dMinus')) { $('dMinus').onclick = () => { st.day = Math.max(0, st.day - 1); haptic(); upd(); }; $('dPlus').onclick = () => { st.day = Math.min(365, st.day + 1); haptic(); upd(); }; $('fTime').oninput = upd; upd(); }
   if ($('fAud')) segBind('fAud', (v) => st.audience = v);
+  if ($('fTrack')) segBind('fTrack', (v) => st.track = v);
   segBind('fSt', (v) => st.status = v);
 
   // кнопки: ссылка / пост / документ / оплата
@@ -3515,7 +3825,7 @@ function openPost(id, opt) {
       for (const b of outRows.flat()) if (b.go === null && b.text) throw new Error('У кнопки «' + b.text + '» не выбран пост');
       const body = { title: $('fTitle').value.trim(), status: st.status, rows: outRows, once: $('fOnce').checked, files: st.files };
       if (!p.rich || st.editRich) body.md = ta.value;
-      if (p.kind !== 'node') body.audience = st.audience;
+      if (p.kind !== 'node' && p.kind !== 'fb') { body.audience = st.audience; body.track = st.track; }
       if (p.kind === 'drip') {
         body.mode = st.mode; body.catchup = $('fCatch').checked;
         if (st.mode === 'day') { body.day = st.day; body.time = st.day > 0 ? ($('fTime').value || st.time) : '00:00'; }

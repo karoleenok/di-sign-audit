@@ -5,14 +5,16 @@ import { isAdmin } from './admin.js';
 
 const CONSENT_VERSION = 'v1';
 
-// Метка из ссылки теста: audit_<зона>_<уровень>, например audit_P_start, audit_top_pro
+// Метка из ссылки теста: audit_<зона>_<уровень>[_course|_month], например audit_P_start_course, audit_top_pro
+// course — выбрал бесплатный мини-курс, month — месяц полезных материалов
 export function parseStart(payload) {
-  const out = { source: payload || null, zone: null, levelRaw: null };
-  const m = /^audit_([A-Za-z]+)_([a-z]+)$/.exec(payload || '');
+  const out = { source: payload || null, zone: null, levelRaw: null, track: null };
+  const m = /^audit_([A-Za-z]+)_([a-z]+)(?:_(course|month))?$/.exec(payload || '');
   if (m) {
     const z = m[1] === 'top' ? 'top' : m[1].toUpperCase();
     if (ZONES[z]) out.zone = z;
     if (['start', 'free', 'pro'].includes(m[2])) out.levelRaw = m[2];
+    if (m[3]) out.track = m[3] === 'course' ? 'course' : 'mat';
   }
   return out;
 }
@@ -103,19 +105,20 @@ export async function onStart(ctx, msg, payload) {
   let u = await getUser(ctx, from.id);
   if (!u) {
     await ctx.db.run(
-      `INSERT INTO users (tg_id, first_name, username, level_raw, level, zone, source, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'new', ?)`,
-      [from.id, from.first_name || null, from.username || null, st.levelRaw, normLevel(st.levelRaw), st.zone, st.source, ctx.now],
+      `INSERT INTO users (tg_id, first_name, username, level_raw, level, zone, source, track, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)`,
+      [from.id, from.first_name || null, from.username || null, st.levelRaw, normLevel(st.levelRaw), st.zone, st.source, st.track, ctx.now],
     );
   } else {
     // пришёл ещё раз: обновим результат теста, если он новый
-    if (st.zone || st.levelRaw) {
-      await ctx.db.run(`UPDATE users SET zone = COALESCE(?, zone), level_raw = COALESCE(?, level_raw), level = COALESCE(?, level), source = COALESCE(?, source) WHERE tg_id = ?`,
-        [st.zone, st.levelRaw, normLevel(st.levelRaw), st.source, from.id]);
+    if (st.zone || st.levelRaw || st.track) {
+      await ctx.db.run(`UPDATE users SET zone = COALESCE(?, zone), level_raw = COALESCE(?, level_raw), level = COALESCE(?, level), source = COALESCE(?, source), track = COALESCE(?, track), username = COALESCE(?, username) WHERE tg_id = ?`,
+        [st.zone, st.levelRaw, normLevel(st.levelRaw), st.source, st.track, from.username || null, from.id]);
     }
     if (u.status === 'stopped' || u.status === 'blocked') await ctx.db.run(`UPDATE users SET status = 'new' WHERE tg_id = ?`, [from.id]);
   }
   // убираем саму команду /start и старые служебные сообщения (прошлое приветствие, вопросы, предложение теста)
   await delMsg(ctx, from.id, msg.message_id);
+  await setUState(ctx, from.id, null);
   await cleanAll(ctx, from.id);
   u = await getUser(ctx, from.id);
   const name = from.first_name || 'друг';
@@ -125,7 +128,10 @@ export async function onStart(ctx, msg, payload) {
   return nextStep(ctx, u);
 }
 
-// Пошаговый вход: согласие -> уровень -> (тест) -> подарок -> согласие на рассылку
+// Пошаговый вход:
+//   согласие на данные -> согласие на рассылку -> уровень (если не пришёл из аудита) -> имя -> контакт (Telegram / телефон / почта)
+//   -> отзыв о прототипе кабинета (по желанию, за бонус) -> мини-курс или материалы (если не выбрал в аудите)
+//   -> (тест, если не проходил) -> подарок -> пост-расписание по треку -> дальше лента
 export async function nextStep(ctx, u) {
   const id = u.tg_id;
   if (!u.consent_pd_at) {
@@ -135,34 +141,154 @@ export async function nextStep(ctx, u) {
       reply_markup: kb([[{ text: await btn(ctx, 'consentPdBtn'), callback_data: 'c:pd' }]]),
     }));
   }
-  if (!u.level) { await pauseFor(ctx, id, 'askLevel'); return askLevel(ctx, id); }
-  if (!u.zone) {
-    // ещё не проходил тест: предлагаем пройти, по кнопке в конце теста он вернётся в бот (тогда это сообщение уберём)
-    const url = ctx.env.TEST_URL;
-    await pauseFor(ctx, id, 'testOffer');
-    await tech(ctx, id, say(ctx, id, 'testOffer', {}, url ? { reply_markup: kb([[{ text: await btn(ctx, 'testBtn'), url }]]) } : {}));
-  } else {
-    // прошёл тест — подарок (один раз): общий и/или под его уровень; пауза — только если есть что прислать
-    await sendGift(ctx, u, (await delayOf(ctx, 'noGift')) * 1000);
-  }
-  if (!u.consent_ads_at && u.status !== 'stopped') {
+  if (!u.consent_ads_at) {
+    if (u.status === 'stopped') return;
     await pauseFor(ctx, id, 'consentAds');
     return tech(ctx, id, say(ctx, id, 'consentAds', {}, {
       reply_markup: kb([[{ text: await btn(ctx, 'consentAdsYes'), callback_data: 'c:ads:1' }, { text: await btn(ctx, 'consentAdsNo'), callback_data: 'c:ads:0' }]]),
     }));
   }
-  if (u.consent_ads_at && u.status !== 'active') {
+  if (!u.level) { await pauseFor(ctx, id, 'askLevel'); return askLevel(ctx, id); }
+  if (!u.contact_name) {
+    await pauseFor(ctx, id, 'askName');
+    await setUState(ctx, id, 'u:name');
+    return tech(ctx, id, say(ctx, id, 'askName', { имя: u.first_name || 'друг' }, { reply_markup: kb([[{ text: await btn(ctx, 'nameOk'), callback_data: 'n:ok' }]]) }));
+  }
+  if (!u.contact_at) return askContact(ctx, u);
+  if (!u.fb_at && !u.fb_skip) {
+    await pauseFor(ctx, id, 'fbOffer');
+    return tech(ctx, id, say(ctx, id, 'fbOffer', { кабинет: ctx.env.KABINET_URL || 'https://karoleenok.github.io/di-sign-audit/kabinet/' }, {
+      reply_markup: kb([[{ text: await btn(ctx, 'fbYes'), callback_data: 'fb:yes' }], [{ text: await btn(ctx, 'fbNo'), callback_data: 'fb:no' }]]),
+    }));
+  }
+  if (!u.track) {
+    await pauseFor(ctx, id, 'askTrack');
+    return tech(ctx, id, say(ctx, id, 'askTrack', {}, {
+      reply_markup: kb([[{ text: await btn(ctx, 'trackCourse'), callback_data: 'tr:course' }], [{ text: await btn(ctx, 'trackMat'), callback_data: 'tr:mat' }]]),
+    }));
+  }
+  if (!u.zone) {
+    // не проходил тест: один раз предлагаем (по кнопке в конце теста он вернётся в бот — тогда придёт подарок)
+    const url = ctx.env.TEST_URL;
+    if (!u.test_offered) {
+      await ctx.db.run(`UPDATE users SET test_offered = 1 WHERE tg_id = ?`, [id]);
+      await pauseFor(ctx, id, 'testOffer');
+      await tech(ctx, id, say(ctx, id, 'testOffer', {}, url ? { reply_markup: kb([[{ text: await btn(ctx, 'testBtn'), url }]]) } : {}));
+    }
+  } else {
+    await sendGift(ctx, u, (await delayOf(ctx, 'noGift')) * 1000);
+  }
+  if (!u.sched_at) {
+    const key = u.track === 'course' ? 'schedCourse' : 'schedMat';
+    await pauseFor(ctx, id, key);
+    await say(ctx, id, key, {});
+    // вход пройден — отсюда считается лента
+    await ctx.db.run(`UPDATE users SET sched_at = ?, status = 'active', joined_at = COALESCE(joined_at, ?) WHERE tg_id = ?`, [ctx.now, ctx.now, id]);
+  } else if (u.status !== 'active') {
     await ctx.db.run(`UPDATE users SET status = 'active', joined_at = COALESCE(joined_at, ?) WHERE tg_id = ?`, [ctx.now, id]);
   }
+}
+
+async function askContact(ctx, u) {
+  const id = u.tg_id;
+  await pauseFor(ctx, id, 'askContact');
+  const rows = [];
+  if (u.username) rows.push([{ text: (await btn(ctx, 'contactTg')) + ' · @' + u.username, callback_data: 'ct:tg' }]);
+  rows.push([{ text: await btn(ctx, 'contactPhone'), callback_data: 'ct:phone' }], [{ text: await btn(ctx, 'contactEmail'), callback_data: 'ct:email' }]);
+  return tech(ctx, id, say(ctx, id, 'askContact', {}, { reply_markup: kb(rows) }));
+}
+
+// ---------- ответы текстом во время входа: имя, телефон, почта, отзыв ----------
+export async function getUState(ctx, id) {
+  const r = await ctx.db.first(`SELECT state FROM states WHERE tg_id = ?`, [id]);
+  return r && r.state && r.state.startsWith('u:') ? r.state : null;
+}
+async function setUState(ctx, id, state) {
+  if (!state) { await ctx.db.run(`DELETE FROM states WHERE tg_id = ? AND state LIKE 'u:%'`, [id]); return; }
+  await ctx.db.run(`INSERT INTO states (tg_id, state, data, updated_at) VALUES (?, ?, NULL, ?) ON CONFLICT(tg_id) DO UPDATE SET state = excluded.state, data = NULL, updated_at = excluded.updated_at`, [id, state, ctx.now]);
+}
+const removeKb = { remove_keyboard: true };
+export async function onUserText(ctx, msg, state) {
+  const id = msg.from.id;
+  const u = await getUser(ctx, id);
+  if (!u) { await setUState(ctx, id, null); return say(ctx, id, 'needStart'); }
+  const txt = String(msg.text || '').trim();
+  if (state === 'u:name') {
+    if (!txt) return;
+    await ctx.db.run(`UPDATE users SET contact_name = ? WHERE tg_id = ?`, [txt.replace(/\s+/g, ' ').slice(0, 60), id]);
+    await setUState(ctx, id, null);
+    await cleanAll(ctx, id);
+    return nextStep(ctx, await getUser(ctx, id));
+  }
+  if (state === 'u:phone') {
+    let phone = null;
+    if (msg.contact) { if (msg.contact.user_id && msg.contact.user_id !== id) return say(ctx, id, 'badPhone'); phone = msg.contact.phone_number; }
+    else { const d = txt.replace(/[^\d+]/g, ''); if (/^\+?\d{10,15}$/.test(d)) phone = d; }
+    if (!phone) return tech(ctx, id, say(ctx, id, 'badPhone'));
+    phone = phone.startsWith('+') ? phone : '+' + phone.replace(/^8(?=\d{10}$)/, '7');
+    await ctx.db.run(`UPDATE users SET phone = ?, contact_at = ? WHERE tg_id = ?`, [phone, ctx.now, id]);
+    await setUState(ctx, id, null);
+    // убираем кнопку «Отправить телефон» снизу экрана
+    const m = await ctx.tg.call('sendMessage', { chat_id: id, text: (await msgText(ctx, 'contactSaved')).text, reply_markup: removeKb, disable_notification: true }).catch(() => null);
+    if (m) await tech(ctx, id, Promise.resolve(m));
+    await cleanAll(ctx, id);
+    return nextStep(ctx, await getUser(ctx, id));
+  }
+  if (state === 'u:email') {
+    const e = txt.toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e) || e.length > 120) return tech(ctx, id, say(ctx, id, 'badEmail'));
+    await ctx.db.run(`UPDATE users SET email = ?, contact_at = ? WHERE tg_id = ?`, [e, ctx.now, id]);
+    await setUState(ctx, id, null);
+    await cleanAll(ctx, id);
+    return nextStep(ctx, await getUser(ctx, id));
+  }
+  if (state === 'u:fb1') {
+    if (!txt) return;
+    await ctx.db.run(`UPDATE users SET fb_like = ? WHERE tg_id = ?`, [txt.slice(0, 1500), id]);
+    await setUState(ctx, id, 'u:fb2');
+    await pauseFor(ctx, id, 'fbQ2');
+    return tech(ctx, id, say(ctx, id, 'fbQ2'));
+  }
+  if (state === 'u:fb2') {
+    if (!txt) return;
+    await ctx.db.run(`UPDATE users SET fb_improve = ?, fb_at = ? WHERE tg_id = ?`, [txt.slice(0, 1500), ctx.now, id]);
+    await setUState(ctx, id, null);
+    await cleanAll(ctx, id);
+    await pauseFor(ctx, id, 'fbThanks');
+    await sendFbBonus(ctx, await getUser(ctx, id));
+    await notifyAdmins(ctx, await getUser(ctx, id));
+    return nextStep(ctx, await getUser(ctx, id));
+  }
+}
+
+// бонус за отзыв: посты вида «бонус за отзыв» (kind = 'fb'), по порядку
+async function sendFbBonus(ctx, u) {
+  const posts = await ctx.db.all(`SELECT * FROM posts WHERE kind = 'fb' AND status = 'active' AND NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.post_id = posts.id AND d.tg_id = ?) ORDER BY pos, id`, [u.tg_id]);
+  if (!posts.length) { await say(ctx, u.tg_id, 'fbNoBonus'); return; }
+  await say(ctx, u.tg_id, 'fbThanks', { имя: u.contact_name || u.first_name || '' });
+  const docs = await loadDocs(ctx);
+  for (const p of posts) {
+    await sendPost(ctx.tg, u.tg_id, p, { uid: u.tg_id, publicUrl: ctx.publicUrl, arrow: await btn(ctx, 'buttonsArrow'), docs });
+    await recordDeliveries(ctx.db, p.id, [{ tg_id: u.tg_id, ok: true }], ctx.now);
+  }
+}
+
+// новый отзыв о кабинете — админам в бот
+async function notifyAdmins(ctx, u) {
+  const ids = new Set([...String(ctx.env.ADMIN_IDS || '').split(/[\s,;]+/).filter(Boolean).map(Number), ...(await ctx.db.all(`SELECT tg_id FROM admins`)).map((r) => r.tg_id)]);
+  const who = (u.contact_name || u.first_name || 'без имени') + (u.username ? ' · @' + u.username : '') + (u.phone ? ' · ' + u.phone : '') + (u.email ? ' · ' + u.email : '');
+  const text = `💬 Новый отзыв о кабинете\n${who}\n\n👍 Понравилось:\n${u.fb_like || '—'}\n\n🛠 Улучшить:\n${u.fb_improve || '—'}`;
+  for (const a of ids) if (a !== u.tg_id) await ctx.tg.call('sendMessage', { chat_id: a, text: text.slice(0, 4000), disable_notification: true }).catch(() => {});
 }
 
 async function sendGift(ctx, u, pauseMs) {
   const gifts = await ctx.db.all(
     `SELECT * FROM posts WHERE kind = 'gift' AND status = 'active'
        AND (audience = 'all' OR audience = ?)
+       AND (track = 'all' OR track = ?)
        AND NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.post_id = posts.id AND d.tg_id = ?)
      ORDER BY id`,
-    [u.level || 'all', u.tg_id],
+    [u.level || 'all', u.track || 'all', u.tg_id],
   );
   if (!gifts.length) {
     // подарков ещё нет — говорим об этом один раз, и это служебное сообщение (уберётся при следующем /start)
@@ -215,8 +341,11 @@ export async function onUserCallback(ctx, cq) {
     const yes = d.endsWith(':1');
     await logConsent(ctx, id, 'ads', yes);
     if (yes) {
-      await ctx.db.run(`UPDATE users SET consent_ads_at = ?, status = 'active', joined_at = COALESCE(joined_at, ?) WHERE tg_id = ?`, [ctx.now, ctx.now, id]);
-      return done('adsYes');
+      await ctx.db.run(`UPDATE users SET consent_ads_at = ? WHERE tg_id = ?`, [ctx.now, id]);
+      // вход уже был пройден раньше (вернулся после /stop) — просто включаем рассылку
+      if (u.sched_at) { await ctx.db.run(`UPDATE users SET status = 'active' WHERE tg_id = ?`, [id]); return done('adsYes'); }
+      await done();
+      return nextStep(ctx, await getUser(ctx, id));
     }
     await ctx.db.run(`UPDATE users SET consent_ads_at = NULL, status = 'stopped' WHERE tg_id = ?`, [id]);
     return done('adsNo');
@@ -230,6 +359,46 @@ export async function onUserCallback(ctx, cq) {
   }
   if (d === 'del:no') { await answer('deleteCancel'); return done(); }
   if (d.startsWith('go:')) return onGo(ctx, cq, u, answer);
+  if (d === 'n:ok') {
+    await answer();
+    await ctx.db.run(`UPDATE users SET contact_name = COALESCE(contact_name, ?) WHERE tg_id = ?`, [u.first_name || 'друг', id]);
+    await setUState(ctx, id, null); await done();
+    return nextStep(ctx, await getUser(ctx, id));
+  }
+  if (d.startsWith('ct:')) {
+    const how = d.slice(3);
+    if (how === 'tg') {
+      await answer('contactSaved');
+      await ctx.db.run(`UPDATE users SET contact_at = ?, username = COALESCE(?, username) WHERE tg_id = ?`, [ctx.now, cq.from.username || null, id]);
+      await done();
+      return nextStep(ctx, await getUser(ctx, id));
+    }
+    await answer(); await done();
+    if (how === 'phone') {
+      await setUState(ctx, id, 'u:phone');
+      return tech(ctx, id, say(ctx, id, 'askPhone', {}, { reply_markup: { keyboard: [[{ text: await btn(ctx, 'phoneBtn'), request_contact: true }]], resize_keyboard: true, one_time_keyboard: true } }));
+    }
+    await setUState(ctx, id, 'u:email');
+    return tech(ctx, id, say(ctx, id, 'askEmail'));
+  }
+  if (d === 'fb:yes') {
+    await answer(); await done();
+    await setUState(ctx, id, 'u:fb1');
+    await pauseFor(ctx, id, 'fbQ1');
+    return tech(ctx, id, say(ctx, id, 'fbQ1'));
+  }
+  if (d === 'fb:no') {
+    await answer();
+    await ctx.db.run(`UPDATE users SET fb_skip = 1 WHERE tg_id = ?`, [id]);
+    await done();
+    return nextStep(ctx, await getUser(ctx, id));
+  }
+  if (d.startsWith('tr:')) {
+    await answer();
+    await ctx.db.run(`UPDATE users SET track = ? WHERE tg_id = ?`, [d.slice(3) === 'course' ? 'course' : 'mat', id]);
+    await done();
+    return nextStep(ctx, await getUser(ctx, id));
+  }
   if (d.startsWith('buy:')) {
     // оплата тарифа: продамус подключим позже — пока всплывашка
     await ctx.tg.call('answerCallbackQuery', { callback_query_id: cq.id, text: (await msgText(ctx, 'payLater')).text.slice(0, 190), show_alert: true }).catch(() => {});

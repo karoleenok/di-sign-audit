@@ -171,7 +171,7 @@ step('тексты: правка с подстановкой {имя} и воз�
 // 8а. путь ученика: пауза, кнопки-ссылки, пройти заново
 assert.match(await page.textContent('#body'), /Путь ученика/);
 const stepsTxt = await page.$$eval('#body .day .dayh span', (e) => e.map((x) => x.textContent));
-assert.deepEqual(stepsTxt.slice(0, 3), ['Приветствие', 'Согласие на обработку данных', 'Уровень']);
+assert.deepEqual(stepsTxt.slice(0, 5), ['Приветствие', 'Согласие на обработку данных', 'Согласие на рассылку', 'Уровень', 'Имя']);
 await page.click('.msg[data-k="consentPd"] .p'); await page.waitForSelector('#mDelay');
 await page.fill('#mDelay', '2,5');
 await page.click('#mLinks [data-newrow]');

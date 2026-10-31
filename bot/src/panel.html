@@ -356,12 +356,16 @@ function renderGifts() {
 
 // путь ученика: служебные сообщения по порядку (порядок фиксирован — согласие на данные по закону первое)
 const FLOW = [
-  { key: 'hello', alt: ['helloTest'], title: 'Приветствие', note: 'Сразу после «Старт». Если человек пришёл из теста — вариант «после теста».' },
-  { key: 'consentPd', btns: ['consentPdBtn'], alt: ['consentThanks'], title: 'Согласие на обработку данных', note: 'Всегда первым вопросом: без согласия бот не имеет права ничего присылать.' },
-  { key: 'askLevel', btns: ['levelBtnStart', 'levelBtnPro'], alt: ['levelChanged'], title: 'Уровень' },
-  { key: 'testOffer', btns: ['testBtn'], alt: ['noGift'], title: 'Предложение пройти тест', note: 'Если человек пришёл из теста — вместо этого сообщения сразу подарок (вкладка «Подарки»).' },
-  { key: 'consentAds', btns: ['consentAdsYes', 'consentAdsNo'], title: 'Согласие на рассылку' },
-  { key: 'adsYes', alt: ['adsNo'], title: 'Ответ на «да» / «нет»', note: 'После «да» начинается лента (вкладка «Лента»).' },
+  { key: 'hello', alt: ['helloTest'], title: 'Приветствие', note: 'Сразу после «Старт». Если человек пришёл из аудита — вариант «после теста».' },
+  { key: 'consentPd', btns: ['consentPdBtn'], alt: ['consentThanks'], title: 'Согласие на обработку данных', note: 'Всегда первым: без согласия бот не имеет права ничего присылать и спрашивать контакты.' },
+  { key: 'consentAds', btns: ['consentAdsYes', 'consentAdsNo'], alt: ['adsNo'], title: 'Согласие на рассылку', note: 'Отдельное согласие (закон о рекламе). Если «нет» — вход заканчивается.' },
+  { key: 'askLevel', btns: ['levelBtnStart', 'levelBtnPro'], alt: ['levelChanged'], title: 'Уровень', note: 'Только если человек пришёл не из аудита.' },
+  { key: 'askName', btns: ['nameOk'], title: 'Имя', note: 'Человек жмёт «Всё верно» или пишет имя.' },
+  { key: 'askContact', btns: ['contactTg', 'contactPhone', 'contactEmail'], alt: ['askPhone', 'askEmail', 'badPhone', 'badEmail', 'contactSaved'], title: 'Контакт: Telegram, телефон или почта', note: 'Кнопка «Telegram» видна, только если у человека есть ник.' },
+  { key: 'fbOffer', btns: ['fbYes', 'fbNo'], alt: ['fbQ1', 'fbQ2', 'fbThanks', 'fbNoBonus'], title: 'Отзыв о кабинете — по желанию', note: 'За отзыв уходит бонус: посты вида «💬 Бонус за отзыв» во вкладке «Сценарий». Отзывы приходят вам в бот и видны в «Сценарии» → «Люди и отзывы».' },
+  { key: 'askTrack', btns: ['trackCourse', 'trackMat'], title: 'Мини-курс или материалы', note: 'Только если человек не выбрал в аудите.' },
+  { key: 'testOffer', btns: ['testBtn'], alt: ['noGift'], title: 'Предложение пройти тест', note: 'Один раз, если не проходил аудит. Прошёл — сразу подарок (вкладка «Подарки»).' },
+  { key: 'schedCourse', alt: ['schedMat'], title: 'Пост-расписание по треку', note: 'Последний шаг. Отсюда начинается лента (вкладка «Лента»).' },
 ];
 const mOf = (k) => S.msgs.find((x) => x.key === k);
 const mediaTag = (m) => m && m.media ? '<span class="tag">' + ({ photo: '🖼 картинка', video: '🎬 видео', animation: '🎞 гифка' }[m.media] || '🖼') + '</span>' : '';
@@ -433,12 +437,13 @@ function segHtml(id, opts, cur) { return '<div class="seg sm" id="' + id + '">' 
 function segBind(id, on) { $(id).onclick = (e) => { const b = e.target.closest('button'); if (!b) return; [...$(id).children].forEach((x) => x.classList.toggle('on', x === b)); on(b.dataset.v); }; }
 
 // ---------- сценарий: дерево постов и кнопок ----------
-const KIND = { drip: '📅 Пост ленты', date: '🕒 Пост на дату', gift: '🎁 Подарок после теста', node: '🔘 Пост-ответ' };
+const KIND = { drip: '📅 Пост ленты', date: '🕒 Пост на дату', gift: '🎁 Подарок после теста', node: '🔘 Пост-ответ', fb: '💬 Бонус за отзыв' };
 const KIND_NOTE = {
   drip: 'Уходит каждому в свой день после входа: в день и время, по таймеру или после другого поста.',
   date: 'Уходит один раз в выбранные дату и время всем, кто уже в боте. Для эфиров и анонсов.',
   gift: 'Уходит сразу после аудит-теста.',
   node: 'Приходит, только когда человек нажимает кнопку, которая ведёт сюда. Так строятся развилки: «выбери вариант → следующий пост».',
+  fb: 'Уходит сразу после отзыва о прототипе кабинета: гайд, секретный урок. Если таких несколько — по порядку.',
 };
 const TARIFF = { curator: 'Тариф с кураторами', mentor: 'Тариф с ментором' };
 const parentsOf = (id) => { const out = []; S.posts.forEach((p) => (p.rows || []).forEach((row) => row.forEach((b) => { if (+b.go === id) out.push({ p, b }); }))); return out; };
@@ -449,6 +454,7 @@ const emptyTag = (p) => !(p.text || '').trim() && !p.media.length ? '<span class
 function whenOf(p) {
   if (p.kind === 'gift') return '🎁 после теста';
   if (p.kind === 'node') return '🔘 по кнопке';
+  if (p.kind === 'fb') return '💬 за отзыв';
   if (p.kind === 'date') return '🕒 ' + fmtRun(p.run_at);
   if (p.mode === 'after') return '⏱ через ' + fmtDelay(p.delay);
   return '📅 ' + (p.mode === 'timer' ? 'через ' + fmtDelay(p.delay) + ' после входа' : p.day === 0 ? 'день 0 · сразу' : 'день ' + p.day + ' · ' + p.time);
@@ -466,7 +472,7 @@ function renderFlow() {
     const np = path.concat(p.id);
     let h = '<div class="fn' + (p.status !== 'active' ? ' dim' : '') + '" data-id="' + p.id + '"><div class="fn-top"><span class="time">' + esc(whenOf(p)) + '</span>' + stTag(p) + emptyTag(p) +
       '<span class="stat">' + (p.sent ? '↗ ' + p.sent : '') + (p.clicks ? ' · 👆 ' + p.clicks : '') + '</span></div>' +
-      '<div class="ttl">' + esc(postName(p)) + '</div>' + (p.media.length ? '<div class="meta"><span class="tag">🖼 ' + (p.media.length > 1 ? '×' + p.media.length : '') + '</span>' + (p.audience !== 'all' && p.kind !== 'node' ? '<span class="tag">' + esc(S.audiences[p.audience]) + '</span>' : '') + '</div>' : (p.audience !== 'all' && p.kind !== 'node' ? '<div class="meta"><span class="tag">' + esc(S.audiences[p.audience]) + '</span></div>' : '')) + '</div>';
+      '<div class="ttl">' + esc(postName(p)) + '</div>' + (p.track && p.track !== 'all' ? '<div class="meta"><span class="tag zone">' + (p.track === 'course' ? '🎓 мини-курс' : '📚 материалы') + '</span></div>' : '') + (p.media.length ? '<div class="meta"><span class="tag">🖼 ' + (p.media.length > 1 ? '×' + p.media.length : '') + '</span>' + (p.audience !== 'all' && p.kind !== 'node' ? '<span class="tag">' + esc(S.audiences[p.audience]) + '</span>' : '') + '</div>' : (p.audience !== 'all' && p.kind !== 'node' ? '<div class="meta"><span class="tag">' + esc(S.audiences[p.audience]) + '</span></div>' : '')) + '</div>';
     let kids = '';
     (p.rows || []).forEach((row) => row.forEach((b) => {
       if (b.go) { const t = ids[+b.go]; kids += '<div class="fb"><span class="fb-l">🔘 ' + esc(b.text) + (p.once ? ' <i class="muted small">выбор</i>' : '') + '</span>' + (t ? node(t, depth + 1, np) : '<span class="tag no">пост в архиве</span>') + '</div>'; }
@@ -489,6 +495,7 @@ function renderFlow() {
   h += sec('🎁 После теста', 'Подарок уходит сразу после аудит-теста.', gifts);
   h += sec('📅 Лента', 'По порядку от входа в бот. Дни и время удобно двигать во вкладке «Лента».', drip);
   h += sec('🕒 В дату', '', dates);
+  h += sec('💬 Бонус за отзыв', 'Уходит сразу после отзыва о прототипе кабинета.', S.posts.filter((p) => p.kind === 'fb').sort((a, b) => a.pos - b.pos || a.id - b.id));
   const lost = S.posts.filter((p) => p.kind === 'node' && !shown.has(p.id));
   if (lost.length) h += sec('🔘 Посты-ответы без кнопки', 'На них пока не ведёт ни одна кнопка — человек их не получит. Привяжи: открой нужный пост → «＋ кнопка» → «Пост».', lost);
   $('body').innerHTML = h;
@@ -502,23 +509,50 @@ function renderFlow() {
 function entryBox() {
   const d = S.docs || {};
   const ok = (k) => d[k] ? '<span class="ok-t">✓</span>' : '<span class="warn-t">не задана</span>';
+  const on = (k) => S.posts.filter((p) => p.kind === k && p.status === 'active').length;
   const steps = [
-    ['hello', '👋 Приветствие'],
+    ['hello', '👋 Приветствие', 'из аудита приходит выбор: мини-курс или материалы'],
     ['consentPd', '✅ Согласие на данные', 'политика ' + ok('policy') + ' · согласие ' + ok('consent')],
-    ['askLevel', '🎚 Уровень: начинающий / продолжающий'],
-    ['testOffer', '🧪 Тест → 🎁 подарок', S.posts.filter((p) => p.kind === 'gift' && p.status === 'active').length + ' подарк. включено'],
     ['consentAds', '📬 Согласие на рассылку'],
+    ['askLevel', '🎚 Уровень', 'если пришёл не из аудита'],
+    ['askName', '📇 Имя и контакт', 'Telegram, телефон или почта'],
+    ['fbOffer', '💬 Отзыв о кабинете — по желанию', 'бонусов за отзыв включено: ' + on('fb')],
+    ['askTrack', '🎓 Мини-курс или материалы', 'если не выбрал в аудите'],
+    ['testOffer', '🧪 Тест → 🎁 подарок', 'подарков включено: ' + on('gift')],
+    ['schedCourse', '🗓 Пост-расписание по треку'],
   ];
   const miss = !d.policy || !d.consent;
   return '<div class="box"><h3>Вход в бот</h3><p class="small muted" style="margin:0 0 10px">Так бот встречает нового человека. Порядок фиксированный: по закону сначала согласие. Нажми на шаг — поменять текст.</p><div class="steps">' +
     steps.map(([k, t, sub], i) => '<button type="button" class="stp" data-k="' + k + '"><b>' + (i + 1) + '</b><span class="st-t">' + t + (sub ? '<i>' + sub + '</i>' : '') + '</span></button>').join('<div class="arr">↓</div>') +
-    '<div class="arr">↓</div><div class="stp last"><b>→</b><span class="st-t">дальше — лента и посты ниже</span></div></div>' +
+    '<div class="arr">↓</div><div class="stp last"><b>→</b><span class="st-t">дальше — лента по треку и посты ниже</span></div></div>' +
+    '<div class="docs-row"><div><b>Люди и отзывы</b><div class="small muted">контакты, выбор из аудита, отзывы о кабинете: ' + (S.fbCount || 0) + '</div></div><button type="button" class="chip" id="peopleBtn">открыть</button></div>' +
     '<div class="docs-row"><div><b>Документы</b><div class="small muted">политика ' + ok('policy') + ' · согласие ' + ok('consent') + ' · оферта ' + ok('offer') + '</div></div><button type="button" class="chip" id="docsBtn">изменить</button></div>' +
     (miss ? '<div class="note warn">Без ссылок на политику и согласие бот нельзя открывать для всех (152-ФЗ). Пока бот только для своих.</div>' : '') + '</div>';
 }
 function bindEntry() {
   document.querySelectorAll('.stp[data-k]').forEach((el) => el.onclick = () => { if (el.dataset.k === 'testOffer') { tab = 'gifts'; render(); window.scrollTo(0, 0); return; } openMsg(el.dataset.k); });
   $('docsBtn').onclick = openDocs;
+  $('peopleBtn').onclick = openPeople;
+}
+async function openPeople() {
+  sheet('<div class="shd"><span class="pill">Люди и отзывы</span><button type="button" class="sx" id="pX" aria-label="закрыть">✕</button></div><h2>Кто пришёл в бот</h2><p class="muted small">Загружаю…</p>');
+  $('pX').onclick = closeSheet;
+  let d; try { d = await api('/people'); } catch (e) { toast(e.message); return; }
+  const t = d.totals || {};
+  const tr = { course: '🎓 мини-курс', mat: '📚 материалы' };
+  const st = { active: 'в рассылке', new: 'проходит вход', stopped: 'отписался', blocked: 'заблокировал бота' };
+  const fmtD = (x) => { if (!x) return ''; const dd = new Date((x + 10800) * 1000); return dd.getUTCDate() + '.' + String(dd.getUTCMonth() + 1).padStart(2, '0'); };
+  let h = '<div class="shd"><span class="pill">Люди и отзывы</span><button type="button" class="sx" id="pX" aria-label="закрыть">✕</button></div><h2>Кто пришёл в бот</h2>' +
+    '<div class="meta" style="margin:4px 0 12px"><span class="tag">всего ' + (t.all_n || 0) + '</span><span class="tag">прошли вход ' + (t.done || 0) + '</span><span class="tag zone">🎓 ' + (t.course || 0) + '</span><span class="tag zone">📚 ' + (t.mat || 0) + '</span><span class="tag">💬 отзывов ' + (t.fb || 0) + '</span></div>' +
+    '<p class="small muted">Это персональные данные: не пересылайте их в чаты и не скачивайте на чужие устройства.</p>';
+  h += d.people.map((u) => {
+    const name = u.contact_name || u.first_name || 'без имени';
+    const contact = [u.username ? '@' + u.username : '', u.phone || '', u.email || ''].filter(Boolean).join(' · ') || 'контакт не оставил';
+    return '<div class="msg" style="cursor:default"><div class="t">' + esc(name) + (u.track ? '<span class="tag zone">' + tr[u.track] + '</span>' : '') + '<span class="stat">' + fmtD(u.created_at) + '</span></div>' +
+      '<div class="small muted" style="margin-top:2px">' + esc(contact) + ' · ' + esc(st[u.status] || u.status) + (u.level ? ' · ' + esc(S.levels[u.level] || u.level) : '') + (u.zone ? ' · из аудита' : '') + '</div>' +
+      (u.fb_at ? '<div class="preview" style="margin-top:8px">👍 ' + esc(u.fb_like || '—') + '\n\n🛠 ' + esc(u.fb_improve || '—') + '</div>' : '') + '</div>';
+  }).join('') || '<p class="muted">Пока никого.</p>';
+  $('sheet').innerHTML = '<div class="grab"></div>' + h; $('pX').onclick = closeSheet;
 }
 function openDocs() {
   const d = S.docs || {};
@@ -540,13 +574,13 @@ function openNew(preset) {
   preset = preset || {};
   if (preset.kind) return openPost(null, { draft: Object.assign(blankPost(preset.kind), preset) });
   sheet('<span class="pill">Новый пост</span><h2>Когда он уходит?</h2><div class="kinds">' +
-    ['drip', 'node', 'date', 'gift'].map((k) => '<button type="button" class="kind" data-k="' + k + '"><b>' + KIND[k] + '</b><span>' + KIND_NOTE[k] + '</span></button>').join('') +
+    ['drip', 'node', 'date', 'gift', 'fb'].map((k) => '<button type="button" class="kind" data-k="' + k + '"><b>' + KIND[k] + '</b><span>' + KIND_NOTE[k] + '</span></button>').join('') +
     '</div><div class="btns"><button class="btn ghost" id="nClose">Закрыть</button></div>');
   document.querySelectorAll('.kind').forEach((el) => el.onclick = () => { haptic(); openPost(null, { draft: blankPost(el.dataset.k) }); });
   $('nClose').onclick = closeSheet;
 }
 function blankPost(kind) {
-  return { id: null, kind, status: 'draft', title: '', text: '', md: '', rich: false, once: false, files: [], media: [], day: 1, time: '11:00', mode: 'day', delay: 0, after: null, run_at: null, audience: 'all', catchup: false, pos: 0, rows: [], sent: 0, clicks: 0 };
+  return { id: null, kind, track: 'all', status: 'draft', title: '', text: '', md: '', rich: false, once: false, files: [], media: [], day: 1, time: '11:00', mode: 'day', delay: 0, after: null, run_at: null, audience: 'all', catchup: false, pos: 0, rows: [], sent: 0, clicks: 0 };
 }
 
 // превью картинки поста
@@ -559,7 +593,7 @@ function openPost(id, opt) {
   opt = opt || {};
   const p = opt.draft || S.posts.find((x) => x.id === id); if (!p) return;
   const isNew = !p.id;
-  const st = { day: p.day ?? 1, time: p.time || '11:00', audience: p.audience, status: p.status, catchup: p.catchup, run_at: p.run_at, mode: p.mode || 'day', delay: p.delay || 0, after: p.after, once: !!p.once, files: JSON.parse(JSON.stringify(p.files || [])), editRich: false };
+  const st = { track: p.track || 'all', day: p.day ?? 1, time: p.time || '11:00', audience: p.audience, status: p.status, catchup: p.catchup, run_at: p.run_at, mode: p.mode || 'day', delay: p.delay || 0, after: p.after, once: !!p.once, files: JSON.parse(JSON.stringify(p.files || [])), editRich: false };
   const unitOf = (m) => (m >= 1440 && m % 1440 === 0 ? 1440 : m >= 60 && m % 60 === 0 ? 60 : 1);
   const unitSel = (sid, m) => '<select id="' + sid + '" style="width:auto;flex:none">' + [[1, 'минут'], [60, 'часов'], [1440, 'дней']].map(([v, t]) => '<option value="' + v + '"' + (unitOf(m) === v ? ' selected' : '') + '>' + t + '</option>').join('') + '</select>';
   const others = S.posts.filter((x) => ['drip', 'node', 'gift'].includes(x.kind) && x.id !== p.id);
@@ -593,7 +627,9 @@ function openPost(id, opt) {
   h += '<label class="f" id="btnsLbl">Кнопки под постом</label><div id="bEd"></div>' +
     '<div class="btns two" style="margin-top:8px"><button class="btn ghost" type="button" id="bRow">＋ Кнопка</button><button class="btn ghost" type="button" id="bNext">＋ Следующий пост</button></div>' +
     '<div class="toggle" id="onceWrap"><span><b>Кнопки-выбор</b><br><span class="small muted">После нажатия под постом остаётся только выбранный вариант с ✓ — человек не нажмёт второй</span></span><label class="sw"><input type="checkbox" id="fOnce" ' + (st.once ? 'checked' : '') + '><span></span></label></div>';
-  if (p.kind !== 'node') h += '<label class="f">Кому</label>' + segHtml('fAud', [['all', 'Всем'], ['start', 'Начинающим'], ['pro', 'Продолжающим']], st.audience);
+  if (p.kind !== 'node' && p.kind !== 'fb') h += '<label class="f">Кому</label>' + segHtml('fAud', [['all', 'Всем'], ['start', 'Начинающим'], ['pro', 'Продолжающим']], st.audience) +
+    '<label class="f">Трек из аудита</label>' + segHtml('fTrack', [['all', 'Всем'], ['course', '🎓 Мини-курс'], ['mat', '📚 Материалы']], st.track) +
+    '<p class="small muted" style="margin:6px 2px 0">Мини-курс или материалы — что человек выбрал в аудите или в боте.</p>';
   h += '<label class="f">Статус</label>' + segHtml('fSt', [['active', '✅ Включён'], ['paused', '⏸ Пауза'], ['draft', '📝 Черновик']], st.status);
   h += '<div class="btns"><button class="btn" id="bSave">' + (isNew ? 'Создать пост' : 'Сохранить') + '</button>' +
     (isNew ? '<button class="btn ghost" id="bClose">Отмена</button>' : '<div class="btns two" style="margin:0"><button class="btn ghost" id="bPrev">👁 Прислать мне</button><button class="btn ghost" id="bClose">Закрыть</button></div><button class="btn danger" id="bArch">🗄 Убрать в архив</button>') + '</div>';
@@ -658,6 +694,7 @@ function openPost(id, opt) {
   const upd = () => { if (!$('dVal')) return; $('dVal').textContent = st.day; $('tWrap').style.display = st.day === 0 ? 'none' : ''; $('dHint').textContent = 'День ' + st.day + ' — ' + dayLabel(st.day) + (st.day ? ', в ' + ($('fTime').value || st.time) + ' по Москве' : ''); };
   if ($('dMinus')) { $('dMinus').onclick = () => { st.day = Math.max(0, st.day - 1); haptic(); upd(); }; $('dPlus').onclick = () => { st.day = Math.min(365, st.day + 1); haptic(); upd(); }; $('fTime').oninput = upd; upd(); }
   if ($('fAud')) segBind('fAud', (v) => st.audience = v);
+  if ($('fTrack')) segBind('fTrack', (v) => st.track = v);
   segBind('fSt', (v) => st.status = v);
 
   // кнопки: ссылка / пост / документ / оплата
@@ -726,7 +763,7 @@ function openPost(id, opt) {
       for (const b of outRows.flat()) if (b.go === null && b.text) throw new Error('У кнопки «' + b.text + '» не выбран пост');
       const body = { title: $('fTitle').value.trim(), status: st.status, rows: outRows, once: $('fOnce').checked, files: st.files };
       if (!p.rich || st.editRich) body.md = ta.value;
-      if (p.kind !== 'node') body.audience = st.audience;
+      if (p.kind !== 'node' && p.kind !== 'fb') { body.audience = st.audience; body.track = st.track; }
       if (p.kind === 'drip') {
         body.mode = st.mode; body.catchup = $('fCatch').checked;
         if (st.mode === 'day') { body.day = st.day; body.time = st.day > 0 ? ($('fTime').value || st.time) : '00:00'; }

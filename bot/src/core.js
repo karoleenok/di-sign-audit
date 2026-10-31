@@ -3,7 +3,7 @@ import { migrate } from './schema.js';
 import { makeTg } from './tg.js';
 import { nowSec } from './time.js';
 import { userCommands, adminCommands } from './msgs.js';
-import { onStart, onUserCallback, onUserCommand } from './users.js';
+import { onStart, onUserCallback, onUserCommand, onUserText, getUState } from './users.js';
 import { isAdmin, envAdmins, onAdminCommand, onAdminMessage, onAdminCallback } from './admin.js';
 import { sendPost, dueUsers, recordDeliveries, loadDocs } from './posts.js';
 import { btn } from './msgs.js';
@@ -52,6 +52,9 @@ export async function handleUpdate(ctx, upd) {
     if (admin) { const r = await onAdminCommand(ctx, msg, c.cmd, c.arg); if (r !== null) return r; }
     return onUserCommand(ctx, msg, c.cmd);
   }
+  // ответ на вопрос входа (имя, телефон, почта, отзыв) — в том числе у админа, который проходит путь ученика
+  const us = await getUState(ctx, msg.from.id);
+  if (us) return onUserText(ctx, msg, us);
   if (admin && (await onAdminMessage(ctx, msg))) return;
   return onUserCommand(ctx, msg, '');
 }

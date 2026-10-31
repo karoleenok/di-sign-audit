@@ -93,6 +93,22 @@ export const MIGRATIONS = [
   [
     `ALTER TABLE posts ADD COLUMN once INTEGER NOT NULL DEFAULT 0`,
   ],
+  // v6: вход в бота — выбор из аудита (мини-курс или материалы), имя и контакт, отзыв о кабинете;
+  //     посты по треку (всем / мини-курс / материалы); kind = 'fb' — бонус за отзыв
+  [
+    `ALTER TABLE users ADD COLUMN track TEXT`,
+    `ALTER TABLE users ADD COLUMN contact_name TEXT`,
+    `ALTER TABLE users ADD COLUMN phone TEXT`,
+    `ALTER TABLE users ADD COLUMN email TEXT`,
+    `ALTER TABLE users ADD COLUMN contact_at INTEGER`,
+    `ALTER TABLE users ADD COLUMN fb_like TEXT`,
+    `ALTER TABLE users ADD COLUMN fb_improve TEXT`,
+    `ALTER TABLE users ADD COLUMN fb_at INTEGER`,
+    `ALTER TABLE users ADD COLUMN fb_skip INTEGER`,
+    `ALTER TABLE users ADD COLUMN test_offered INTEGER`,
+    `ALTER TABLE users ADD COLUMN sched_at INTEGER`,
+    `ALTER TABLE posts ADD COLUMN track TEXT NOT NULL DEFAULT 'all'`,
+  ],
 ];
 
 // Обновить базу при первом запуске после выкладки новой версии (один раз на процесс)

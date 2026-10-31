@@ -9,6 +9,7 @@ const j = (s, d) => { try { return s ? JSON.parse(s) : d; } catch { return d; } 
 //   go  — открыть другой пост этого бота (пост-ответ, развилка)
 //   doc — документ: политика, согласие, оферта (ссылка из настроек панели)
 //   pay — оплата тарифа (продамус подключим позже — пока кнопка отвечает «скоро»)
+export const TRACKS = { all: 'всем', course: 'мини-курс', mat: 'материалы' };
 export const DOCS = { policy: 'Политика обработки данных', consent: 'Согласие на обработку данных', offer: 'Оферта' };
 export function keyboard(post, uid, publicUrl, docs) {
   const rows = j(post.buttons, []);
@@ -77,6 +78,8 @@ function audienceSql(post) {
   const p = [];
   if (post.audience === 'start') c += ` AND u.level = 'start'`;
   else if (post.audience === 'pro') c += ` AND u.level = 'pro'`;
+  // трек из аудита: мини-курс или материалы
+  if (post.track === 'course' || post.track === 'mat') { c += ` AND u.track = ?`; p.push(post.track); }
   return { c, p };
 }
 const BASE = `u.status = 'active' AND u.consent_ads_at IS NOT NULL AND u.joined_at IS NOT NULL AND u.paid_at IS NULL`;
@@ -146,6 +149,7 @@ export function postLabel(p) {
 export function postWhen(p) {
   if (p.kind === 'gift') return 'подарок после теста';
   if (p.kind === 'node') return 'по нажатию кнопки';
+  if (p.kind === 'fb') return 'бонус за отзыв о кабинете';
   if (p.kind === 'date') return p.run_at ? `дата ${fmtWhen(p.run_at)}` : 'дата не задана';
   if (p.mode === 'timer') return `через ${fmtDelay(p.delay_min)} после входа`;
   if (p.mode === 'after') return `через ${fmtDelay(p.delay_min)} после поста #${p.after_id}`;
