@@ -51,16 +51,19 @@ async function pause(ctx, id, ms) {
   const k = ctx.env.DELAY_FACTOR === undefined ? 1 : Number(ctx.env.DELAY_FACTOR);
   if (!(k > 0) || !(ms > 0)) return;
   const t = Math.max(450, ms * k);
-  await ctx.tg.call('sendChatAction', { chat_id: id, action: 'typing' }).catch(() => {});
+  const t0 = Date.now();
+  // «печатает» и правки пузырька не ждём: пока идут запросы через мост, пауза уже тикает
+  ctx.tg.call('sendChatAction', { chat_id: id, action: 'typing' }).catch(() => {});
   if (ctx.env.TYPING_BUBBLE === '0') { await sleep(t); return; }
   const dots = await ctx.tg.call('sendMessage', { chat_id: id, text: '•', disable_notification: true }).catch(() => null);
-  if (!dots) { await sleep(t); return; }
-  await sleep(t / 3);
-  await ctx.tg.call('editMessageText', { chat_id: id, message_id: dots.message_id, text: '• •' }).catch(() => {});
-  await sleep(t / 3);
-  await ctx.tg.call('editMessageText', { chat_id: id, message_id: dots.message_id, text: '• • •' }).catch(() => {});
-  await sleep(t / 3);
-  await ctx.tg.call('deleteMessage', { chat_id: id, message_id: dots.message_id }).catch(() => {});
+  if (!dots) { await sleep(Math.max(0, t - (Date.now() - t0))); return; }
+  const mid = dots.message_id;
+  const edit = (text) => ctx.tg.call('editMessageText', { chat_id: id, message_id: mid, text }).catch(() => {});
+  const e1 = sleep(Math.max(0, t / 3 - (Date.now() - t0))).then(() => edit('• •'));
+  const e2 = sleep(Math.max(0, (2 * t) / 3 - (Date.now() - t0))).then(() => edit('• • •'));
+  await sleep(Math.max(0, t - (Date.now() - t0)));
+  await Promise.all([e1, e2]);
+  await ctx.tg.call('deleteMessage', { chat_id: id, message_id: mid }).catch(() => {});
 }
 const techList = (u) => { try { return u && u.tech ? JSON.parse(u.tech) : []; } catch { return []; } };
 async function tech(ctx, id, sending) {

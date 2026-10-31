@@ -94,6 +94,16 @@ setInterval(async () => {
 }, 60_000);
 
 // режим без вебхука: сами забираем сообщения у Telegram (через мост, если нужен)
+// каждый человек обрабатывается по очереди, но разные люди — одновременно:
+// раньше один ученик с паузами «печатает…» задерживал всех остальных
+const lanes = new Map();
+function dispatch(u) {
+  const who = (u.message && u.message.from) || (u.callback_query && u.callback_query.from) || (u.my_chat_member && u.my_chat_member.from);
+  const key = who ? who.id : 'x';
+  const prev = lanes.get(key) || Promise.resolve();
+  const next = prev.then(() => handleUpdate(ctxFor(), u)).catch((e) => console.error(e)).finally(() => { if (lanes.get(key) === next) lanes.delete(key); });
+  lanes.set(key, next);
+}
 if (polling) {
   (async () => {
     const offRow = await db.first(`SELECT value FROM settings WHERE key = 'poll_offset'`);
@@ -104,9 +114,9 @@ if (polling) {
         const ups = await ctx.tg.call('getUpdates', { offset, timeout: 25, allowed_updates: ['message', 'callback_query', 'my_chat_member'] });
         for (const u of ups) {
           offset = u.update_id + 1;
-          try { await handleUpdate(ctxFor(), u); } catch (e) { console.error(e); }
-          await db.run(`INSERT INTO settings (key, value) VALUES ('poll_offset', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(offset)]);
+          dispatch(u);
         }
+        if (ups.length) await db.run(`INSERT INTO settings (key, value) VALUES ('poll_offset', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(offset)]);
       } catch (e) { console.error('poll', e.message); await new Promise((r) => setTimeout(r, 2000)); }
     }
   })();
