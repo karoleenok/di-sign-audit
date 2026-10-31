@@ -11,6 +11,9 @@ import path from 'node:path';
 import { nodeSqliteAdapter } from './db-node.js';
 import { migrate } from './schema.js';
 import { makeCtx, handleUpdate, tick, setup, clickRedirect, exportAll } from './core.js';
+import { handlePanelApi } from './panel-api.js';
+import { stepRuns } from './testrun.js';
+import PANEL from './panel-html.js';
 
 const env = process.env;
 const file = env.DB_FILE || './data/bot.db';
@@ -24,6 +27,24 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, env.PUBLIC_URL || 'http://localhost');
   const send = (code, body, type = 'text/html; charset=utf-8', headers = {}) => { res.writeHead(code, { 'content-type': type, ...headers }); res.end(body); };
   try {
+    // панель админа (кнопка в боте) и её API
+    if (url.pathname === '/admin' || url.pathname === '/admin/') return send(200, PANEL, 'text/html; charset=utf-8', { 'cache-control': 'no-store' });
+    if (url.pathname.startsWith('/api/panel/')) {
+      const chunks = []; for await (const ch of req) chunks.push(ch);
+      const body = Buffer.concat(chunks);
+      const hdr = new Headers(); for (const [k, v] of Object.entries(req.headers)) if (typeof v === 'string') hdr.set(k, v);
+      const request = new Request(url, { method: req.method, headers: hdr, body: ['GET', 'HEAD'].includes(req.method) ? undefined : body });
+      const ctx = ctxFor(); ctx.waitUntil = (p) => { Promise.resolve(p).catch((e) => console.error(e)); };
+      const r = await handlePanelApi(ctx, request, url);
+      const out = Buffer.from(await r.arrayBuffer());
+      res.writeHead(r.status, Object.fromEntries(r.headers)); return res.end(out);
+    }
+    // страница аудит-теста: берём файл с GitHub и отдаём как обычную страницу
+    if (url.pathname === '/test' || url.pathname === '/test/') {
+      const src = env.TEST_SRC || 'https://raw.githubusercontent.com/karoleenok/di-sign-audit/main/index.html';
+      const r = await fetch(src);
+      return send(r.ok ? 200 : 502, await r.text());
+    }
     if (url.pathname === '/tg' && req.method === 'POST') {
       if (env.WEBHOOK_SECRET && req.headers['x-telegram-bot-api-secret-token'] !== env.WEBHOOK_SECRET) return send(403, 'forbidden');
       let body = ''; for await (const ch of req) body += ch;
@@ -47,7 +68,9 @@ const server = http.createServer(async (req, res) => {
 server.listen(Number(env.PORT) || 8080, () => console.log('bot listening', Number(env.PORT) || 8080, polling ? '(polling)' : '(webhook)'));
 
 // расписание раз в минуту
-setInterval(() => tick(ctxFor(), Number(env.TICK_BUDGET) || 600).catch((e) => console.error('tick', e)), 60_000);
+setInterval(async () => {
+  try { await tick(ctxFor(), Number(env.TICK_BUDGET) || 600); await stepRuns(ctxFor(), 10); } catch (e) { console.error('tick', e); }
+}, 60_000);
 
 // режим без вебхука: сами забираем сообщения у Telegram (через мост, если нужен)
 if (polling) {
