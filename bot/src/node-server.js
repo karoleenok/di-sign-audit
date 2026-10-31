@@ -55,6 +55,11 @@ const server = http.createServer(async (req, res) => {
       const out = Buffer.from(await r.arrayBuffer());
       res.writeHead(r.status, Object.fromEntries(r.headers)); return res.end(out);
     }
+    // открытые страницы документов (политика, согласие) — лежат в bot/docs
+    if (url.pathname === '/policy' || url.pathname === '/consent') {
+      const f = new URL('../docs/' + url.pathname.slice(1) + '.html', import.meta.url);
+      return send(200, fs.readFileSync(f, 'utf8'), 'text/html; charset=utf-8', { 'cache-control': 'public, max-age=300' });
+    }
     // страница аудит-теста: берём файл с GitHub и отдаём как обычную страницу
     if (url.pathname === '/test' || url.pathname === '/test/') {
       const src = env.TEST_SRC || 'https://raw.githubusercontent.com/karoleenok/di-sign-audit/main/index.html';
