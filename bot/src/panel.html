@@ -867,7 +867,8 @@ async function reload() { try { S = await api('/state'); render(); } catch (e) {
 function builtinBtns(key) {
   const st = FLOW.find((x) => x.key === key);
   const bs = ((st && st.btns) || []).map((b) => mOf(b)).filter(Boolean);
-  return bs.length ? '<p class="small muted" style="margin:0 2px 6px">Встроенные кнопки шага (нужны для пути, убрать нельзя; текст — в «Тексты»): ' + bs.map((b) => '<span class="chip" style="cursor:default">🔘 ' + esc(b.text) + '</span>').join(' ') + '</p>' : '';
+  return bs.length ? '<p class="small muted" style="margin:0 2px 6px">Встроенные кнопки шага. Менять можно текст; убрать или перенаправить нельзя — на них держится путь ученика (что бот делает после нажатия).</p>' +
+    bs.map((b) => '<div class="bcard" style="margin-bottom:6px"><div class="small muted" style="margin-bottom:4px">🔘 ' + esc(b.title) + '</div><input type="text" maxlength="64" data-bk="' + b.key + '" data-orig="' + esc(b.text) + '" value="' + esc(b.text) + '"></div>').join('') : '';
 }
 function openMsg(key) {
   const m = S.msgs.find((x) => x.key === key); if (!m) return;
@@ -929,6 +930,7 @@ function openMsg(key) {
     const body = {};
     if (ta.value !== m.text) body.text = ta.value;
     if ($('mDelay')) { body.delay = parseFloat(String($('mDelay').value).replace(',', '.')) || 0; body.links = getLinks(); }
+    try { for (const el of document.querySelectorAll('#sheet [data-bk]')) if (el.value.trim() && el.value !== el.dataset.orig) { const r0 = await api('/msg/' + el.dataset.bk, { text: el.value }); S.msgs = r0.msgs; } } catch (e) { return toast(e.message); }
     if ($('mPost')) { const pv = $('mPost').value; if ((pv ? +pv : null) !== (m.post || null)) body.post = pv ? +pv : null; }
     try { const r = await api('/msg/' + key, body); S.msgs = r.msgs; closeSheet(); haptic('medium'); toast('Сохранено ✓'); render(); } catch (e) { toast(e.message); }
   };
