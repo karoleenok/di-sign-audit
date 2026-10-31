@@ -1,5 +1,5 @@
 import { AUD } from './texts.js';
-import { sendPost, postSummary, postLabel, postWhen, audienceCount } from './posts.js';
+import { sendPost, postSummary, postLabel, postWhen, audienceCount, loadDocs } from './posts.js';
 import { parseTime, parseWhen, fmtTime, fmtWhen } from './time.js';
 import { GUIDE, GUIDE_MENU } from './guide.js';
 import { MSG, MSG_GROUPS, msgInfo, loadMsgs, saveMsg, resetMsg, setMsgMedia, canMedia, say as sayMsg, msg as msgText, adminCommands } from './msgs.js';
@@ -170,6 +170,8 @@ export async function onAdminMessage(ctx, msg) {
   if (s.state === 'w:btns' || s.state.startsWith('e:btns:')) {
     const r = parseButtons(txt);
     if (r.error) { await say(ctx, id, r.error); return true; }
+    const ge = await checkGo(ctx, r.rows);
+    if (ge) { await say(ctx, id, ge); return true; }
     if (s.state === 'w:btns') { d.post.buttons = JSON.stringify(r.rows); await setState(ctx, id, 'w:preview', d); { await preview(ctx, id, d); return true; } }
     const pid = +s.state.split(':')[2];
     await ctx.db.run(`UPDATE posts SET buttons = ? WHERE id = ?`, [JSON.stringify(r.rows), pid]);
@@ -192,6 +194,11 @@ export function parseButtons(txt) {
     for (const part of line.split(';').map((x) => x.trim()).filter(Boolean)) {
       const m = /^(.+?)\s*\|\s*(\S+)$/.exec(part);
       if (!m) return { error: `Не понял строку «${part}». Формат: Текст кнопки | https://ссылка` };
+      // «Текст | #12» — открыть пост №12 этого бота; «Текст | политика» — документ
+      const go = /^#(\d+)$/.exec(m[2]);
+      if (go) { row.push({ text: m[1].slice(0, 60), go: +go[1] }); continue; }
+      const doc = { 'политика': 'policy', 'согласие': 'consent', 'оферта': 'offer' }[m[2].toLowerCase()];
+      if (doc) { row.push({ text: m[1].slice(0, 60), doc }); continue; }
       let url = m[2];
       if (/^t\.me\//i.test(url)) url = 'https://' + url;
       if (!/^https?:\/\//i.test(url)) return { error: `Ссылка должна начинаться с https:// — «${m[2]}»` };
@@ -220,7 +227,7 @@ async function askAudience(ctx, id) {
 async function preview(ctx, id, d) {
   const p = { ...d.post, id: 0 };
   try {
-    const r = await sendPost(ctx.tg, id, p, {});
+    const r = await sendPost(ctx.tg, id, p, { docs: await loadDocs(ctx) });
     if (r.warn) await say(ctx, id, '⚠️ ' + r.warn);
   } catch (e) {
     await say(ctx, id, `⚠️ Telegram не принял пост: ${e.message}\nПроверьте: в альбоме нельзя смешивать файлы с фото/видео.`);
@@ -266,12 +273,14 @@ export async function onAdminCallback(ctx, cq) {
       [{ text: '📅 Через N дней после входа', callback_data: 'w:kind:drip' }],
       [{ text: '🕒 В конкретные дату и время', callback_data: 'w:kind:date' }],
       [{ text: '🎁 Подарок после теста', callback_data: 'w:kind:gift' }],
+      [{ text: '🔘 Ответ на кнопку (приходит по нажатию)', callback_data: 'w:kind:node' }],
     ]) });
   }
   if (data.startsWith('w:kind:') && d.post) {
     d.post.kind = data.slice(7);
     if (d.post.kind === 'drip') { await setState(ctx, id, 'w:day', d); return say(ctx, id, 'Через сколько дней после входа? 0 — сразу, 1 — на следующий день, 2 — через день…'); }
     if (d.post.kind === 'date') { await setState(ctx, id, 'w:when', d); return say(ctx, id, 'Когда отправить? Например: 05.11 19:00 или завтра 11:00 (время московское)'); }
+    if (d.post.kind === 'node') return askButtons(ctx, id, d);
     await setState(ctx, id, 'w:aud', d);
     return askAudience(ctx, id);
   }
@@ -331,16 +340,34 @@ export async function onAdminCallback(ctx, cq) {
   return null;
 }
 
+async function buttonsHelp(ctx) {
+  const recent = await ctx.db.all(`SELECT * FROM posts WHERE status != 'archived' ORDER BY id DESC LIMIT 8`);
+  return 'Пришли по строке на ряд:\n' +
+    'Текст кнопки | https://ссылка\n' +
+    'Текст кнопки | #12 — откроет пост №12 этого бота\n' +
+    'Текст кнопки | политика — документ (ещё: согласие, оферта)\n' +
+    'Несколько кнопок в ряд — через «;»' +
+    (recent.length ? '\n\nПосты: ' + recent.map((p) => `#${p.id} ${postLabel(p).slice(0, 26)}`).join(' · ') : '') +
+    '\n\nДерево сценария удобнее собирать в панели: /admin';
+}
 async function askButtons(ctx, id, d) {
   await setState(ctx, id, 'w:btns', d);
-  return say(ctx, id, 'Кнопки под постом? Пришли по строке на ряд:\nТекст кнопки | https://ссылка\nНесколько кнопок в ряд — через «;»', { reply_markup: kb([[{ text: 'Без кнопок', callback_data: 'w:nobtn' }]]) });
+  return say(ctx, id, 'Кнопки под постом? ' + (await buttonsHelp(ctx)), { reply_markup: kb([[{ text: 'Без кнопок', callback_data: 'w:nobtn' }]]) });
+}
+async function checkGo(ctx, rows) {
+  for (const b of rows.flat()) {
+    if (!b.go) continue;
+    const t = await ctx.db.first(`SELECT id FROM posts WHERE id = ? AND status != 'archived'`, [b.go]);
+    if (!t) return `Поста #${b.go} нет. Номера постов видно в /posts.`;
+  }
+  return null;
 }
 
 // ---------- список постов ----------
 async function listPosts(ctx, id, archived) {
   const rows = await ctx.db.all(
     archived ? `SELECT * FROM posts WHERE status = 'archived' ORDER BY id DESC LIMIT 60`
-      : `SELECT * FROM posts WHERE status != 'archived' ORDER BY CASE kind WHEN 'gift' THEN 0 WHEN 'drip' THEN 1 ELSE 2 END, day, send_time, run_at, id LIMIT 90`, []);
+      : `SELECT * FROM posts WHERE status != 'archived' ORDER BY CASE kind WHEN 'gift' THEN 0 WHEN 'drip' THEN 1 WHEN 'date' THEN 2 ELSE 3 END, day, send_time, run_at, id LIMIT 90`, []);
   if (!rows.length) return say(ctx, id, archived ? 'Архив пуст.' : 'Постов пока нет. Создай первый: /new');
   const icon = { active: '✅', draft: '📝', paused: '⏸', archived: '🗄' };
   const btns = rows.map((p) => [{ text: `${icon[p.status] || ''} ${postWhen(p).replace(' · ', ' ')} — ${postLabel(p)}`.slice(0, 64), callback_data: 'p:' + p.id }]);
@@ -363,6 +390,7 @@ export async function showPost(ctx, id, pid, note) {
   ];
   if (p.kind === 'drip') rows.push([{ text: `↩️ Догонять: ${p.catchup ? 'да' : 'нет'}`, callback_data: `p:${pid}:cu` }]);
   if (p.kind === 'date') rows.push([{ text: '🚀 Отправить сейчас', callback_data: `p:${pid}:sn` }]);
+  if ((p.buttons || '').includes('"go"')) rows.push([{ text: `☑️ Кнопки-выбор: ${p.once ? 'да' : 'нет'}`, callback_data: `p:${pid}:once` }]);
   rows.push([{ text: p.status === 'archived' ? '↩️ Из архива' : '🗄 В архив', callback_data: `p:${pid}:${p.status === 'archived' ? 'un' : 'ar'}` }, { text: '← Список', callback_data: 'pl' }]);
   return say(ctx, id, text, { reply_markup: kb(rows) });
 }
@@ -373,7 +401,7 @@ async function postAction(ctx, id, pid, act) {
   const upd = async (sql, params, note) => { await ctx.db.run(sql, [...params, pid]); return showPost(ctx, id, pid, note); };
   if (!act) return showPost(ctx, id, pid);
   if (act === 't') {
-    try { const r = await sendPost(ctx.tg, id, p, { uid: id, publicUrl: ctx.publicUrl }); if (r.warn) await say(ctx, id, '⚠️ ' + r.warn); }
+    try { const r = await sendPost(ctx.tg, id, p, { uid: id, publicUrl: ctx.publicUrl, docs: await loadDocs(ctx) }); if (r.warn) await say(ctx, id, '⚠️ ' + r.warn); }
     catch (e) { await say(ctx, id, '⚠️ Telegram не принял пост: ' + e.message); }
     return;
   }
@@ -384,6 +412,7 @@ async function postAction(ctx, id, pid, act) {
   if (act === 'off') return upd(`UPDATE posts SET status = 'paused' WHERE id = ?`, [], 'На паузе ⏸');
   if (act === 'ar') return upd(`UPDATE posts SET status = 'archived' WHERE id = ?`, [], 'В архиве 🗄');
   if (act === 'un') return upd(`UPDATE posts SET status = 'paused' WHERE id = ?`, [], 'Вернули из архива, пост на паузе');
+  if (act === 'once') return upd(`UPDATE posts SET once = 1 - once WHERE id = ?`, [], p.once ? 'Кнопки остаются после нажатия' : 'После нажатия под постом останется только выбранная кнопка с ✓');
   if (act === 'cu') return upd(`UPDATE posts SET catchup = 1 - catchup WHERE id = ?`, [], p.catchup ? 'Опоздавших не догоняем' : 'Будем догонять тех, для кого время уже прошло');
   if (act === 'ec') {
     await clearState(ctx, id);
@@ -392,12 +421,13 @@ async function postAction(ctx, id, pid, act) {
   }
   if (act === 'eb') {
     await setState(ctx, id, 'e:btns:' + pid, {});
-    return say(ctx, id, 'Пришли кнопки заново: по строке на ряд\nТекст кнопки | https://ссылка', { reply_markup: kb([[{ text: 'Убрать все кнопки', callback_data: `p:${pid}:bn` }]]) });
+    return say(ctx, id, 'Кнопки заново. ' + (await buttonsHelp(ctx)), { reply_markup: kb([[{ text: 'Убрать все кнопки', callback_data: `p:${pid}:bn` }]]) });
   }
   if (act === 'bn') { await clearState(ctx, id); return upd(`UPDATE posts SET buttons = NULL WHERE id = ?`, [], 'Кнопки убраны'); }
   if (act === 'ew') {
     if (p.kind === 'drip') { await setState(ctx, id, 'e:day:' + pid, {}); return say(ctx, id, `Сейчас: ${postWhen(p)}. Через сколько дней после входа? (число)`); }
     if (p.kind === 'date') { await setState(ctx, id, 'e:when:' + pid, {}); return say(ctx, id, `Сейчас: ${postWhen(p)}. Новая дата и время, например 05.11 19:00`); }
+    if (p.kind === 'node') return say(ctx, id, 'Пост-ответ приходит сразу, когда человек нажимает кнопку, которая ведёт сюда. Время для него не задаётся.');
     return say(ctx, id, 'Подарок уходит сразу после теста — время для него не задаётся. Кому он уходит — кнопка «👥 Кому».');
   }
   if (act === 'ea') return say(ctx, id, 'Кому отправлять?', { reply_markup: kb([[{ text: 'Всем', callback_data: `p:${pid}:a:all` }], [{ text: 'Начинающим', callback_data: `p:${pid}:a:start` }, { text: 'Продолжающим', callback_data: `p:${pid}:a:pro` }]]) });

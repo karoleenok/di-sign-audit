@@ -1,6 +1,7 @@
 import { ZONES, LEVELS } from './texts.js';
 import { say, btn, msg as msgText, delayOf } from './msgs.js';
-import { sendPost, recordDeliveries } from './posts.js';
+import { sendPost, recordDeliveries, loadDocs } from './posts.js';
+import { isAdmin } from './admin.js';
 
 const CONSENT_VERSION = 'v1';
 
@@ -20,12 +21,15 @@ export const normLevel = (raw) => (raw === 'start' ? 'start' : raw === 'free' ||
 const kb = (rows) => ({ inline_keyboard: rows });
 
 // ссылки на документы для подстановок {политика}, {согласие}, {оферта}, {владелец}
-const docVars = (ctx) => ({
-  политика: ctx.env.POLICY_URL || '— ссылка появится перед запуском —',
-  согласие: ctx.env.CONSENT_URL || '— ссылка появится перед запуском —',
-  оферта: ctx.env.OFFER_URL || '— скоро —',
-  владелец: ctx.env.OWNER_INFO || '',
-});
+export async function docVars(ctx) {
+  const d = await loadDocs(ctx);
+  return {
+    политика: d.policy || '— ссылка появится перед запуском —',
+    согласие: d.consent || '— ссылка появится перед запуском —',
+    оферта: d.offer || '— скоро —',
+    владелец: d.owner || '',
+  };
+}
 
 async function askLevel(ctx, id) {
   return tech(ctx, id, say(ctx, id, 'askLevel', {}, {
@@ -126,7 +130,7 @@ export async function nextStep(ctx, u) {
   const id = u.tg_id;
   if (!u.consent_pd_at) {
     await pauseFor(ctx, id, 'consentPd');
-    return tech(ctx, id, say(ctx, id, 'consentPd', docVars(ctx), {
+    return tech(ctx, id, say(ctx, id, 'consentPd', await docVars(ctx), {
       link_preview_options: { is_disabled: true },
       reply_markup: kb([[{ text: await btn(ctx, 'consentPdBtn'), callback_data: 'c:pd' }]]),
     }));
@@ -173,7 +177,7 @@ async function sendGift(ctx, u, pauseMs) {
   }
   for (const g of gifts) {
     if (pauseMs) await pause(ctx, u.tg_id, pauseMs);
-    await sendPost(ctx.tg, u.tg_id, g, { uid: u.tg_id, publicUrl: ctx.publicUrl, arrow: await btn(ctx, 'buttonsArrow') });
+    await sendPost(ctx.tg, u.tg_id, g, { uid: u.tg_id, publicUrl: ctx.publicUrl, arrow: await btn(ctx, 'buttonsArrow'), docs: await loadDocs(ctx) });
     await recordDeliveries(ctx.db, g.id, [{ tg_id: u.tg_id, ok: true }], ctx.now);
   }
 }
@@ -221,10 +225,18 @@ export async function onUserCallback(ctx, cq) {
     await answer();
     await cleanAll(ctx, id); await delMsg(ctx, id, mid);
     for (const t of ['users', 'consents', 'deliveries', 'clicks', 'states']) await ctx.db.run(`DELETE FROM ${t} WHERE tg_id = ?`, [id]);
-    await ctx.db.run(`DELETE FROM settings WHERE key = ? OR key LIKE ?`, ['nogift:' + id, 'start:' + id + ':%']);
+    await ctx.db.run(`DELETE FROM settings WHERE key = ? OR key LIKE ? OR key LIKE ?`, ['nogift:' + id, 'start:' + id + ':%', 'go:' + id + ':%']);
     return say(ctx, id, 'deleted');
   }
   if (d === 'del:no') { await answer('deleteCancel'); return done(); }
+  if (d.startsWith('go:')) return onGo(ctx, cq, u, answer);
+  if (d.startsWith('buy:')) {
+    // оплата тарифа: продамус подключим позже — пока всплывашка
+    await ctx.tg.call('answerCallbackQuery', { callback_query_id: cq.id, text: (await msgText(ctx, 'payLater')).text.slice(0, 190), show_alert: true }).catch(() => {});
+    const m = /^buy:(\d+):(\d+)-(\d+)$/.exec(d);
+    if (m) { const p = await ctx.db.first(`SELECT buttons FROM posts WHERE id = ?`, [+m[1]]); const b = p && (JSON.parse(p.buttons || '[]')[+m[2]] || [])[+m[3]]; if (b) await ctx.db.run(`INSERT INTO clicks (post_id, tg_id, btn, at) VALUES (?, ?, ?, ?)`, [+m[1], id, b.text, ctx.now]); }
+    return;
+  }
   await answer();
 }
 
@@ -238,10 +250,46 @@ export async function onUserCommand(ctx, msg, cmd) {
     return say(ctx, id, 'stopped');
   }
   if (cmd === 'level') return u ? askLevel(ctx, id) : say(ctx, id, 'needStart');
-  if (cmd === 'policy') return say(ctx, id, 'policy', docVars(ctx), { link_preview_options: { is_disabled: true } });
+  if (cmd === 'policy') return say(ctx, id, 'policy', await docVars(ctx), { link_preview_options: { is_disabled: true } });
   if (cmd === 'delete') {
     return tech(ctx, id, say(ctx, id, 'deleteAsk', {}, { reply_markup: kb([[{ text: await btn(ctx, 'deleteYes'), callback_data: 'del:yes' }, { text: await btn(ctx, 'deleteNo'), callback_data: 'del:no' }]]) }));
   }
   if (cmd === 'id') return ctx.tg.call('sendMessage', { chat_id: id, text: `Твой Telegram-id: ${id}` });
   return say(ctx, id, 'unknown');
+}
+
+// ---------- кнопка «открыть пост» ----------
+// go:<пост с кнопкой>:<ряд>-<кнопка> -> бот присылает пост, на который ведёт кнопка.
+// Если у поста включено «кнопки-выбор» — после нажатия под ним остаётся только выбранный вариант с ✓.
+async function onGo(ctx, cq, u, answer) {
+  const id = cq.from.id;
+  const m = /^go:(\d+):(\d+)-(\d+)$/.exec(cq.data || '');
+  if (!m) return answer();
+  const src = await ctx.db.first(`SELECT id, buttons, once FROM posts WHERE id = ?`, [+m[1]]);
+  const rows = src ? JSON.parse(src.buttons || '[]') : [];
+  const b = (rows[+m[2]] || [])[+m[3]];
+  if (!b || !b.go) return answer();
+  // защита от двойного нажатия: одна и та же кнопка у одного человека — не чаще раза в 3 секунды
+  const k = 'go:' + id + ':' + cq.data.slice(3);
+  const fresh = await ctx.db.run(
+    `INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value WHERE CAST(settings.value AS INTEGER) <= ?`,
+    [k, String(ctx.now), ctx.now - 3]);
+  if (!fresh.changes) return answer();
+  await answer();
+  await ctx.db.run(`INSERT INTO clicks (post_id, tg_id, btn, at) VALUES (?, ?, ?, ?)`, [src.id, id, b.text, ctx.now]);
+  const mid = cq.message && cq.message.message_id;
+  if (src.once && mid) {
+    const kb = { inline_keyboard: [[{ text: '✓ ' + b.text, callback_data: 'go:done' }]] };
+    await ctx.tg.call('editMessageReplyMarkup', { chat_id: id, message_id: mid, reply_markup: kb }).catch(() => {});
+  }
+  const target = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [+b.go]);
+  const admin = await isAdmin(ctx, id);
+  if (!target || target.status === 'archived' || (target.status !== 'active' && !admin)) return;
+  try {
+    await sendPost(ctx.tg, id, target, { uid: id, publicUrl: ctx.publicUrl, arrow: await btn(ctx, 'buttonsArrow'), docs: await loadDocs(ctx) });
+    // отметка «получил»: от неё считаются посты «после этого поста»
+    await ctx.db.run(`INSERT INTO deliveries (post_id, tg_id, sent_at, ok) VALUES (?, ?, ?, 1) ON CONFLICT(post_id, tg_id) DO UPDATE SET sent_at = excluded.sent_at, ok = 1`, [target.id, id, ctx.now]);
+  } catch (e) {
+    if (e.code === 403) await ctx.db.run(`UPDATE users SET status = 'blocked' WHERE tg_id = ?`, [id]);
+  }
 }

@@ -5,7 +5,7 @@ import { nowSec } from './time.js';
 import { userCommands, adminCommands } from './msgs.js';
 import { onStart, onUserCallback, onUserCommand } from './users.js';
 import { isAdmin, envAdmins, onAdminCommand, onAdminMessage, onAdminCallback } from './admin.js';
-import { sendPost, dueUsers, recordDeliveries } from './posts.js';
+import { sendPost, dueUsers, recordDeliveries, loadDocs } from './posts.js';
 import { btn } from './msgs.js';
 
 export function makeCtx({ db, env, publicUrl, fetchFn, now }) {
@@ -89,12 +89,12 @@ export async function tick(ctx, budget, queryBudget) {
     if (can <= 0) break;
     const users = await dueUsers(ctx.db, p, now, can);
     if (!users.length) continue;
-    if (arrow === null) arrow = await btn(ctx, 'buttonsArrow');
+    if (arrow === null) { arrow = await btn(ctx, 'buttonsArrow'); ctx.docs = await loadDocs(ctx); }
     const rows = [];
     let stop = false;
     for (const u of users) {
       try {
-        await sendPost(ctx.tg, u.tg_id, p, { uid: u.tg_id, publicUrl: ctx.publicUrl, arrow });
+        await sendPost(ctx.tg, u.tg_id, p, { uid: u.tg_id, publicUrl: ctx.publicUrl, arrow, docs: ctx.docs });
         rows.push({ tg_id: u.tg_id, ok: true }); sent++;
       } catch (e) {
         if (e.code === 403) { rows.push({ tg_id: u.tg_id, ok: false }); await ctx.db.run(`UPDATE users SET status = 'blocked' WHERE tg_id = ?`, [u.tg_id]); }

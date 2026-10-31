@@ -1,7 +1,7 @@
 // Проверка ленты на себе (для админа):
 //  • предпросмотр — все посты сразу по порядку, с подписью «когда»;
 //  • ускоренный тест — по-настоящему, с паузами, но 1 день = 1 минута (идёт через расписание раз в минуту).
-import { sendPost, offsetMin, fmtDelay } from './posts.js';
+import { sendPost, offsetMin, fmtDelay, loadDocs } from './posts.js';
 import { btn } from './msgs.js';
 import { AUD } from './texts.js';
 
@@ -31,7 +31,7 @@ export function whenLabel(p, off, byId) {
 
 async function sendLabeled(ctx, chatId, p, label, arrow) {
   await ctx.tg.call('sendMessage', { chat_id: chatId, text: '🧪 ' + label + (p.title ? ` · «${p.title}»` : ''), disable_notification: true });
-  await sendPost(ctx.tg, chatId, p, { uid: chatId, publicUrl: ctx.publicUrl, arrow });
+  await sendPost(ctx.tg, chatId, p, { uid: chatId, publicUrl: ctx.publicUrl, arrow, docs: await loadDocs(ctx) });
 }
 
 // Предпросмотр: всё сразу. Ограничение бесплатного Cloudflare — около 50 запросов за раз, поэтому до 14 постов.

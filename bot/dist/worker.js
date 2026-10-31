@@ -104,6 +104,11 @@ var MIGRATIONS = [
     `CREATE TABLE IF NOT EXISTS test_sent (
       run_id INTEGER NOT NULL, post_id INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (run_id, post_id)
     )`
+  ],
+  // v5: конструктор сценариев — посты-ответы (kind = 'node', уходят по кнопке «открыть пост»),
+  //     «кнопки-выбор»: после нажатия под постом остаётся только выбранная
+  [
+    `ALTER TABLE posts ADD COLUMN once INTEGER NOT NULL DEFAULT 0`
   ]
 ];
 var checked = false;
@@ -358,6 +363,7 @@ var MSG = {
   deleted: ["cmd", "/delete — данные удалены", "Данные удалены. Спасибо, что были с нами 🐾", []],
   deleteCancel: ["cmd", "/delete — отмена (всплывающее)", "Ок, ничего не удаляем.", []],
   needStart: ["cmd", "Если человек не нажал /start", "Нажми /start 🐾", []],
+  payLater: ["cmd", "Кнопка «оплатить», пока оплата не подключена (всплывашка)", "Оплата откроется в день продаж — анонс придёт сюда, в бот 🐾", []],
   unknown: [
     "cmd",
     "Ответ на непонятное сообщение",
@@ -602,23 +608,28 @@ var j = (s, d) => {
     return d;
   }
 };
-function keyboard(post, uid, publicUrl) {
+var DOCS = { policy: "Политика обработки данных", consent: "Согласие на обработку данных", offer: "Оферта" };
+function keyboard(post, uid, publicUrl, docs) {
   const rows = j(post.buttons, []);
   if (!rows.length) return void 0;
-  return {
-    inline_keyboard: rows.map((row, ri) => row.map((b, bi) => ({
-      text: b.text,
-      url: publicUrl && post.id ? `${publicUrl}/r/${post.id}/${ri}-${bi}/${uid || 0}` : b.url
-    })))
-  };
+  const out = rows.map((row, ri) => row.map((b, bi) => {
+    if (b.go) return { text: b.text, callback_data: post.id ? `go:${post.id}:${ri}-${bi}` : "go:x" };
+    if (b.pay) return { text: b.text, callback_data: post.id ? `buy:${post.id}:${ri}-${bi}` : "buy:x" };
+    if (b.doc) {
+      const u = docs && docs[b.doc];
+      return u ? { text: b.text, url: u } : null;
+    }
+    return { text: b.text, url: publicUrl && post.id ? `${publicUrl}/r/${post.id}/${ri}-${bi}/${uid || 0}` : b.url };
+  }).filter(Boolean)).filter((r) => r.length);
+  return out.length ? { inline_keyboard: out } : void 0;
 }
 var stripCustom = (ents) => (ents || []).filter((e) => e.type !== "custom_emoji");
 var hasCustom = (ents) => (ents || []).some((e) => e.type === "custom_emoji");
-async function sendPost(tg, chatId, post, { uid, publicUrl, arrow } = {}) {
+async function sendPost(tg, chatId, post, { uid, publicUrl, arrow, docs } = {}) {
   const text = post.text || "";
   const ents = j(post.entities, []);
   const media = j(post.media, []);
-  const kb3 = keyboard(post, uid, publicUrl);
+  const kb3 = keyboard(post, uid, publicUrl, docs);
   let warn = null;
   const attempt = async (entities) => {
     if (!media.length) {
@@ -718,6 +729,7 @@ function postLabel(p) {
 }
 function postWhen(p) {
   if (p.kind === "gift") return "подарок после теста";
+  if (p.kind === "node") return "по нажатию кнопки";
   if (p.kind === "date") return p.run_at ? `дата ${fmtWhen(p.run_at)}` : "дата не задана";
   if (p.mode === "timer") return `через ${fmtDelay(p.delay_min)} после входа`;
   if (p.mode === "after") return `через ${fmtDelay(p.delay_min)} после поста #${p.after_id}`;
@@ -729,7 +741,7 @@ function postSummary(p) {
   return [
     `#${p.id} · ${st}`,
     `Когда: ${postWhen(p)}`,
-    `Кому: ${AUD[p.audience] || p.audience}`,
+    ...p.kind === "node" ? [] : [`Кому: ${AUD[p.audience] || p.audience}`],
     `Кнопок: ${btns}${p.kind === "drip" ? ` · догонять опоздавших: ${p.catchup ? "да" : "нет"}` : ""}`
   ].join("\n");
 }
@@ -748,266 +760,18 @@ function offsetMin(p, byId, depth = 0) {
   const t = timeSec(p.send_time) / 60;
   return day * 1440 + t - 600;
 }
-
-// src/users.js
-var CONSENT_VERSION = "v1";
-function parseStart(payload) {
-  const out = { source: payload || null, zone: null, levelRaw: null };
-  const m = /^audit_([A-Za-z]+)_([a-z]+)$/.exec(payload || "");
-  if (m) {
-    const z = m[1] === "top" ? "top" : m[1].toUpperCase();
-    if (ZONES[z]) out.zone = z;
-    if (["start", "free", "pro"].includes(m[2])) out.levelRaw = m[2];
-  }
-  return out;
-}
-var normLevel = (raw) => raw === "start" ? "start" : raw === "free" || raw === "pro" ? "pro" : null;
-var kb = (rows) => ({ inline_keyboard: rows });
-var docVars = (ctx) => ({
-  политика: ctx.env.POLICY_URL || "— ссылка появится перед запуском —",
-  согласие: ctx.env.CONSENT_URL || "— ссылка появится перед запуском —",
-  оферта: ctx.env.OFFER_URL || "— скоро —",
-  владелец: ctx.env.OWNER_INFO || ""
-});
-async function askLevel(ctx, id) {
-  return tech(ctx, id, say(ctx, id, "askLevel", {}, {
-    reply_markup: kb([[{ text: await btn(ctx, "levelBtnStart"), callback_data: "lv:start" }], [{ text: await btn(ctx, "levelBtnPro"), callback_data: "lv:pro" }]])
-  }));
-}
-var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-async function pauseFor(ctx, id, key) {
-  return pause(ctx, id, await delayOf(ctx, key) * 1e3);
-}
-async function pause(ctx, id, ms) {
-  const k = ctx.env.DELAY_FACTOR === void 0 ? 1 : Number(ctx.env.DELAY_FACTOR);
-  if (!(k > 0) || !(ms > 0)) return;
-  const t = Math.max(450, ms * k);
-  await ctx.tg.call("sendChatAction", { chat_id: id, action: "typing" }).catch(() => {
-  });
-  if (ctx.env.TYPING_BUBBLE === "0") {
-    await sleep(t);
-    return;
-  }
-  const dots = await ctx.tg.call("sendMessage", { chat_id: id, text: "•", disable_notification: true }).catch(() => null);
-  if (!dots) {
-    await sleep(t);
-    return;
-  }
-  await sleep(t / 3);
-  await ctx.tg.call("editMessageText", { chat_id: id, message_id: dots.message_id, text: "• •" }).catch(() => {
-  });
-  await sleep(t / 3);
-  await ctx.tg.call("editMessageText", { chat_id: id, message_id: dots.message_id, text: "• • •" }).catch(() => {
-  });
-  await sleep(t / 3);
-  await ctx.tg.call("deleteMessage", { chat_id: id, message_id: dots.message_id }).catch(() => {
-  });
-}
-var techList = (u) => {
-  try {
-    return u && u.tech ? JSON.parse(u.tech) : [];
-  } catch {
-    return [];
-  }
-};
-async function tech(ctx, id, sending) {
-  const m = await sending;
-  if (m && m.message_id) {
-    const u = await getUser(ctx, id);
-    if (u) await ctx.db.run(`UPDATE users SET tech = ? WHERE tg_id = ?`, [JSON.stringify([...techList(u), ...m.also || [], m.message_id].slice(-20)), id]);
-  }
-  return m;
-}
-var delMsg = (ctx, id, mid) => mid ? ctx.tg.call("deleteMessage", { chat_id: id, message_id: mid }).catch(() => {
-}) : null;
-async function untech(ctx, id, mid) {
-  await delMsg(ctx, id, mid);
-  const u = await getUser(ctx, id);
-  if (u) await ctx.db.run(`UPDATE users SET tech = ? WHERE tg_id = ?`, [JSON.stringify(techList(u).filter((x) => x !== mid)), id]);
-}
-async function cleanAll(ctx, id) {
-  const u = await getUser(ctx, id);
-  const list = techList(u);
-  if (!list.length) return;
-  for (const mid of list) await delMsg(ctx, id, mid);
-  await ctx.db.run(`UPDATE users SET tech = NULL WHERE tg_id = ?`, [id]);
-}
-async function getUser(ctx, id) {
-  return ctx.db.first(`SELECT * FROM users WHERE tg_id = ?`, [id]);
-}
-async function logConsent(ctx, id, kind, granted) {
-  await ctx.db.run(`INSERT INTO consents (tg_id, kind, granted, version, at) VALUES (?, ?, ?, ?, ?)`, [id, kind, granted ? 1 : 0, CONSENT_VERSION, ctx.now]);
-}
-async function onStart(ctx, msg2, payload) {
-  const from = msg2.from;
-  const st = parseStart(payload);
-  const k = "start:" + from.id + ":" + (payload || "");
-  const fresh = await ctx.db.run(
-    `INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value WHERE CAST(settings.value AS INTEGER) <= ?`,
-    [k, String(ctx.now), ctx.now - 4]
-  );
-  if (!fresh.changes) {
-    await delMsg(ctx, from.id, msg2.message_id);
-    return;
-  }
-  let u = await getUser(ctx, from.id);
-  if (!u) {
-    await ctx.db.run(
-      `INSERT INTO users (tg_id, first_name, username, level_raw, level, zone, source, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'new', ?)`,
-      [from.id, from.first_name || null, from.username || null, st.levelRaw, normLevel(st.levelRaw), st.zone, st.source, ctx.now]
-    );
-  } else {
-    if (st.zone || st.levelRaw) {
-      await ctx.db.run(
-        `UPDATE users SET zone = COALESCE(?, zone), level_raw = COALESCE(?, level_raw), level = COALESCE(?, level), source = COALESCE(?, source) WHERE tg_id = ?`,
-        [st.zone, st.levelRaw, normLevel(st.levelRaw), st.source, from.id]
-      );
-    }
-    if (u.status === "stopped" || u.status === "blocked") await ctx.db.run(`UPDATE users SET status = 'new' WHERE tg_id = ?`, [from.id]);
-  }
-  await delMsg(ctx, from.id, msg2.message_id);
-  await cleanAll(ctx, from.id);
-  u = await getUser(ctx, from.id);
-  const name = from.first_name || "друг";
-  await pauseFor(ctx, from.id, st.zone ? "helloTest" : "hello");
-  await tech(ctx, from.id, say(ctx, from.id, st.zone ? "helloTest" : "hello", { имя: name }));
-  return nextStep(ctx, u);
-}
-async function nextStep(ctx, u) {
-  const id = u.tg_id;
-  if (!u.consent_pd_at) {
-    await pauseFor(ctx, id, "consentPd");
-    return tech(ctx, id, say(ctx, id, "consentPd", docVars(ctx), {
-      link_preview_options: { is_disabled: true },
-      reply_markup: kb([[{ text: await btn(ctx, "consentPdBtn"), callback_data: "c:pd" }]])
-    }));
-  }
-  if (!u.level) {
-    await pauseFor(ctx, id, "askLevel");
-    return askLevel(ctx, id);
-  }
-  if (!u.zone) {
-    const url = ctx.env.TEST_URL;
-    await pauseFor(ctx, id, "testOffer");
-    await tech(ctx, id, say(ctx, id, "testOffer", {}, url ? { reply_markup: kb([[{ text: await btn(ctx, "testBtn"), url }]]) } : {}));
-  } else {
-    await sendGift(ctx, u, await delayOf(ctx, "noGift") * 1e3);
-  }
-  if (!u.consent_ads_at && u.status !== "stopped") {
-    await pauseFor(ctx, id, "consentAds");
-    return tech(ctx, id, say(ctx, id, "consentAds", {}, {
-      reply_markup: kb([[{ text: await btn(ctx, "consentAdsYes"), callback_data: "c:ads:1" }, { text: await btn(ctx, "consentAdsNo"), callback_data: "c:ads:0" }]])
-    }));
-  }
-  if (u.consent_ads_at && u.status !== "active") {
-    await ctx.db.run(`UPDATE users SET status = 'active', joined_at = COALESCE(joined_at, ?) WHERE tg_id = ?`, [ctx.now, id]);
-  }
-}
-async function sendGift(ctx, u, pauseMs) {
-  const gifts = await ctx.db.all(
-    `SELECT * FROM posts WHERE kind = 'gift' AND status = 'active'
-       AND (audience = 'all' OR audience = ?)
-       AND NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.post_id = posts.id AND d.tg_id = ?)
-     ORDER BY id`,
-    [u.level || "all", u.tg_id]
-  );
-  if (!gifts.length) {
-    const any = await ctx.db.first(`SELECT 1 FROM deliveries d JOIN posts p ON p.id = d.post_id WHERE p.kind = 'gift' AND d.tg_id = ?`, [u.tg_id]);
-    const told = await ctx.db.first(`SELECT 1 FROM settings WHERE key = ?`, ["nogift:" + u.tg_id]);
-    if (!any && !told) {
-      await ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING`, ["nogift:" + u.tg_id, String(ctx.now)]);
-      if (pauseMs) await pause(ctx, u.tg_id, pauseMs);
-      await tech(ctx, u.tg_id, say(ctx, u.tg_id, "noGift"));
-    }
-    return;
-  }
-  for (const g of gifts) {
-    if (pauseMs) await pause(ctx, u.tg_id, pauseMs);
-    await sendPost(ctx.tg, u.tg_id, g, { uid: u.tg_id, publicUrl: ctx.publicUrl, arrow: await btn(ctx, "buttonsArrow") });
-    await recordDeliveries(ctx.db, g.id, [{ tg_id: u.tg_id, ok: true }], ctx.now);
-  }
-}
-async function onUserCallback(ctx, cq) {
-  const id = cq.from.id;
-  const d = cq.data || "";
-  const answer = async (key, vars) => ctx.tg.call("answerCallbackQuery", { callback_query_id: cq.id, ...key ? { text: (await msg(ctx, key, vars)).text.slice(0, 190) } : {} }).catch(() => {
-  });
-  const u = await getUser(ctx, id);
-  if (!u) {
-    await answer();
-    return say(ctx, id, "needStart");
-  }
-  const mid = cq.message && cq.message.message_id;
-  const done = async (key, vars) => {
-    await untech(ctx, id, mid);
-    if (key) {
-      await pauseFor(ctx, id, key);
-      await say(ctx, id, key, vars);
-    }
+async function loadDocs(ctx) {
+  if (ctx._docs) return ctx._docs;
+  const rows = await ctx.db.all(`SELECT key, value FROM settings WHERE key LIKE 'doc:%'`);
+  const o = Object.fromEntries(rows.map((r) => [r.key.slice(4), r.value]));
+  const env = ctx.env || {};
+  ctx._docs = {
+    policy: o.policy || env.POLICY_URL || "",
+    consent: o.consent || env.CONSENT_URL || "",
+    offer: o.offer || env.OFFER_URL || "",
+    owner: o.owner || env.OWNER_INFO || ""
   };
-  if (d === "c:pd") {
-    await answer("consentThanks");
-    if (!u.consent_pd_at) {
-      await ctx.db.run(`UPDATE users SET consent_pd_at = ? WHERE tg_id = ?`, [ctx.now, id]);
-      await logConsent(ctx, id, "pd", true);
-    }
-    await done();
-    return nextStep(ctx, await getUser(ctx, id));
-  }
-  if (d.startsWith("lv:")) {
-    await answer();
-    const lv = d.slice(3) === "start" ? "start" : "pro";
-    await ctx.db.run(`UPDATE users SET level = ?, level_raw = COALESCE(level_raw, ?) WHERE tg_id = ?`, [lv, lv === "start" ? "start" : "free", id]);
-    if (u.consent_pd_at && u.consent_ads_at) {
-      await done("levelChanged", { уровень: LEVELS[lv] });
-      return;
-    }
-    await done();
-    return nextStep(ctx, await getUser(ctx, id));
-  }
-  if (d.startsWith("c:ads:")) {
-    await answer();
-    const yes = d.endsWith(":1");
-    await logConsent(ctx, id, "ads", yes);
-    if (yes) {
-      await ctx.db.run(`UPDATE users SET consent_ads_at = ?, status = 'active', joined_at = COALESCE(joined_at, ?) WHERE tg_id = ?`, [ctx.now, ctx.now, id]);
-      return done("adsYes");
-    }
-    await ctx.db.run(`UPDATE users SET consent_ads_at = NULL, status = 'stopped' WHERE tg_id = ?`, [id]);
-    return done("adsNo");
-  }
-  if (d === "del:yes") {
-    await answer();
-    await cleanAll(ctx, id);
-    await delMsg(ctx, id, mid);
-    for (const t of ["users", "consents", "deliveries", "clicks", "states"]) await ctx.db.run(`DELETE FROM ${t} WHERE tg_id = ?`, [id]);
-    await ctx.db.run(`DELETE FROM settings WHERE key = ? OR key LIKE ?`, ["nogift:" + id, "start:" + id + ":%"]);
-    return say(ctx, id, "deleted");
-  }
-  if (d === "del:no") {
-    await answer("deleteCancel");
-    return done();
-  }
-  await answer();
-}
-async function onUserCommand(ctx, msg2, cmd) {
-  const id = msg2.from.id;
-  const u = await getUser(ctx, id);
-  if (cmd === "level" || cmd === "delete") await delMsg(ctx, id, msg2.message_id);
-  if (cmd === "stop") {
-    if (u) {
-      await ctx.db.run(`UPDATE users SET status = 'stopped', consent_ads_at = NULL WHERE tg_id = ?`, [id]);
-      await logConsent(ctx, id, "ads", false);
-    }
-    return say(ctx, id, "stopped");
-  }
-  if (cmd === "level") return u ? askLevel(ctx, id) : say(ctx, id, "needStart");
-  if (cmd === "policy") return say(ctx, id, "policy", docVars(ctx), { link_preview_options: { is_disabled: true } });
-  if (cmd === "delete") {
-    return tech(ctx, id, say(ctx, id, "deleteAsk", {}, { reply_markup: kb([[{ text: await btn(ctx, "deleteYes"), callback_data: "del:yes" }, { text: await btn(ctx, "deleteNo"), callback_data: "del:no" }]]) }));
-  }
-  if (cmd === "id") return ctx.tg.call("sendMessage", { chat_id: id, text: `Твой Telegram-id: ${id}` });
-  return say(ctx, id, "unknown");
+  return ctx._docs;
 }
 
 // src/guide.js
@@ -1224,7 +988,7 @@ var GUIDE = {
 };
 
 // src/admin.js
-var kb2 = (rows) => ({ inline_keyboard: rows });
+var kb = (rows) => ({ inline_keyboard: rows });
 var say2 = (ctx, id, text, extra = {}) => ctx.tg.call("sendMessage", { chat_id: id, text, link_preview_options: { is_disabled: true }, ...extra });
 function envAdmins(env) {
   return String(env.ADMIN_IDS || "").split(/[\s,;]+/).filter(Boolean).map(Number);
@@ -1253,7 +1017,7 @@ var CONTENT_PROMPT = `Пришли пост одним или нескольки
 • картинки, видео или файлы — можно альбомом до 10 штук; подпись к альбому станет текстом поста
 
 Когда всё отправишь — нажми «Готово».`;
-var contentKb = kb2([[{ text: "Готово ➜", callback_data: "w:done" }], [{ text: "Начать заново", callback_data: "w:reset" }, { text: "Отмена", callback_data: "w:cancel" }]]);
+var contentKb = kb([[{ text: "Готово ➜", callback_data: "w:done" }], [{ text: "Начать заново", callback_data: "w:reset" }, { text: "Отмена", callback_data: "w:cancel" }]]);
 async function onAdminCommand(ctx, msg2, cmd, arg) {
   const id = msg2.from.id;
   switch (cmd) {
@@ -1381,7 +1145,7 @@ async function onAdminMessage(ctx, msg2) {
     if (s.state === "w:day") {
       d.post.day = n;
       await setState(ctx, id, "w:time", d);
-      await say2(ctx, id, n === 0 ? "День 0 уходит сразу после входа. Время не нужно — выберем, кому." : "Во сколько по Москве отправить? Например: 11:00", n === 0 ? {} : { reply_markup: kb2([[{ text: "11:00", callback_data: "w:tm:11:00" }, { text: "19:00", callback_data: "w:tm:19:00" }]]) });
+      await say2(ctx, id, n === 0 ? "День 0 уходит сразу после входа. Время не нужно — выберем, кому." : "Во сколько по Москве отправить? Например: 11:00", n === 0 ? {} : { reply_markup: kb([[{ text: "11:00", callback_data: "w:tm:11:00" }, { text: "19:00", callback_data: "w:tm:19:00" }]]) });
       if (n === 0) {
         d.post.send_time = "00:00";
         await setState(ctx, id, "w:aud", d);
@@ -1447,6 +1211,11 @@ async function onAdminMessage(ctx, msg2) {
       await say2(ctx, id, r.error);
       return true;
     }
+    const ge = await checkGo(ctx, r.rows);
+    if (ge) {
+      await say2(ctx, id, ge);
+      return true;
+    }
     if (s.state === "w:btns") {
       d.post.buttons = JSON.stringify(r.rows);
       await setState(ctx, id, "w:preview", d);
@@ -1480,6 +1249,16 @@ function parseButtons(txt) {
     for (const part of line.split(";").map((x) => x.trim()).filter(Boolean)) {
       const m = /^(.+?)\s*\|\s*(\S+)$/.exec(part);
       if (!m) return { error: `Не понял строку «${part}». Формат: Текст кнопки | https://ссылка` };
+      const go = /^#(\d+)$/.exec(m[2]);
+      if (go) {
+        row.push({ text: m[1].slice(0, 60), go: +go[1] });
+        continue;
+      }
+      const doc = { "политика": "policy", "согласие": "consent", "оферта": "offer" }[m[2].toLowerCase()];
+      if (doc) {
+        row.push({ text: m[1].slice(0, 60), doc });
+        continue;
+      }
       let url = m[2];
       if (/^t\.me\//i.test(url)) url = "https://" + url;
       if (!/^https?:\/\//i.test(url)) return { error: `Ссылка должна начинаться с https:// — «${m[2]}»` };
@@ -1500,12 +1279,12 @@ async function assemble(ctx, id) {
   return { text: src ? src.text : "", entities: src && src.entities ? src.entities : "[]", media: JSON.stringify(media.slice(0, 10)), extra: Math.max(0, media.length - 10) };
 }
 async function askAudience(ctx, id) {
-  return say2(ctx, id, "Кому отправлять?", { reply_markup: kb2([[{ text: "Всем", callback_data: "w:aud:all" }], [{ text: "Начинающим", callback_data: "w:aud:start" }, { text: "Продолжающим", callback_data: "w:aud:pro" }]]) });
+  return say2(ctx, id, "Кому отправлять?", { reply_markup: kb([[{ text: "Всем", callback_data: "w:aud:all" }], [{ text: "Начинающим", callback_data: "w:aud:start" }, { text: "Продолжающим", callback_data: "w:aud:pro" }]]) });
 }
 async function preview(ctx, id, d) {
   const p = { ...d.post, id: 0 };
   try {
-    const r = await sendPost(ctx.tg, id, p, {});
+    const r = await sendPost(ctx.tg, id, p, { docs: await loadDocs(ctx) });
     if (r.warn) await say2(ctx, id, "⚠️ " + r.warn);
   } catch (e) {
     await say2(ctx, id, `⚠️ Telegram не принял пост: ${e.message}
@@ -1514,7 +1293,7 @@ async function preview(ctx, id, d) {
   return say2(ctx, id, `Так пост увидят ученики ☝️
 
 ${postSummary({ ...p, status: "draft", id: "—" })}`, {
-    reply_markup: kb2([
+    reply_markup: kb([
       [{ text: "✅ Сохранить и включить", callback_data: "w:save:1" }],
       [{ text: "📝 Сохранить черновиком", callback_data: "w:save:0" }],
       [{ text: "🏷 Название для списка", callback_data: "w:ttl" }, { text: "Отмена", callback_data: "w:cancel" }]
@@ -1550,10 +1329,11 @@ async function onAdminCallback(ctx, cq) {
     await setState(ctx, id, "w:kind", d);
     await ctx.db.run(`DELETE FROM draft_parts WHERE admin_id = ?`, [id]);
     await ctx.db.run(`DELETE FROM draft_groups WHERE admin_id = ?`, [id]);
-    return say2(ctx, id, "Когда отправлять?", { reply_markup: kb2([
+    return say2(ctx, id, "Когда отправлять?", { reply_markup: kb([
       [{ text: "📅 Через N дней после входа", callback_data: "w:kind:drip" }],
       [{ text: "🕒 В конкретные дату и время", callback_data: "w:kind:date" }],
-      [{ text: "🎁 Подарок после теста", callback_data: "w:kind:gift" }]
+      [{ text: "🎁 Подарок после теста", callback_data: "w:kind:gift" }],
+      [{ text: "🔘 Ответ на кнопку (приходит по нажатию)", callback_data: "w:kind:node" }]
     ]) });
   }
   if (data.startsWith("w:kind:") && d.post) {
@@ -1566,6 +1346,7 @@ async function onAdminCallback(ctx, cq) {
       await setState(ctx, id, "w:when", d);
       return say2(ctx, id, "Когда отправить? Например: 05.11 19:00 или завтра 11:00 (время московское)");
     }
+    if (d.post.kind === "node") return askButtons(ctx, id, d);
     await setState(ctx, id, "w:aud", d);
     return askAudience(ctx, id);
   }
@@ -1619,7 +1400,7 @@ async function onAdminCallback(ctx, cq) {
 Можно вставить подстановки: ${i.vars.map((v) => "{" + v + "}").join(" ")} — бот заменит их сам.` : "") + `
 
 Текущий текст, чтобы скопировать и поправить:`,
-      { reply_markup: kb2([[{ text: "Отмена", callback_data: "w:cancel" }]]) }
+      { reply_markup: kb([[{ text: "Отмена", callback_data: "w:cancel" }]]) }
     ).then(async () => {
       const all = await loadMsgs(ctx);
       const o = all[key];
@@ -1632,7 +1413,7 @@ async function onAdminCallback(ctx, cq) {
     if (!canMedia(key)) return;
     await clearState(ctx, id);
     await setState(ctx, id, "e:pic:" + key, {});
-    return say2(ctx, id, "Пришли картинку, видео или гифку одним сообщением.\nМожно сразу с подписью — она станет новым текстом. Без подписи текст останется прежним.", { reply_markup: kb2([[{ text: "Отмена", callback_data: "w:cancel" }]]) });
+    return say2(ctx, id, "Пришли картинку, видео или гифку одним сообщением.\nМожно сразу с подписью — она станет новым текстом. Без подписи текст останется прежним.", { reply_markup: kb([[{ text: "Отмена", callback_data: "w:cancel" }]]) });
   }
   if (data.startsWith("t:x:")) {
     const key = data.slice(4);
@@ -1650,20 +1431,32 @@ async function onAdminCallback(ctx, cq) {
   if (m) return postAction(ctx, id, +m[1], m[2] || "");
   return null;
 }
+async function buttonsHelp(ctx) {
+  const recent = await ctx.db.all(`SELECT * FROM posts WHERE status != 'archived' ORDER BY id DESC LIMIT 8`);
+  return "Пришли по строке на ряд:\nТекст кнопки | https://ссылка\nТекст кнопки | #12 — откроет пост №12 этого бота\nТекст кнопки | политика — документ (ещё: согласие, оферта)\nНесколько кнопок в ряд — через «;»" + (recent.length ? "\n\nПосты: " + recent.map((p) => `#${p.id} ${postLabel(p).slice(0, 26)}`).join(" · ") : "") + "\n\nДерево сценария удобнее собирать в панели: /admin";
+}
 async function askButtons(ctx, id, d) {
   await setState(ctx, id, "w:btns", d);
-  return say2(ctx, id, "Кнопки под постом? Пришли по строке на ряд:\nТекст кнопки | https://ссылка\nНесколько кнопок в ряд — через «;»", { reply_markup: kb2([[{ text: "Без кнопок", callback_data: "w:nobtn" }]]) });
+  return say2(ctx, id, "Кнопки под постом? " + await buttonsHelp(ctx), { reply_markup: kb([[{ text: "Без кнопок", callback_data: "w:nobtn" }]]) });
+}
+async function checkGo(ctx, rows) {
+  for (const b of rows.flat()) {
+    if (!b.go) continue;
+    const t = await ctx.db.first(`SELECT id FROM posts WHERE id = ? AND status != 'archived'`, [b.go]);
+    if (!t) return `Поста #${b.go} нет. Номера постов видно в /posts.`;
+  }
+  return null;
 }
 async function listPosts(ctx, id, archived) {
   const rows = await ctx.db.all(
-    archived ? `SELECT * FROM posts WHERE status = 'archived' ORDER BY id DESC LIMIT 60` : `SELECT * FROM posts WHERE status != 'archived' ORDER BY CASE kind WHEN 'gift' THEN 0 WHEN 'drip' THEN 1 ELSE 2 END, day, send_time, run_at, id LIMIT 90`,
+    archived ? `SELECT * FROM posts WHERE status = 'archived' ORDER BY id DESC LIMIT 60` : `SELECT * FROM posts WHERE status != 'archived' ORDER BY CASE kind WHEN 'gift' THEN 0 WHEN 'drip' THEN 1 WHEN 'date' THEN 2 ELSE 3 END, day, send_time, run_at, id LIMIT 90`,
     []
   );
   if (!rows.length) return say2(ctx, id, archived ? "Архив пуст." : "Постов пока нет. Создай первый: /new");
   const icon = { active: "✅", draft: "📝", paused: "⏸", archived: "🗄" };
   const btns = rows.map((p) => [{ text: `${icon[p.status] || ""} ${postWhen(p).replace(" · ", " ")} — ${postLabel(p)}`.slice(0, 64), callback_data: "p:" + p.id }]);
   btns.push(archived ? [{ text: "← Активные посты", callback_data: "pl" }] : [{ text: "🗄 Архив", callback_data: "pl:arch" }]);
-  return say2(ctx, id, archived ? "Архив постов:" : "Посты: ✅ включён · 📝 черновик · ⏸ пауза. Нажми, чтобы открыть.", { reply_markup: kb2(btns) });
+  return say2(ctx, id, archived ? "Архив постов:" : "Посты: ✅ включён · 📝 черновик · ⏸ пауза. Нажми, чтобы открыть.", { reply_markup: kb(btns) });
 }
 async function showPost(ctx, id, pid, note) {
   const p = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [pid]);
@@ -1681,8 +1474,9 @@ async function showPost(ctx, id, pid, note) {
   ];
   if (p.kind === "drip") rows.push([{ text: `↩️ Догонять: ${p.catchup ? "да" : "нет"}`, callback_data: `p:${pid}:cu` }]);
   if (p.kind === "date") rows.push([{ text: "🚀 Отправить сейчас", callback_data: `p:${pid}:sn` }]);
+  if ((p.buttons || "").includes('"go"')) rows.push([{ text: `☑️ Кнопки-выбор: ${p.once ? "да" : "нет"}`, callback_data: `p:${pid}:once` }]);
   rows.push([{ text: p.status === "archived" ? "↩️ Из архива" : "🗄 В архив", callback_data: `p:${pid}:${p.status === "archived" ? "un" : "ar"}` }, { text: "← Список", callback_data: "pl" }]);
-  return say2(ctx, id, text, { reply_markup: kb2(rows) });
+  return say2(ctx, id, text, { reply_markup: kb(rows) });
 }
 async function postAction(ctx, id, pid, act) {
   const p = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [pid]);
@@ -1694,7 +1488,7 @@ async function postAction(ctx, id, pid, act) {
   if (!act) return showPost(ctx, id, pid);
   if (act === "t") {
     try {
-      const r = await sendPost(ctx.tg, id, p, { uid: id, publicUrl: ctx.publicUrl });
+      const r = await sendPost(ctx.tg, id, p, { uid: id, publicUrl: ctx.publicUrl, docs: await loadDocs(ctx) });
       if (r.warn) await say2(ctx, id, "⚠️ " + r.warn);
     } catch (e) {
       await say2(ctx, id, "⚠️ Telegram не принял пост: " + e.message);
@@ -1708,6 +1502,7 @@ async function postAction(ctx, id, pid, act) {
   if (act === "off") return upd(`UPDATE posts SET status = 'paused' WHERE id = ?`, [], "На паузе ⏸");
   if (act === "ar") return upd(`UPDATE posts SET status = 'archived' WHERE id = ?`, [], "В архиве 🗄");
   if (act === "un") return upd(`UPDATE posts SET status = 'paused' WHERE id = ?`, [], "Вернули из архива, пост на паузе");
+  if (act === "once") return upd(`UPDATE posts SET once = 1 - once WHERE id = ?`, [], p.once ? "Кнопки остаются после нажатия" : "После нажатия под постом останется только выбранная кнопка с ✓");
   if (act === "cu") return upd(`UPDATE posts SET catchup = 1 - catchup WHERE id = ?`, [], p.catchup ? "Опоздавших не догоняем" : "Будем догонять тех, для кого время уже прошло");
   if (act === "ec") {
     await clearState(ctx, id);
@@ -1716,7 +1511,7 @@ async function postAction(ctx, id, pid, act) {
   }
   if (act === "eb") {
     await setState(ctx, id, "e:btns:" + pid, {});
-    return say2(ctx, id, "Пришли кнопки заново: по строке на ряд\nТекст кнопки | https://ссылка", { reply_markup: kb2([[{ text: "Убрать все кнопки", callback_data: `p:${pid}:bn` }]]) });
+    return say2(ctx, id, "Кнопки заново. " + await buttonsHelp(ctx), { reply_markup: kb([[{ text: "Убрать все кнопки", callback_data: `p:${pid}:bn` }]]) });
   }
   if (act === "bn") {
     await clearState(ctx, id);
@@ -1731,13 +1526,14 @@ async function postAction(ctx, id, pid, act) {
       await setState(ctx, id, "e:when:" + pid, {});
       return say2(ctx, id, `Сейчас: ${postWhen(p)}. Новая дата и время, например 05.11 19:00`);
     }
+    if (p.kind === "node") return say2(ctx, id, "Пост-ответ приходит сразу, когда человек нажимает кнопку, которая ведёт сюда. Время для него не задаётся.");
     return say2(ctx, id, "Подарок уходит сразу после теста — время для него не задаётся. Кому он уходит — кнопка «👥 Кому».");
   }
-  if (act === "ea") return say2(ctx, id, "Кому отправлять?", { reply_markup: kb2([[{ text: "Всем", callback_data: `p:${pid}:a:all` }], [{ text: "Начинающим", callback_data: `p:${pid}:a:start` }, { text: "Продолжающим", callback_data: `p:${pid}:a:pro` }]]) });
+  if (act === "ea") return say2(ctx, id, "Кому отправлять?", { reply_markup: kb([[{ text: "Всем", callback_data: `p:${pid}:a:all` }], [{ text: "Начинающим", callback_data: `p:${pid}:a:start` }, { text: "Продолжающим", callback_data: `p:${pid}:a:pro` }]]) });
   if (act.startsWith("a:")) return upd(`UPDATE posts SET audience = ? WHERE id = ?`, [act.slice(2)], "Аудитория обновлена ✓");
   if (act === "sn") {
     const n = await audienceCount(ctx.db, p);
-    return say2(ctx, id, `Отправить пост #${pid} сейчас? Подходит людей: ${n}.`, { reply_markup: kb2([[{ text: "🚀 Да, отправить", callback_data: `p:${pid}:sy` }, { text: "Нет", callback_data: `p:${pid}` }]]) });
+    return say2(ctx, id, `Отправить пост #${pid} сейчас? Подходит людей: ${n}.`, { reply_markup: kb([[{ text: "🚀 Да, отправить", callback_data: `p:${pid}:sy` }, { text: "Нет", callback_data: `p:${pid}` }]]) });
   }
   if (act === "sy") return upd(`UPDATE posts SET run_at = ?, status = 'active' WHERE id = ?`, [ctx.now], "Рассылка начнётся в течение минуты 🚀");
   return showPost(ctx, id, pid);
@@ -1833,7 +1629,7 @@ async function showGuide(ctx, id, key) {
     r.push([{ text: "← Все разделы", callback_data: "h:menu" }]);
     return r;
   })();
-  return say2(ctx, id, text, { parse_mode: "HTML", reply_markup: kb2(rows) });
+  return say2(ctx, id, text, { parse_mode: "HTML", reply_markup: kb(rows) });
 }
 var sampleVars = (ctx, id) => ({
   имя: "Каролина",
@@ -1850,7 +1646,7 @@ async function textsMenu(ctx, id) {
     return [{ text: t + (n ? ` · изменено ${n}` : ""), callback_data: "t:g:" + g }];
   });
   if (ctx.publicUrl) rows.push([{ text: "🗂 Открыть панель (удобнее)", web_app: { url: ctx.publicUrl + "/admin" } }]);
-  return say2(ctx, id, "Тексты бота. Выбери, что поменять — покажу, как сообщение видят ученики, и можно прислать новый вариант (с премиум-эмодзи).", { reply_markup: kb2(rows) });
+  return say2(ctx, id, "Тексты бота. Выбери, что поменять — покажу, как сообщение видят ученики, и можно прислать новый вариант (с премиум-эмодзи).", { reply_markup: kb(rows) });
 }
 async function textsGroup(ctx, id, g) {
   const all = await loadMsgs(ctx);
@@ -1858,7 +1654,7 @@ async function textsGroup(ctx, id, g) {
   rows.push([{ text: "← Все группы", callback_data: "t:menu" }]);
   const t = (MSG_GROUPS.find(([x]) => x === g) || [, ""])[1];
   return say2(ctx, id, `${t}
-✎ — уже изменено`, { reply_markup: kb2(rows) });
+✎ — уже изменено`, { reply_markup: kb(rows) });
 }
 async function showMsg(ctx, id, key, note) {
   const i = msgInfo(key);
@@ -1871,13 +1667,321 @@ ${i.group === "profile" ? "Сейчас в Telegram так 👇" : "Ученик
   if (canMedia(key)) rows.push(all[key] && all[key].media ? [{ text: "🖼 Заменить картинку", callback_data: "t:p:" + key }, { text: "✖️ Убрать картинку", callback_data: "t:x:" + key }] : [{ text: "🖼 Добавить картинку", callback_data: "t:p:" + key }]);
   if (all[key]) rows.push([{ text: "↩️ Вернуть как было", callback_data: "t:r:" + key }]);
   rows.push([{ text: "← Назад", callback_data: "t:g:" + i.group }]);
-  return say2(ctx, id, i.vars.length ? `Подстановки: ${i.vars.map((v) => "{" + v + "}").join(" ")} (в примере — образец)` : "Что дальше?", { reply_markup: kb2(rows) });
+  return say2(ctx, id, i.vars.length ? `Подстановки: ${i.vars.map((v) => "{" + v + "}").join(" ")} (в примере — образец)` : "Что дальше?", { reply_markup: kb(rows) });
 }
 async function panelLink(ctx, id) {
   if (!ctx.publicUrl) return say2(ctx, id, "Панель откроется, когда у бота будет адрес в интернете.");
   return say2(ctx, id, "Панель: лента постов по дням (можно перетаскивать), даты, подарки и все тексты бота.", {
-    reply_markup: kb2([[{ text: "🗂 Открыть панель", web_app: { url: ctx.publicUrl + "/admin" } }]])
+    reply_markup: kb([[{ text: "🗂 Открыть панель", web_app: { url: ctx.publicUrl + "/admin" } }]])
   });
+}
+
+// src/users.js
+var CONSENT_VERSION = "v1";
+function parseStart(payload) {
+  const out = { source: payload || null, zone: null, levelRaw: null };
+  const m = /^audit_([A-Za-z]+)_([a-z]+)$/.exec(payload || "");
+  if (m) {
+    const z = m[1] === "top" ? "top" : m[1].toUpperCase();
+    if (ZONES[z]) out.zone = z;
+    if (["start", "free", "pro"].includes(m[2])) out.levelRaw = m[2];
+  }
+  return out;
+}
+var normLevel = (raw) => raw === "start" ? "start" : raw === "free" || raw === "pro" ? "pro" : null;
+var kb2 = (rows) => ({ inline_keyboard: rows });
+async function docVars(ctx) {
+  const d = await loadDocs(ctx);
+  return {
+    политика: d.policy || "— ссылка появится перед запуском —",
+    согласие: d.consent || "— ссылка появится перед запуском —",
+    оферта: d.offer || "— скоро —",
+    владелец: d.owner || ""
+  };
+}
+async function askLevel(ctx, id) {
+  return tech(ctx, id, say(ctx, id, "askLevel", {}, {
+    reply_markup: kb2([[{ text: await btn(ctx, "levelBtnStart"), callback_data: "lv:start" }], [{ text: await btn(ctx, "levelBtnPro"), callback_data: "lv:pro" }]])
+  }));
+}
+var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function pauseFor(ctx, id, key) {
+  return pause(ctx, id, await delayOf(ctx, key) * 1e3);
+}
+async function pause(ctx, id, ms) {
+  const k = ctx.env.DELAY_FACTOR === void 0 ? 1 : Number(ctx.env.DELAY_FACTOR);
+  if (!(k > 0) || !(ms > 0)) return;
+  const t = Math.max(450, ms * k);
+  await ctx.tg.call("sendChatAction", { chat_id: id, action: "typing" }).catch(() => {
+  });
+  if (ctx.env.TYPING_BUBBLE === "0") {
+    await sleep(t);
+    return;
+  }
+  const dots = await ctx.tg.call("sendMessage", { chat_id: id, text: "•", disable_notification: true }).catch(() => null);
+  if (!dots) {
+    await sleep(t);
+    return;
+  }
+  await sleep(t / 3);
+  await ctx.tg.call("editMessageText", { chat_id: id, message_id: dots.message_id, text: "• •" }).catch(() => {
+  });
+  await sleep(t / 3);
+  await ctx.tg.call("editMessageText", { chat_id: id, message_id: dots.message_id, text: "• • •" }).catch(() => {
+  });
+  await sleep(t / 3);
+  await ctx.tg.call("deleteMessage", { chat_id: id, message_id: dots.message_id }).catch(() => {
+  });
+}
+var techList = (u) => {
+  try {
+    return u && u.tech ? JSON.parse(u.tech) : [];
+  } catch {
+    return [];
+  }
+};
+async function tech(ctx, id, sending) {
+  const m = await sending;
+  if (m && m.message_id) {
+    const u = await getUser(ctx, id);
+    if (u) await ctx.db.run(`UPDATE users SET tech = ? WHERE tg_id = ?`, [JSON.stringify([...techList(u), ...m.also || [], m.message_id].slice(-20)), id]);
+  }
+  return m;
+}
+var delMsg = (ctx, id, mid) => mid ? ctx.tg.call("deleteMessage", { chat_id: id, message_id: mid }).catch(() => {
+}) : null;
+async function untech(ctx, id, mid) {
+  await delMsg(ctx, id, mid);
+  const u = await getUser(ctx, id);
+  if (u) await ctx.db.run(`UPDATE users SET tech = ? WHERE tg_id = ?`, [JSON.stringify(techList(u).filter((x) => x !== mid)), id]);
+}
+async function cleanAll(ctx, id) {
+  const u = await getUser(ctx, id);
+  const list = techList(u);
+  if (!list.length) return;
+  for (const mid of list) await delMsg(ctx, id, mid);
+  await ctx.db.run(`UPDATE users SET tech = NULL WHERE tg_id = ?`, [id]);
+}
+async function getUser(ctx, id) {
+  return ctx.db.first(`SELECT * FROM users WHERE tg_id = ?`, [id]);
+}
+async function logConsent(ctx, id, kind, granted) {
+  await ctx.db.run(`INSERT INTO consents (tg_id, kind, granted, version, at) VALUES (?, ?, ?, ?, ?)`, [id, kind, granted ? 1 : 0, CONSENT_VERSION, ctx.now]);
+}
+async function onStart(ctx, msg2, payload) {
+  const from = msg2.from;
+  const st = parseStart(payload);
+  const k = "start:" + from.id + ":" + (payload || "");
+  const fresh = await ctx.db.run(
+    `INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value WHERE CAST(settings.value AS INTEGER) <= ?`,
+    [k, String(ctx.now), ctx.now - 4]
+  );
+  if (!fresh.changes) {
+    await delMsg(ctx, from.id, msg2.message_id);
+    return;
+  }
+  let u = await getUser(ctx, from.id);
+  if (!u) {
+    await ctx.db.run(
+      `INSERT INTO users (tg_id, first_name, username, level_raw, level, zone, source, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'new', ?)`,
+      [from.id, from.first_name || null, from.username || null, st.levelRaw, normLevel(st.levelRaw), st.zone, st.source, ctx.now]
+    );
+  } else {
+    if (st.zone || st.levelRaw) {
+      await ctx.db.run(
+        `UPDATE users SET zone = COALESCE(?, zone), level_raw = COALESCE(?, level_raw), level = COALESCE(?, level), source = COALESCE(?, source) WHERE tg_id = ?`,
+        [st.zone, st.levelRaw, normLevel(st.levelRaw), st.source, from.id]
+      );
+    }
+    if (u.status === "stopped" || u.status === "blocked") await ctx.db.run(`UPDATE users SET status = 'new' WHERE tg_id = ?`, [from.id]);
+  }
+  await delMsg(ctx, from.id, msg2.message_id);
+  await cleanAll(ctx, from.id);
+  u = await getUser(ctx, from.id);
+  const name = from.first_name || "друг";
+  await pauseFor(ctx, from.id, st.zone ? "helloTest" : "hello");
+  await tech(ctx, from.id, say(ctx, from.id, st.zone ? "helloTest" : "hello", { имя: name }));
+  return nextStep(ctx, u);
+}
+async function nextStep(ctx, u) {
+  const id = u.tg_id;
+  if (!u.consent_pd_at) {
+    await pauseFor(ctx, id, "consentPd");
+    return tech(ctx, id, say(ctx, id, "consentPd", await docVars(ctx), {
+      link_preview_options: { is_disabled: true },
+      reply_markup: kb2([[{ text: await btn(ctx, "consentPdBtn"), callback_data: "c:pd" }]])
+    }));
+  }
+  if (!u.level) {
+    await pauseFor(ctx, id, "askLevel");
+    return askLevel(ctx, id);
+  }
+  if (!u.zone) {
+    const url = ctx.env.TEST_URL;
+    await pauseFor(ctx, id, "testOffer");
+    await tech(ctx, id, say(ctx, id, "testOffer", {}, url ? { reply_markup: kb2([[{ text: await btn(ctx, "testBtn"), url }]]) } : {}));
+  } else {
+    await sendGift(ctx, u, await delayOf(ctx, "noGift") * 1e3);
+  }
+  if (!u.consent_ads_at && u.status !== "stopped") {
+    await pauseFor(ctx, id, "consentAds");
+    return tech(ctx, id, say(ctx, id, "consentAds", {}, {
+      reply_markup: kb2([[{ text: await btn(ctx, "consentAdsYes"), callback_data: "c:ads:1" }, { text: await btn(ctx, "consentAdsNo"), callback_data: "c:ads:0" }]])
+    }));
+  }
+  if (u.consent_ads_at && u.status !== "active") {
+    await ctx.db.run(`UPDATE users SET status = 'active', joined_at = COALESCE(joined_at, ?) WHERE tg_id = ?`, [ctx.now, id]);
+  }
+}
+async function sendGift(ctx, u, pauseMs) {
+  const gifts = await ctx.db.all(
+    `SELECT * FROM posts WHERE kind = 'gift' AND status = 'active'
+       AND (audience = 'all' OR audience = ?)
+       AND NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.post_id = posts.id AND d.tg_id = ?)
+     ORDER BY id`,
+    [u.level || "all", u.tg_id]
+  );
+  if (!gifts.length) {
+    const any = await ctx.db.first(`SELECT 1 FROM deliveries d JOIN posts p ON p.id = d.post_id WHERE p.kind = 'gift' AND d.tg_id = ?`, [u.tg_id]);
+    const told = await ctx.db.first(`SELECT 1 FROM settings WHERE key = ?`, ["nogift:" + u.tg_id]);
+    if (!any && !told) {
+      await ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING`, ["nogift:" + u.tg_id, String(ctx.now)]);
+      if (pauseMs) await pause(ctx, u.tg_id, pauseMs);
+      await tech(ctx, u.tg_id, say(ctx, u.tg_id, "noGift"));
+    }
+    return;
+  }
+  for (const g of gifts) {
+    if (pauseMs) await pause(ctx, u.tg_id, pauseMs);
+    await sendPost(ctx.tg, u.tg_id, g, { uid: u.tg_id, publicUrl: ctx.publicUrl, arrow: await btn(ctx, "buttonsArrow"), docs: await loadDocs(ctx) });
+    await recordDeliveries(ctx.db, g.id, [{ tg_id: u.tg_id, ok: true }], ctx.now);
+  }
+}
+async function onUserCallback(ctx, cq) {
+  const id = cq.from.id;
+  const d = cq.data || "";
+  const answer = async (key, vars) => ctx.tg.call("answerCallbackQuery", { callback_query_id: cq.id, ...key ? { text: (await msg(ctx, key, vars)).text.slice(0, 190) } : {} }).catch(() => {
+  });
+  const u = await getUser(ctx, id);
+  if (!u) {
+    await answer();
+    return say(ctx, id, "needStart");
+  }
+  const mid = cq.message && cq.message.message_id;
+  const done = async (key, vars) => {
+    await untech(ctx, id, mid);
+    if (key) {
+      await pauseFor(ctx, id, key);
+      await say(ctx, id, key, vars);
+    }
+  };
+  if (d === "c:pd") {
+    await answer("consentThanks");
+    if (!u.consent_pd_at) {
+      await ctx.db.run(`UPDATE users SET consent_pd_at = ? WHERE tg_id = ?`, [ctx.now, id]);
+      await logConsent(ctx, id, "pd", true);
+    }
+    await done();
+    return nextStep(ctx, await getUser(ctx, id));
+  }
+  if (d.startsWith("lv:")) {
+    await answer();
+    const lv = d.slice(3) === "start" ? "start" : "pro";
+    await ctx.db.run(`UPDATE users SET level = ?, level_raw = COALESCE(level_raw, ?) WHERE tg_id = ?`, [lv, lv === "start" ? "start" : "free", id]);
+    if (u.consent_pd_at && u.consent_ads_at) {
+      await done("levelChanged", { уровень: LEVELS[lv] });
+      return;
+    }
+    await done();
+    return nextStep(ctx, await getUser(ctx, id));
+  }
+  if (d.startsWith("c:ads:")) {
+    await answer();
+    const yes = d.endsWith(":1");
+    await logConsent(ctx, id, "ads", yes);
+    if (yes) {
+      await ctx.db.run(`UPDATE users SET consent_ads_at = ?, status = 'active', joined_at = COALESCE(joined_at, ?) WHERE tg_id = ?`, [ctx.now, ctx.now, id]);
+      return done("adsYes");
+    }
+    await ctx.db.run(`UPDATE users SET consent_ads_at = NULL, status = 'stopped' WHERE tg_id = ?`, [id]);
+    return done("adsNo");
+  }
+  if (d === "del:yes") {
+    await answer();
+    await cleanAll(ctx, id);
+    await delMsg(ctx, id, mid);
+    for (const t of ["users", "consents", "deliveries", "clicks", "states"]) await ctx.db.run(`DELETE FROM ${t} WHERE tg_id = ?`, [id]);
+    await ctx.db.run(`DELETE FROM settings WHERE key = ? OR key LIKE ? OR key LIKE ?`, ["nogift:" + id, "start:" + id + ":%", "go:" + id + ":%"]);
+    return say(ctx, id, "deleted");
+  }
+  if (d === "del:no") {
+    await answer("deleteCancel");
+    return done();
+  }
+  if (d.startsWith("go:")) return onGo(ctx, cq, u, answer);
+  if (d.startsWith("buy:")) {
+    await ctx.tg.call("answerCallbackQuery", { callback_query_id: cq.id, text: (await msg(ctx, "payLater")).text.slice(0, 190), show_alert: true }).catch(() => {
+    });
+    const m = /^buy:(\d+):(\d+)-(\d+)$/.exec(d);
+    if (m) {
+      const p = await ctx.db.first(`SELECT buttons FROM posts WHERE id = ?`, [+m[1]]);
+      const b = p && (JSON.parse(p.buttons || "[]")[+m[2]] || [])[+m[3]];
+      if (b) await ctx.db.run(`INSERT INTO clicks (post_id, tg_id, btn, at) VALUES (?, ?, ?, ?)`, [+m[1], id, b.text, ctx.now]);
+    }
+    return;
+  }
+  await answer();
+}
+async function onUserCommand(ctx, msg2, cmd) {
+  const id = msg2.from.id;
+  const u = await getUser(ctx, id);
+  if (cmd === "level" || cmd === "delete") await delMsg(ctx, id, msg2.message_id);
+  if (cmd === "stop") {
+    if (u) {
+      await ctx.db.run(`UPDATE users SET status = 'stopped', consent_ads_at = NULL WHERE tg_id = ?`, [id]);
+      await logConsent(ctx, id, "ads", false);
+    }
+    return say(ctx, id, "stopped");
+  }
+  if (cmd === "level") return u ? askLevel(ctx, id) : say(ctx, id, "needStart");
+  if (cmd === "policy") return say(ctx, id, "policy", await docVars(ctx), { link_preview_options: { is_disabled: true } });
+  if (cmd === "delete") {
+    return tech(ctx, id, say(ctx, id, "deleteAsk", {}, { reply_markup: kb2([[{ text: await btn(ctx, "deleteYes"), callback_data: "del:yes" }, { text: await btn(ctx, "deleteNo"), callback_data: "del:no" }]]) }));
+  }
+  if (cmd === "id") return ctx.tg.call("sendMessage", { chat_id: id, text: `Твой Telegram-id: ${id}` });
+  return say(ctx, id, "unknown");
+}
+async function onGo(ctx, cq, u, answer) {
+  const id = cq.from.id;
+  const m = /^go:(\d+):(\d+)-(\d+)$/.exec(cq.data || "");
+  if (!m) return answer();
+  const src = await ctx.db.first(`SELECT id, buttons, once FROM posts WHERE id = ?`, [+m[1]]);
+  const rows = src ? JSON.parse(src.buttons || "[]") : [];
+  const b = (rows[+m[2]] || [])[+m[3]];
+  if (!b || !b.go) return answer();
+  const k = "go:" + id + ":" + cq.data.slice(3);
+  const fresh = await ctx.db.run(
+    `INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value WHERE CAST(settings.value AS INTEGER) <= ?`,
+    [k, String(ctx.now), ctx.now - 3]
+  );
+  if (!fresh.changes) return answer();
+  await answer();
+  await ctx.db.run(`INSERT INTO clicks (post_id, tg_id, btn, at) VALUES (?, ?, ?, ?)`, [src.id, id, b.text, ctx.now]);
+  const mid = cq.message && cq.message.message_id;
+  if (src.once && mid) {
+    const kb3 = { inline_keyboard: [[{ text: "✓ " + b.text, callback_data: "go:done" }]] };
+    await ctx.tg.call("editMessageReplyMarkup", { chat_id: id, message_id: mid, reply_markup: kb3 }).catch(() => {
+    });
+  }
+  const target = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [+b.go]);
+  const admin = await isAdmin(ctx, id);
+  if (!target || target.status === "archived" || target.status !== "active" && !admin) return;
+  try {
+    await sendPost(ctx.tg, id, target, { uid: id, publicUrl: ctx.publicUrl, arrow: await btn(ctx, "buttonsArrow"), docs: await loadDocs(ctx) });
+    await ctx.db.run(`INSERT INTO deliveries (post_id, tg_id, sent_at, ok) VALUES (?, ?, ?, 1) ON CONFLICT(post_id, tg_id) DO UPDATE SET sent_at = excluded.sent_at, ok = 1`, [target.id, id, ctx.now]);
+  } catch (e) {
+    if (e.code === 403) await ctx.db.run(`UPDATE users SET status = 'blocked' WHERE tg_id = ?`, [id]);
+  }
 }
 
 // src/core.js
@@ -1970,12 +2074,15 @@ async function tick(ctx, budget, queryBudget) {
     if (can <= 0) break;
     const users = await dueUsers(ctx.db, p, now, can);
     if (!users.length) continue;
-    if (arrow === null) arrow = await btn(ctx, "buttonsArrow");
+    if (arrow === null) {
+      arrow = await btn(ctx, "buttonsArrow");
+      ctx.docs = await loadDocs(ctx);
+    }
     const rows = [];
     let stop = false;
     for (const u of users) {
       try {
-        await sendPost(ctx.tg, u.tg_id, p, { uid: u.tg_id, publicUrl: ctx.publicUrl, arrow });
+        await sendPost(ctx.tg, u.tg_id, p, { uid: u.tg_id, publicUrl: ctx.publicUrl, arrow, docs: ctx.docs });
         rows.push({ tg_id: u.tg_id, ok: true });
         sent++;
       } catch (e) {
@@ -2043,6 +2150,82 @@ async function exportAll(db) {
   return out;
 }
 
+// src/fmt.js
+var TAGS = [["**", "bold"], ["__", "italic"], ["~~", "strikethrough"]];
+function mdToEntities(src) {
+  const s = String(src || "").replace(/\r\n?/g, "\n");
+  let out = "";
+  const ents = [];
+  const open = {};
+  let i = 0;
+  while (i < s.length) {
+    if (s[i] === "[") {
+      const m = /^\[([^\]\n]+)\]\((https?:\/\/[^\s)]+|t\.me\/[^\s)]+)\)/i.exec(s.slice(i));
+      if (m) {
+        const off = out.length;
+        out += m[1];
+        let url = m[2];
+        if (/^t\.me\//i.test(url)) url = "https://" + url;
+        ents.push({ type: "text_link", offset: off, length: m[1].length, url });
+        i += m[0].length;
+        continue;
+      }
+    }
+    const t = TAGS.find(([mk]) => s.startsWith(mk, i));
+    if (t) {
+      const [mk, type] = t;
+      if (open[type] === void 0) {
+        if (s.indexOf(mk, i + 2) > i + 2) {
+          open[type] = out.length;
+          i += 2;
+          continue;
+        }
+      } else {
+        const off = open[type];
+        delete open[type];
+        if (out.length > off) ents.push({ type, offset: off, length: out.length - off });
+        i += 2;
+        continue;
+      }
+    }
+    out += s[i];
+    i++;
+  }
+  ents.sort((a, b) => a.offset - b.offset || b.length - a.length);
+  return { text: out, entities: ents };
+}
+var MD_OK = /* @__PURE__ */ new Set(["bold", "italic", "strikethrough", "text_link", "url", "mention", "hashtag", "email", "phone_number", "bot_command"]);
+function entitiesToMd(text, entities) {
+  const t = String(text || "");
+  const ents = (entities || []).slice();
+  const rich = ents.some((e) => !MD_OK.has(e.type));
+  const marks = [];
+  for (const e of ents) {
+    if (e.type === "bold") marks.push([e.offset, e.offset + e.length, "**", "**"]);
+    else if (e.type === "italic") marks.push([e.offset, e.offset + e.length, "__", "__"]);
+    else if (e.type === "strikethrough") marks.push([e.offset, e.offset + e.length, "~~", "~~"]);
+    else if (e.type === "text_link") marks.push([e.offset, e.offset + e.length, "[", "](" + e.url + ")"]);
+  }
+  const ins = {};
+  const add = (pos, s, front) => {
+    ins[pos] = ins[pos] || [];
+    front ? ins[pos].unshift(s) : ins[pos].push(s);
+  };
+  for (const [a, b, o, c] of marks) {
+    add(a, o, false);
+    add(b, "\0" + c, true);
+  }
+  let out = "";
+  for (let i = 0; i <= t.length; i++) {
+    if (ins[i]) {
+      const list = ins[i];
+      out += list.filter((x) => x[0] === "\0").map((x) => x.slice(1)).join("") + list.filter((x) => x[0] !== "\0").join("");
+    }
+    if (i < t.length) out += t[i];
+  }
+  return { md: out, rich };
+}
+
 // src/testrun.js
 var sleep2 = (ms) => new Promise((r) => setTimeout(r, ms));
 var fitsLevel = (p, level) => !level || level === "all" || p.audience === "all" || p.audience === level;
@@ -2064,7 +2247,7 @@ function whenLabel(p, off, byId) {
 }
 async function sendLabeled(ctx, chatId, p, label, arrow) {
   await ctx.tg.call("sendMessage", { chat_id: chatId, text: "🧪 " + label + (p.title ? ` · «${p.title}»` : ""), disable_notification: true });
-  await sendPost(ctx.tg, chatId, p, { uid: chatId, publicUrl: ctx.publicUrl, arrow });
+  await sendPost(ctx.tg, chatId, p, { uid: chatId, publicUrl: ctx.publicUrl, arrow, docs: await loadDocs(ctx) });
 }
 async function runPreview(ctx, adminId, level, pauseMs = 900) {
   const { gifts, drip, byId } = await feedOrder(ctx.db, level);
@@ -2185,12 +2368,17 @@ var pad = (t) => {
 };
 function postOut(p, sent, clicks) {
   const media = j2(p.media, []);
+  const f = entitiesToMd(p.text || "", j2(p.entities, []));
   return {
     id: p.id,
     kind: p.kind,
     status: p.status,
     title: p.title || "",
     text: (p.text || "").slice(0, 400),
+    md: f.md,
+    rich: f.rich,
+    once: !!p.once,
+    files: media,
     day: p.day,
     time: p.send_time,
     mode: p.mode || "day",
@@ -2215,6 +2403,26 @@ async function handlePanelApi(ctx, request, url) {
   if (!await isAdmin(ctx, user.id)) return json({ error: "Панель только для админов" }, 403);
   ctx.userName = user.first_name;
   const path = url.pathname.replace(/^\/api\/panel/, "");
+  if (path === "/upload" && request.method === "POST") {
+    let file;
+    try {
+      file = (await request.formData()).get("file");
+    } catch {
+      file = null;
+    }
+    const r = await uploadFile(ctx, user, file, true);
+    return json(r, r.error ? 400 : 200);
+  }
+  if (path === "/file") {
+    const fid = url.searchParams.get("id") || "";
+    if (!/^[\w-]{10,200}$/.test(fid)) return json({ error: "Неверный файл" }, 400);
+    try {
+      const r = await ctx.tg.download(fid);
+      return new Response(r.body, { headers: { "content-type": r.headers.get("content-type") || "image/jpeg", "cache-control": "private, max-age=600" } });
+    } catch (e) {
+      return json({ error: "Не получилось загрузить превью" }, 400);
+    }
+  }
   let mm = /^\/msg\/([A-Za-z_]+)\/media$/.exec(path);
   if (mm && request.method === "POST") {
     const key = mm[1];
@@ -2271,6 +2479,8 @@ async function handlePanelApi(ctx, request, url) {
       levels: LEVELS,
       posts: posts.map((p) => postOut(p, sent[p.id], clicks[p.id])),
       msgs: await listMsgs(ctx),
+      docs: await loadDocs(ctx),
+      docNames: DOCS,
       people: { all: people.n || 0, active: people.active || 0 },
       run: await activeRun(ctx.db, user.id)
     });
@@ -2297,7 +2507,7 @@ async function handlePanelApi(ctx, request, url) {
         const aid = parseInt(body.after_id, 10);
         if (!aid || aid === p.id) return json({ error: "Выбери пост, после которого отправлять" }, 400);
         let cur = await ctx.db.first(`SELECT id, kind, mode, after_id FROM posts WHERE id = ?`, [aid]);
-        if (!cur || cur.kind !== "drip") return json({ error: "Такого поста ленты нет" }, 400);
+        if (!cur || !["drip", "node", "gift"].includes(cur.kind)) return json({ error: "Такого поста нет" }, 400);
         for (let i = 0; cur && cur.mode === "after" && i < 50; i++) {
           if (cur.after_id === p.id) return json({ error: "Получится круг: тот пост уже идёт после этого" }, 400);
           cur = await ctx.db.first(`SELECT id, kind, mode, after_id FROM posts WHERE id = ?`, [cur.after_id]);
@@ -2326,24 +2536,21 @@ async function handlePanelApi(ctx, request, url) {
     }
     if (body.title !== void 0) put("title", String(body.title).slice(0, 80) || null);
     if (body.rows !== void 0) {
-      if (!Array.isArray(body.rows) || body.rows.length > 10) return json({ error: "Слишком много рядов (до 10)" }, 400);
-      const rows = [];
-      for (const row of body.rows) {
-        if (!Array.isArray(row)) return json({ error: "Неверные кнопки" }, 400);
-        const r = [];
-        for (const b of row) {
-          const text = String(b && b.text || "").trim().slice(0, 60);
-          let link = String(b && b.url || "").trim();
-          if (!text && !link) continue;
-          if (!text) return json({ error: "У кнопки нет текста" }, 400);
-          if (/^t\.me\//i.test(link)) link = "https://" + link;
-          if (!/^https?:\/\/\S+$/i.test(link)) return json({ error: `Ссылка у кнопки «${text}» должна начинаться с https://` }, 400);
-          r.push({ text, url: link });
-        }
-        if (r.length > 4) return json({ error: "В одном ряду не больше 4 кнопок" }, 400);
-        if (r.length) rows.push(r);
-      }
-      put("buttons", rows.length ? JSON.stringify(rows) : null);
+      const r = await cleanButtons(ctx, body.rows, id);
+      if (r.error) return json({ error: r.error }, 400);
+      put("buttons", r.rows.length ? JSON.stringify(r.rows) : null);
+    }
+    if (body.once !== void 0) put("once", body.once ? 1 : 0);
+    if (body.md !== void 0) {
+      const f = mdToEntities(body.md);
+      if (f.text.length > 4096) return json({ error: "Текст длиннее 4096 знаков — Telegram не примет" }, 400);
+      put("text", f.text);
+      put("entities", JSON.stringify(f.entities));
+    }
+    if (body.files !== void 0) {
+      const r = cleanFiles(body.files);
+      if (r.error) return json({ error: r.error }, 400);
+      put("media", JSON.stringify(r.files));
     }
     if (body.catchup !== void 0) put("catchup", body.catchup ? 1 : 0);
     if (body.run_at !== void 0 && p.kind === "date") {
@@ -2352,8 +2559,75 @@ async function handlePanelApi(ctx, request, url) {
       put("run_at", t);
     }
     if (set.length) await ctx.db.run(`UPDATE posts SET ${set.join(", ")} WHERE id = ?`, [...val, id]);
-    const np = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [id]);
+    let np = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [id]);
+    if (np.status === "active" && !(np.text || "").trim() && !j2(np.media, []).length) {
+      await ctx.db.run(`UPDATE posts SET status = 'draft' WHERE id = ?`, [id]);
+      return json({ error: "Пустой пост нельзя включить — добавь текст или картинку. Остальное сохранено, пост в черновиках." }, 400);
+    }
     return json({ ok: true, post: postOut(np), reach: await audienceCount(ctx.db, np) });
+  }
+  if (path === "/post/new" && request.method === "POST") {
+    const kind = body.kind;
+    if (!["drip", "date", "gift", "node"].includes(kind)) return json({ error: "Выбери, когда уходит пост" }, 400);
+    const f = mdToEntities(body.md || "");
+    const files = cleanFiles(body.files || []);
+    if (files.error) return json({ error: files.error }, 400);
+    if (f.text.length > 4096) return json({ error: "Текст длиннее 4096 знаков — Telegram не примет" }, 400);
+    const status = ["active", "draft", "paused"].includes(body.status) ? body.status : "draft";
+    if (!f.text.trim() && !files.files.length && status !== "draft") return json({ error: "Добавь текст или картинку" }, 400);
+    if (status === "active" && kind === "date" && !(Number(body.run_at) > 0)) return json({ error: "Сначала задай дату" }, 400);
+    const audience = AUD[body.audience] ? body.audience : "all";
+    const day = Math.max(0, Math.min(365, parseInt(body.day, 10) || 0));
+    const time = pad(body.time) || "11:00";
+    const mode = ["day", "timer", "after"].includes(body.mode) ? body.mode : "day";
+    await ctx.db.run(
+      `INSERT INTO posts (title, kind, audience, day, send_time, run_at, catchup, status, text, entities, media, buttons, created_by, created_at, mode, delay_min, after_id, once)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`,
+      [
+        String(body.title || "").slice(0, 80) || null,
+        kind,
+        audience,
+        kind === "drip" ? day : null,
+        day === 0 && kind === "drip" && mode === "day" ? "00:00" : time,
+        kind === "date" ? Number(body.run_at) || null : null,
+        body.catchup ? 1 : 0,
+        status,
+        f.text,
+        JSON.stringify(f.entities),
+        JSON.stringify(files.files),
+        user.id,
+        ctx.now,
+        kind === "drip" ? mode : "day",
+        Math.max(0, parseInt(body.delay_min, 10) || 0),
+        parseInt(body.after_id, 10) || null,
+        body.once ? 1 : 0
+      ]
+    );
+    const row = await ctx.db.first(`SELECT * FROM posts WHERE created_by = ? ORDER BY id DESC LIMIT 1`, [user.id]);
+    if (body.rows) {
+      const r = await cleanButtons(ctx, body.rows, row.id);
+      if (r.error) {
+        await ctx.db.run(`UPDATE posts SET status = 'draft' WHERE id = ?`, [row.id]);
+        return json({ error: r.error, post: postOut(row) }, 400);
+      }
+      if (r.rows.length) await ctx.db.run(`UPDATE posts SET buttons = ? WHERE id = ?`, [JSON.stringify(r.rows), row.id]);
+    }
+    const np = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [row.id]);
+    return json({ ok: true, post: postOut(np), reach: await audienceCount(ctx.db, np) });
+  }
+  if (path === "/docs" && request.method === "POST") {
+    for (const k of ["policy", "consent", "offer", "owner"]) {
+      if (body[k] === void 0) continue;
+      let v = String(body[k] || "").trim().slice(0, 400);
+      if (k !== "owner" && v) {
+        if (/^t\.me\//i.test(v)) v = "https://" + v;
+        if (!/^https?:\/\/\S+$/i.test(v)) return json({ error: `Ссылка «${DOCS[k]}» должна начинаться с https://` }, 400);
+      }
+      if (v) await ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, ["doc:" + k, v]);
+      else await ctx.db.run(`DELETE FROM settings WHERE key = ?`, ["doc:" + k]);
+    }
+    ctx._docs = null;
+    return json({ ok: true, docs: await loadDocs(ctx) });
   }
   if (path === "/reorder" && request.method === "POST") {
     const items = Array.isArray(body.items) ? body.items.slice(0, 200) : [];
@@ -2404,7 +2678,7 @@ async function handlePanelApi(ctx, request, url) {
     const p = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [+m[1]]);
     if (!p) return json({ error: "Пост не найден" }, 404);
     try {
-      const r = await sendPost(ctx.tg, user.id, p, { uid: user.id, publicUrl: ctx.publicUrl, arrow: await btn(ctx, "buttonsArrow") });
+      const r = await sendPost(ctx.tg, user.id, p, { uid: user.id, publicUrl: ctx.publicUrl, arrow: await btn(ctx, "buttonsArrow"), docs: await loadDocs(ctx) });
       return json({ ok: true, warn: r.warn });
     } catch (e) {
       return json({ error: "Telegram не принял пост: " + e.message }, 400);
@@ -2431,10 +2705,85 @@ async function handlePanelApi(ctx, request, url) {
   }
   m = /^\/msg\/([A-Za-z_]+)\/preview$/.exec(path);
   if (m && request.method === "POST") {
-    await say(ctx, user.id, m[1], { уровень: LEVELS.start, политика: ctx.env.POLICY_URL || "— ссылка появится перед запуском —", согласие: ctx.env.CONSENT_URL || "— ссылка появится перед запуском —", оферта: ctx.env.OFFER_URL || "— скоро —", владелец: ctx.env.OWNER_INFO || "" });
+    await say(ctx, user.id, m[1], { уровень: LEVELS.start, ...await docVars(ctx) });
     return json({ ok: true });
   }
   return json({ error: "Нет такого действия" }, 404);
+}
+async function cleanButtons(ctx, rowsIn, selfId) {
+  if (!Array.isArray(rowsIn) || rowsIn.length > 10) return { error: "Слишком много рядов (до 10)" };
+  const rows = [];
+  for (const row of rowsIn) {
+    if (!Array.isArray(row)) return { error: "Неверные кнопки" };
+    const r = [];
+    for (const b of row) {
+      if (!b) continue;
+      const text = String(b.text || "").trim().slice(0, 60);
+      let link = String(b.url || "").trim();
+      const go = parseInt(b.go, 10) || null;
+      if (!text && !link && !go && !b.doc && !b.pay) continue;
+      if (!text) return { error: "У кнопки нет текста" };
+      if (go) {
+        if (go === selfId) return { error: `Кнопка «${text}» ведёт на этот же пост` };
+        const t = await ctx.db.first(`SELECT id FROM posts WHERE id = ? AND status != 'archived'`, [go]);
+        if (!t) return { error: `Пост для кнопки «${text}» не найден` };
+        r.push({ text, go });
+        continue;
+      }
+      if (b.doc) {
+        if (!DOCS[b.doc]) return { error: "Неизвестный документ" };
+        r.push({ text, doc: b.doc });
+        continue;
+      }
+      if (b.pay) {
+        const pay = ["curator", "mentor"].includes(b.pay) ? b.pay : "curator";
+        r.push({ text, pay });
+        continue;
+      }
+      if (/^t\.me\//i.test(link)) link = "https://" + link;
+      if (!/^https?:\/\/\S+$/i.test(link)) return { error: `Ссылка у кнопки «${text}» должна начинаться с https://` };
+      r.push({ text, url: link });
+    }
+    if (r.length > 4) return { error: "В одном ряду не больше 4 кнопок" };
+    if (r.length) rows.push(r);
+  }
+  return { rows };
+}
+var FILE_TYPES = ["photo", "video", "document", "animation"];
+function cleanFiles(list) {
+  if (!Array.isArray(list)) return { error: "Неверные вложения" };
+  if (list.length > 10) return { error: "Не больше 10 вложений" };
+  const files = [];
+  for (const f of list) {
+    if (!f || !FILE_TYPES.includes(f.type) || !/^[\w-]{10,200}$/.test(String(f.file_id || ""))) return { error: "Неверное вложение" };
+    files.push({ type: f.type, file_id: String(f.file_id) });
+  }
+  if (files.length > 1 && files.some((f) => f.type === "document") && files.some((f) => f.type !== "document")) return { error: "В одном посте нельзя смешивать файлы с картинками и видео" };
+  return { files };
+}
+async function uploadFile(ctx, user, file, allowDocs) {
+  if (!file || typeof file === "string") return { error: "Файл не пришёл" };
+  const type = (file.type || "").toLowerCase();
+  let kind = type === "image/gif" ? "animation" : /^image\/(jpeg|png|webp)$/.test(type) ? "photo" : type.startsWith("video/") ? "video" : null;
+  if (!kind && allowDocs) kind = "document";
+  if (!kind) return { error: "Нужна картинка (jpg, png, webp, gif) или видео mp4" };
+  const max = kind === "photo" ? 10 : 50;
+  if (file.size > max * 1024 * 1024) return { error: `Файл больше ${max} МБ — Telegram такой не примет` };
+  const form = new FormData();
+  form.append("chat_id", String(user.id));
+  form.append("disable_notification", "true");
+  form.append(kind, file, file.name || "file");
+  let res;
+  try {
+    res = await ctx.tg.upload({ photo: "sendPhoto", video: "sendVideo", animation: "sendAnimation", document: "sendDocument" }[kind], form);
+  } catch (e) {
+    return { error: "Telegram не принял файл: " + e.message };
+  }
+  const fid = kind === "photo" ? res.photo && res.photo[res.photo.length - 1].file_id : (res[kind] || res.document || res.video || res.animation || {}).file_id;
+  if (!fid) return { error: "Telegram не вернул файл" };
+  await ctx.tg.call("deleteMessage", { chat_id: user.id, message_id: res.message_id }).catch(() => {
+  });
+  return { ok: true, file: { type: kind, file_id: fid, name: file.name || "" } };
 }
 
 // src/panel-html.js
@@ -2541,6 +2890,49 @@ textarea{min-height:120px;resize:vertical;line-height:1.45}
 .legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--soft);margin-top:10px}
 .gate{min-height:80vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:10px}
 @media (min-width:700px){ h1{font-size:44px} }
+/* конструктор сценария */
+#tabs{overflow-x:auto;scrollbar-width:none}#tabs::-webkit-scrollbar{display:none}
+#tabs button{flex:1 0 auto;padding:9px 12px}
+.tree{margin:0 0 12px}
+.fn{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 14px;box-shadow:var(--shadow);cursor:pointer}
+.fn.dim{opacity:.6}
+.fn-top{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:4px}
+.kids{margin:0 0 0 14px;padding:6px 0 2px 12px;border-left:1.5px solid var(--line);display:flex;flex-direction:column;gap:8px}
+.fb{display:flex;flex-direction:column;gap:6px}
+.fb-l{font-size:13px;font-weight:500;display:flex;gap:6px;align-items:baseline}
+.fb-r{font-size:13px;color:var(--soft);margin:-4px 0 0 22px}
+.ref{align-self:flex-start;border:1px dashed var(--faint);background:transparent;border-radius:12px;padding:8px 12px;font-size:13px;cursor:pointer;text-align:left}
+.addb{align-self:flex-start;border:0;background:transparent;color:var(--soft);font-size:13px;padding:6px 0;cursor:pointer;min-height:36px}
+.dash{border:1.5px dashed var(--line);border-radius:16px;padding:12px;margin:6px 0}
+.ok-t{color:var(--good);font-weight:600}.warn-t{color:var(--warn);font-weight:600}
+.steps{display:flex;flex-direction:column;align-items:stretch}
+.stp{display:flex;gap:10px;align-items:center;text-align:left;border:1px solid var(--line);background:var(--bg);border-radius:14px;padding:10px 12px;cursor:pointer;min-height:44px}
+.stp b{flex:none;width:24px;height:24px;border-radius:50%;background:var(--pill);display:grid;place-items:center;font-size:12px}
+.stp .st-t{display:flex;flex-direction:column;font-size:14px;min-width:0}.stp .st-t i{display:block;font-style:normal;font-size:12px;color:var(--soft);margin-top:2px}
+.stp.last{cursor:default;border-style:dashed}
+.arr{text-align:center;color:var(--faint);font-size:12px;line-height:1;padding:3px 0}
+.docs-row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.kinds{display:grid;gap:8px;margin-top:10px}
+.kind{text-align:left;border:1px solid var(--line);background:var(--card);border-radius:16px;padding:14px;cursor:pointer;display:flex;flex-direction:column;gap:4px}
+.kind b{font-weight:600}.kind span{font-size:13px;color:var(--soft)}
+.shd{position:sticky;top:-8px;z-index:3;display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--bg);margin:0 -16px;padding:6px 16px 8px}
+.sx{flex:none;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--card);font-size:16px;cursor:pointer}
+.fmt{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 6px}
+.fmt button{min-width:40px;height:36px;border:1px solid var(--line);background:var(--card);border-radius:10px;padding:0 10px;cursor:pointer;font-size:14px}
+.files{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px}
+.fl{position:relative;aspect-ratio:1;border-radius:12px;overflow:hidden;background:rgba(44,13,2,.05);border:1px solid var(--line)}
+.fl img{width:100%;height:100%;object-fit:cover;display:block}
+.fl-ic{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;font-size:26px;gap:4px}.fl-ic i{font-style:normal;font-size:11px;color:var(--soft);padding:0 4px;text-align:center;word-break:break-all}
+.fl-x,.fl-l{position:absolute;top:4px;width:28px;height:28px;border-radius:50%;border:0;background:rgba(255,255,255,.92);cursor:pointer;font-size:13px;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.fl-x{right:4px}.fl-l{left:4px}
+.fl.add{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;font-size:22px;border-style:dashed;color:var(--soft)}.fl.add span{font-size:12px}
+.brow{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:10px;margin:8px 0}
+.bcard{display:grid;gap:6px;padding:8px 0;border-bottom:1px dashed var(--line);margin-bottom:6px}.bcard:last-of-type{border-bottom:0}
+.btype{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;background:rgba(44,13,2,.06);border-radius:12px;padding:3px}
+.btype button{border:0;background:transparent;border-radius:9px;padding:7px 2px;font-size:12.5px;cursor:pointer;white-space:nowrap;min-height:34px}
+.btype button.on{background:var(--card);box-shadow:var(--shadow);font-weight:600}
+@media (max-width:360px){ .btype{grid-template-columns:repeat(2,1fr)} }
+
 </style>
 </head>
 <body>
@@ -2559,7 +2951,7 @@ const INIT = tg ? tg.initData : '';
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let S = null;                // всё, что пришло с сервера
-let tab = 'feed';
+let tab = 'flow';
 let view = { level: 'all', hide: false };
 try { const v = JSON.parse(localStorage.getItem('panelView') || 'null'); if (v) view = Object.assign(view, v); } catch (e) {}
 const saveView = () => { try { localStorage.setItem('panelView', JSON.stringify(view)); } catch (e) {} };
@@ -2632,12 +3024,14 @@ function render() {
   const counts = { feed: S.posts.filter((p) => p.kind === 'drip').length, dates: S.posts.filter((p) => p.kind === 'date').length, gifts: S.posts.filter((p) => p.kind === 'gift').length };
   app.innerHTML =
     '<div class="top"><span class="pill">Di Sign University · панель</span><span class="small muted">людей: ' + S.people.all + ' · в рассылке: ' + S.people.active + '</span></div>' +
-    '<h1>Лента <i>бота</i></h1><p class="lead">Перетаскивай посты за ⋮⋮, нажми на пост — чтобы поменять день, время и кому он уходит: всем, начинающим или продолжающим.</p>' +
+    (tab === 'flow' ? '<h1>Сценарий <i>бота</i></h1><p class="lead">Собирай посты с нуля и связывай кнопками: ссылка, другой пост, документ или оплата. Нажми на пост — откроется редактор.</p>'
+      : tab === 'texts' ? '<h1>Тексты <i>бота</i></h1><p class="lead">Служебные сообщения: приветствие, согласия, вопросы, команды.</p>'
+      : '<h1>Лента <i>бота</i></h1><p class="lead">Перетаскивай посты за ⋮⋮, нажми на пост — чтобы поменять день, время и кому он уходит.</p>') +
     '<div class="tabs"><div class="seg" id="tabs">' +
-    [['feed','Лента · ' + counts.feed],['dates','Даты · ' + counts.dates],['gifts','Подарки · ' + counts.gifts],['texts','Тексты']].map(([k,t]) => '<button data-t="' + k + '" class="' + (tab === k ? 'on' : '') + '">' + t + '</button>').join('') +
+    [['flow','Сценарий'],['feed','Лента · ' + counts.feed],['dates','Даты · ' + counts.dates],['gifts','Подарки · ' + counts.gifts],['texts','Тексты']].map(([k,t]) => '<button data-t="' + k + '" class="' + (tab === k ? 'on' : '') + '">' + t + '</button>').join('') +
     '</div></div><div id="body"></div>';
   $('tabs').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; tab = b.dataset.t; haptic(); render(); window.scrollTo(0, 0); };
-  ({ feed: renderFeed, dates: renderDates, gifts: renderGifts, texts: renderTexts })[tab]();
+  ({ flow: renderFlow, feed: renderFeed, dates: renderDates, gifts: renderGifts, texts: renderTexts })[tab]();
 }
 
 function viewBox() {
@@ -2658,15 +3052,15 @@ function renderFeed() {
   const last = Math.max(7, maxDay + 1);
   const filtered = (view.hide && view.level !== 'all') ? drip.filter(gets) : drip;
   let h = viewBox() + runBox();
-  if (!drip.length) h += '<div class="empty">Постов по дням пока нет.<br>Создай первый в боте: <b>/new</b> → «Через N дней после входа».</div>';
+  if (!drip.length) h += '<div class="empty">Постов по дням пока нет.<br>Создай первый: «Сценарий» → «＋ Новый пост».</div>';
   for (let d = 0; d <= last; d++) {
     const items = filtered.filter((p) => bucketDay(p, ids) === d).sort((a, b) => offMin(a, ids) - offMin(b, ids) || a.pos - b.pos || a.id - b.id);
     h += '<section class="day"><div class="dayh"><b>День ' + d + '</b><span>' + dayLabel(d) + '</span></div><div class="list" data-day="' + d + '">' + items.map((p) => cardHtml(p, { drag: true })).join('') + '</div></section>';
   }
-  h += '<div class="note" style="margin-top:22px">Новый пост создаётся в боте: <b>/new</b>. Там же меняются текст и картинки поста (<b>/posts</b> → пост → ✏️). Здесь — порядок, дни, время и кому.</div>';
+  h += '<div class="note" style="margin-top:22px">Новый пост — во вкладке «Сценарий» → «＋ Новый пост» или в боте: <b>/new</b>. Посты-ответы и цепочки «после поста» видно деревом в «Сценарии».</div>';
   $('body').innerHTML = h;
   bindView(); bindRun();
-  document.querySelectorAll('.list').forEach((el) => {
+  if (window.Sortable) document.querySelectorAll('.list').forEach((el) => {
     Sortable.create(el, {
       group: 'drip', handle: '.handle', animation: 160, ghostClass: 'ghost', chosenClass: 'chosen', forceFallback: true, fallbackTolerance: 4, scroll: true, bubbleScroll: true,
       onEnd: (ev) => onDrop(ev),
@@ -2827,90 +3221,320 @@ $('sheetBg').onclick = closeSheet;
 function segHtml(id, opts, cur) { return '<div class="seg sm" id="' + id + '">' + opts.map(([k,t]) => '<button type="button" data-v="' + k + '" class="' + (cur === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>'; }
 function segBind(id, on) { $(id).onclick = (e) => { const b = e.target.closest('button'); if (!b) return; [...$(id).children].forEach((x) => x.classList.toggle('on', x === b)); on(b.dataset.v); }; }
 
-function openPost(id) {
-  const p = S.posts.find((x) => x.id === id); if (!p) return;
-  const st = { day: p.day, time: p.time, audience: p.audience, status: p.status, catchup: p.catchup, run_at: p.run_at, mode: p.mode || 'day', delay: p.delay || 0, after: p.after };
+// ---------- сценарий: дерево постов и кнопок ----------
+const KIND = { drip: '📅 Пост ленты', date: '🕒 Пост на дату', gift: '🎁 Подарок после теста', node: '🔘 Пост-ответ' };
+const KIND_NOTE = {
+  drip: 'Уходит каждому в свой день после входа: в день и время, по таймеру или после другого поста.',
+  date: 'Уходит один раз в выбранные дату и время всем, кто уже в боте. Для эфиров и анонсов.',
+  gift: 'Уходит сразу после аудит-теста.',
+  node: 'Приходит, только когда человек нажимает кнопку, которая ведёт сюда. Так строятся развилки: «выбери вариант → следующий пост».',
+};
+const TARIFF = { curator: 'Тариф с кураторами', mentor: 'Тариф с ментором' };
+const parentsOf = (id) => { const out = []; S.posts.forEach((p) => (p.rows || []).forEach((row) => row.forEach((b) => { if (+b.go === id) out.push({ p, b }); }))); return out; };
+const afterKids = (id) => S.posts.filter((x) => x.kind === 'drip' && x.mode === 'after' && x.after === id);
+const domainOf = (u) => { try { return new URL(u).host.replace(/^www\\./, ''); } catch (e) { return u || 'ссылка не задана'; } };
+const stTag = (p) => p.status === 'draft' ? '<span class="tag draft">📝 черновик</span>' : p.status === 'paused' ? '<span class="tag paused">⏸ пауза</span>' : '';
+const emptyTag = (p) => !(p.text || '').trim() && !p.media.length ? '<span class="tag no">нужно заполнить</span>' : '';
+function whenOf(p) {
+  if (p.kind === 'gift') return '🎁 после теста';
+  if (p.kind === 'node') return '🔘 по кнопке';
+  if (p.kind === 'date') return '🕒 ' + fmtRun(p.run_at);
+  if (p.mode === 'after') return '⏱ через ' + fmtDelay(p.delay);
+  return '📅 ' + (p.mode === 'timer' ? 'через ' + fmtDelay(p.delay) + ' после входа' : p.day === 0 ? 'день 0 · сразу' : 'день ' + p.day + ' · ' + p.time);
+}
+
+function renderFlow() {
+  const ids = byIdMap();
+  const shown = new Set();
+  const node = (p, depth, path) => {
+    const loop = path.includes(p.id);
+    if (loop || shown.has(p.id) || depth > 6) {
+      return '<button type="button" class="ref" data-id="' + p.id + '">' + (loop ? '↩ снова к ' : '→ ') + '«' + esc(postName(p).slice(0, 40)) + '»</button>';
+    }
+    shown.add(p.id);
+    const np = path.concat(p.id);
+    let h = '<div class="fn' + (p.status !== 'active' ? ' dim' : '') + '" data-id="' + p.id + '"><div class="fn-top"><span class="time">' + esc(whenOf(p)) + '</span>' + stTag(p) + emptyTag(p) +
+      '<span class="stat">' + (p.sent ? '↗ ' + p.sent : '') + (p.clicks ? ' · 👆 ' + p.clicks : '') + '</span></div>' +
+      '<div class="ttl">' + esc(postName(p)) + '</div>' + (p.media.length ? '<div class="meta"><span class="tag">🖼 ' + (p.media.length > 1 ? '×' + p.media.length : '') + '</span>' + (p.audience !== 'all' && p.kind !== 'node' ? '<span class="tag">' + esc(S.audiences[p.audience]) + '</span>' : '') + '</div>' : (p.audience !== 'all' && p.kind !== 'node' ? '<div class="meta"><span class="tag">' + esc(S.audiences[p.audience]) + '</span></div>' : '')) + '</div>';
+    let kids = '';
+    (p.rows || []).forEach((row) => row.forEach((b) => {
+      if (b.go) { const t = ids[+b.go]; kids += '<div class="fb"><span class="fb-l">🔘 ' + esc(b.text) + (p.once ? ' <i class="muted small">выбор</i>' : '') + '</span>' + (t ? node(t, depth + 1, np) : '<span class="tag no">пост в архиве</span>') + '</div>'; }
+      else if (b.doc) kids += '<div class="fb"><span class="fb-l">📄 ' + esc(b.text) + '</span><span class="fb-r">' + esc(S.docNames[b.doc] || '') + (S.docs[b.doc] ? '' : ' · <b class="warn-t">ссылка не задана</b>') + '</span></div>';
+      else if (b.pay) kids += '<div class="fb"><span class="fb-l">💳 ' + esc(b.text) + '</span><span class="fb-r">' + esc(TARIFF[b.pay] || 'оплата') + ' · подключим позже</span></div>';
+      else kids += '<div class="fb"><span class="fb-l">🔗 ' + esc(b.text) + '</span><span class="fb-r">' + esc(domainOf(b.url)) + '</span></div>';
+    }));
+    afterKids(p.id).sort((a, b) => (a.delay || 0) - (b.delay || 0)).forEach((k) => { kids += '<div class="fb"><span class="fb-l">⏱ потом, через ' + esc(fmtDelay(k.delay)) + '</span>' + node(k, depth + 1, np) + '</div>'; });
+    kids += '<button type="button" class="addb" data-add="' + p.id + '">＋ кнопка или следующий пост</button>';
+    return h + '<div class="kids">' + kids + '</div>';
+  };
+  const isRoot = (p) => !(p.kind === 'drip' && p.mode === 'after' && ids[p.after]);
+  const gifts = S.posts.filter((p) => p.kind === 'gift' && isRoot(p)).sort((a, b) => a.id - b.id);
+  const drip = S.posts.filter((p) => p.kind === 'drip' && isRoot(p)).sort((a, b) => offMin(a, ids) - offMin(b, ids) || a.pos - b.pos || a.id - b.id);
+  const dates = S.posts.filter((p) => p.kind === 'date').sort((a, b) => (a.run_at || 9e12) - (b.run_at || 9e12));
+  let h = '<div class="btns" style="margin-top:16px"><button class="btn" type="button" id="newPost">＋ Новый пост</button></div>';
+  h += entryBox();
+  const sec = (title, note, list) => '<div class="grp">' + title + '</div>' + (note ? '<p class="small muted" style="margin:-2px 2px 10px">' + note + '</p>' : '') +
+    (list.length ? list.map((p) => '<div class="tree">' + node(p, 0, []) + '</div>').join('') : '<p class="small muted dash">Пока пусто.</p>');
+  h += sec('🎁 После теста', 'Подарок уходит сразу после аудит-теста.', gifts);
+  h += sec('📅 Лента', 'По порядку от входа в бот. Дни и время удобно двигать во вкладке «Лента».', drip);
+  h += sec('🕒 В дату', '', dates);
+  const lost = S.posts.filter((p) => p.kind === 'node' && !shown.has(p.id));
+  if (lost.length) h += sec('🔘 Посты-ответы без кнопки', 'На них пока не ведёт ни одна кнопка — человек их не получит. Привяжи: открой нужный пост → «＋ кнопка» → «Пост».', lost);
+  $('body').innerHTML = h;
+  $('newPost').onclick = openNew;
+  bindEntry();
+  document.querySelectorAll('.fn,.ref').forEach((el) => el.onclick = () => openPost(+el.dataset.id));
+  document.querySelectorAll('[data-add]').forEach((el) => el.onclick = () => openPost(+el.dataset.add, { focus: 'buttons' }));
+}
+
+// вход в бот: служебные шаги по порядку + документы
+function entryBox() {
+  const d = S.docs || {};
+  const ok = (k) => d[k] ? '<span class="ok-t">✓</span>' : '<span class="warn-t">не задана</span>';
+  const steps = [
+    ['hello', '👋 Приветствие'],
+    ['consentPd', '✅ Согласие на данные', 'политика ' + ok('policy') + ' · согласие ' + ok('consent')],
+    ['askLevel', '🎚 Уровень: начинающий / продолжающий'],
+    ['testOffer', '🧪 Тест → 🎁 подарок', S.posts.filter((p) => p.kind === 'gift' && p.status === 'active').length + ' подарк. включено'],
+    ['consentAds', '📬 Согласие на рассылку'],
+  ];
+  const miss = !d.policy || !d.consent;
+  return '<div class="box"><h3>Вход в бот</h3><p class="small muted" style="margin:0 0 10px">Так бот встречает нового человека. Порядок фиксированный: по закону сначала согласие. Нажми на шаг — поменять текст.</p><div class="steps">' +
+    steps.map(([k, t, sub], i) => '<button type="button" class="stp" data-k="' + k + '"><b>' + (i + 1) + '</b><span class="st-t">' + t + (sub ? '<i>' + sub + '</i>' : '') + '</span></button>').join('<div class="arr">↓</div>') +
+    '<div class="arr">↓</div><div class="stp last"><b>→</b><span class="st-t">дальше — лента и посты ниже</span></div></div>' +
+    '<div class="docs-row"><div><b>Документы</b><div class="small muted">политика ' + ok('policy') + ' · согласие ' + ok('consent') + ' · оферта ' + ok('offer') + '</div></div><button type="button" class="chip" id="docsBtn">изменить</button></div>' +
+    (miss ? '<div class="note warn">Без ссылок на политику и согласие бот нельзя открывать для всех (152-ФЗ). Пока бот только для своих.</div>' : '') + '</div>';
+}
+function bindEntry() {
+  document.querySelectorAll('.stp[data-k]').forEach((el) => el.onclick = () => { if (el.dataset.k === 'testOffer') { tab = 'gifts'; render(); window.scrollTo(0, 0); return; } openMsg(el.dataset.k); });
+  $('docsBtn').onclick = openDocs;
+}
+function openDocs() {
+  const d = S.docs || {};
+  const f = (k, t, ph, hint) => '<label class="f">' + t + '</label><input type="text" id="d_' + k + '" inputmode="url" placeholder="' + ph + '" value="' + esc(d[k] || '') + '">' + (hint ? '<p class="small muted" style="margin:6px 2px 0">' + hint + '</p>' : '');
+  sheet('<span class="pill">Документы</span><h2>Политика, согласие, оферта</h2>' +
+    '<p class="small muted">Ссылки подставляются в шаг «Согласие на данные» ({политика}, {согласие}), в команду /policy и в кнопки-документы под постами.</p>' +
+    f('policy', 'Политика обработки данных', 'https://…', '') + f('consent', 'Текст согласия на обработку данных', 'https://…', '') + f('offer', 'Оферта', 'https://…', 'Нужна к старту продаж.') +
+    '<label class="f">Кто владелец (для /policy)</label><input type="text" id="d_owner" placeholder="Самозанятая Иванова К. И., ИНН …" value="' + esc(d.owner || '') + '">' +
+    '<div class="btns"><button class="btn" id="dSave">Сохранить</button><button class="btn ghost" id="dClose">Закрыть</button></div>');
+  $('dClose').onclick = closeSheet;
+  $('dSave').onclick = async () => {
+    const body = {}; ['policy', 'consent', 'offer', 'owner'].forEach((k) => body[k] = $('d_' + k).value.trim());
+    try { const r = await api('/docs', body); S.docs = r.docs; closeSheet(); haptic('medium'); toast('Документы сохранены ✓'); render(); } catch (e) { toast(e.message); }
+  };
+}
+
+// ---------- новый пост ----------
+function openNew(preset) {
+  preset = preset || {};
+  if (preset.kind) return openPost(null, { draft: Object.assign(blankPost(preset.kind), preset) });
+  sheet('<span class="pill">Новый пост</span><h2>Когда он уходит?</h2><div class="kinds">' +
+    ['drip', 'node', 'date', 'gift'].map((k) => '<button type="button" class="kind" data-k="' + k + '"><b>' + KIND[k] + '</b><span>' + KIND_NOTE[k] + '</span></button>').join('') +
+    '</div><div class="btns"><button class="btn ghost" id="nClose">Закрыть</button></div>');
+  document.querySelectorAll('.kind').forEach((el) => el.onclick = () => { haptic(); openPost(null, { draft: blankPost(el.dataset.k) }); });
+  $('nClose').onclick = closeSheet;
+}
+function blankPost(kind) {
+  return { id: null, kind, status: 'draft', title: '', text: '', md: '', rich: false, once: false, files: [], media: [], day: 1, time: '11:00', mode: 'day', delay: 0, after: null, run_at: null, audience: 'all', catchup: false, pos: 0, rows: [], sent: 0, clicks: 0 };
+}
+
+// превью картинки поста
+function thumb(img, fid) {
+  fetch('/api/panel/file?id=' + encodeURIComponent(fid), { headers: { 'x-init-data': INIT } }).then((r) => r.ok ? r.blob() : null).then((b) => { if (b) img.src = URL.createObjectURL(b); }).catch(() => {});
+}
+
+// ---------- редактор поста (новый и существующий) ----------
+function openPost(id, opt) {
+  opt = opt || {};
+  const p = opt.draft || S.posts.find((x) => x.id === id); if (!p) return;
+  const isNew = !p.id;
+  const st = { day: p.day ?? 1, time: p.time || '11:00', audience: p.audience, status: p.status, catchup: p.catchup, run_at: p.run_at, mode: p.mode || 'day', delay: p.delay || 0, after: p.after, once: !!p.once, files: JSON.parse(JSON.stringify(p.files || [])), editRich: false };
   const unitOf = (m) => (m >= 1440 && m % 1440 === 0 ? 1440 : m >= 60 && m % 60 === 0 ? 60 : 1);
-  const unitSel = (id, m) => '<select id="' + id + '" style="width:auto;flex:none">' + [[1, 'минут'], [60, 'часов'], [1440, 'дней']].map(([v, t]) => '<option value="' + v + '"' + (unitOf(m) === v ? ' selected' : '') + '>' + t + '</option>').join('') + '</select>';
-  const others = S.posts.filter((x) => x.kind === 'drip' && x.id !== p.id);
-  const kindName = { drip: 'Пост ленты', date: 'Пост на дату', gift: 'Подарок после теста' }[p.kind];
-  let h = '<span class="pill">' + kindName + ' · #' + p.id + '</span><h2>' + esc(postName(p)) + '</h2>' +
-    '<div class="preview">' + esc(p.text || '(без текста)') + '</div>' +
-    (p.media.length ? '<p class="small muted" style="margin:6px 2px 0">🖼 вложений: ' + p.media.length + '</p>' : '') +
-    '<label class="f">Название для себя</label><input type="text" id="fTitle" maxlength="80" placeholder="Например: «Чек-лист, день 1»" value="' + esc(p.title) + '">';
+  const unitSel = (sid, m) => '<select id="' + sid + '" style="width:auto;flex:none">' + [[1, 'минут'], [60, 'часов'], [1440, 'дней']].map(([v, t]) => '<option value="' + v + '"' + (unitOf(m) === v ? ' selected' : '') + '>' + t + '</option>').join('') + '</select>';
+  const others = S.posts.filter((x) => ['drip', 'node', 'gift'].includes(x.kind) && x.id !== p.id);
+  const parents = p.id ? parentsOf(p.id) : [];
+  let h = '<div class="shd"><span class="pill">' + KIND[p.kind] + (p.id ? ' · #' + p.id : ' · новый') + '</span><button type="button" class="sx" id="bX" aria-label="закрыть">✕</button></div><h2>' + (isNew ? 'Новый пост' : esc(postName(p))) + '</h2>' +
+    '<p class="small muted" style="margin:0 0 4px">' + KIND_NOTE[p.kind] + '</p>';
+  // текст
+  h += '<label class="f">Текст поста</label>';
+  if (p.rich) h += '<div class="note warn" id="richNote">В тексте премиум-эмодзи или особое оформление из бота. Если править здесь — они станут обычными. Чтобы сохранить — правь в боте: <b>/posts</b> → #' + p.id + ' → ✏️.<br><button type="button" class="chip" id="richEdit" style="margin-top:8px">всё равно править здесь</button></div>';
+  h += '<div class="fmt" id="fmtBar"' + (p.rich ? ' hidden' : '') + '><button type="button" data-w="**" title="жирный"><b>Ж</b></button><button type="button" data-w="__" title="курсив"><i>К</i></button><button type="button" data-w="~~" title="зачёркнутый"><s>З</s></button><button type="button" data-l="1">🔗 ссылка</button><button type="button" data-v="{имя}">{имя}</button></div>' +
+    '<textarea id="fMd" placeholder="Напиши текст. **жирный**, __курсив__, [текст](https://ссылка)"' + (p.rich ? ' readonly' : '') + '>' + esc(p.md || '') + '</textarea>' +
+    '<p class="small muted" id="mdCount" style="margin:6px 2px 0"></p>';
+  // вложения
+  h += '<label class="f">Картинки, видео, файлы</label><div class="files" id="fFiles"></div><input type="file" id="fFile" multiple hidden accept="image/*,video/mp4,application/pdf,.pdf,.zip,.fig,.psd">' +
+    '<p class="small muted" style="margin:6px 2px 0">До 10 штук — уйдут альбомом, текст станет подписью (до 1024 знаков, длиннее — следующим сообщением). Файлы с картинками не смешиваются.</p>';
+  h += '<label class="f">Название для себя</label><input type="text" id="fTitle" maxlength="80" placeholder="Например: «Развилка: кто ты»" value="' + esc(p.title) + '">';
+  // когда
   if (p.kind === 'drip') {
     h += '<label class="f">Когда отправлять</label>' + segHtml('fMode', [['day', '📅 В день'], ['timer', '⏱ Таймер'], ['after', '↳ После поста']], st.mode) +
       '<div id="pDay" style="margin-top:10px"><div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:12px"><div class="step"><button type="button" id="dMinus">−</button><b id="dVal">' + st.day + '</b><button type="button" id="dPlus">+</button></div>' +
       '<div id="tWrap" style="flex:1;min-width:140px"><input type="time" id="fTime" value="' + esc(st.time) + '"></div></div><p class="small muted" id="dHint" style="margin:6px 2px 0"></p></div>' +
       '<div id="pTimer" style="margin-top:10px"><div class="row"><span>через</span><input type="number" id="tNum" min="0" step="1" style="width:90px" value="' + (st.mode === 'timer' ? st.delay / unitOf(st.delay) : 30) + '">' + unitSel('tUnit', st.mode === 'timer' ? st.delay : 1) + '</div><p class="small muted" id="tHint" style="margin:6px 2px 0"></p></div>' +
-      '<div id="pAfter" style="margin-top:10px">' + (others.length ? '<select id="aPost">' + others.map((x) => '<option value="' + x.id + '"' + (st.after === x.id ? ' selected' : '') + '>' + esc(postName(x).slice(0, 40)) + ' — ' + esc(whenShort(x, byIdMap())) + '</option>').join('') + '</select>' +
+      '<div id="pAfter" style="margin-top:10px">' + (others.length ? '<select id="aPost">' + others.map((x) => '<option value="' + x.id + '"' + (st.after === x.id ? ' selected' : '') + '>' + esc((x.kind === 'node' ? '🔘 ' : x.kind === 'gift' ? '🎁 ' : '') + postName(x).slice(0, 40)) + ' — ' + esc(whenOf(x)) + '</option>').join('') + '</select>' +
         '<div class="row" style="margin-top:8px"><span>через</span><input type="number" id="aNum" min="0" step="1" style="width:90px" value="' + (st.mode === 'after' ? st.delay / unitOf(st.delay) : 1) + '">' + unitSel('aUnit', st.mode === 'after' ? st.delay : 60) + '</div><p class="small muted" id="aHint" style="margin:6px 2px 0"></p>'
-        : '<p class="small muted">Других постов ленты пока нет.</p>') + '</div>' +
+        : '<p class="small muted">Других постов пока нет.</p>') + '</div>' +
       '<div class="toggle"><span><b>Догонять опоздавших</b><br><span class="small muted">Пост получат и те, у кого этот день уже прошёл</span></span><label class="sw"><input type="checkbox" id="fCatch" ' + (st.catchup ? 'checked' : '') + '><span></span></label></div>';
   }
   if (p.kind === 'date') h += '<label class="f">Дата и время (по Москве)</label><input type="datetime-local" id="fRun" value="' + toLocal(st.run_at) + '">';
-  h += '<label class="f">Кнопки под постом</label><div id="bEd"></div>' +
-    '<div class="btns two" style="margin-top:8px"><button class="btn ghost" type="button" id="bRow">＋ Новый ряд</button><button class="btn ghost" type="button" id="bClear">Без кнопок</button></div>' +
-    '<p class="small muted" style="margin:6px 2px 0">До 4 кнопок в ряд. Ссылка — https://… или t.me/…. Бот считает нажатия.' + (p.media.length > 1 ? ' У альбома кнопки придут следующим сообщением сразу под ним.' : '') + '</p>';
-  h += '<label class="f">Кому</label>' + segHtml('fAud', [['all','Всем'],['start','Начинающим'],['pro','Продолжающим']], st.audience);
-  h += '<label class="f">Статус</label>' + segHtml('fSt', [['active','✅ Включён'],['paused','⏸ Пауза'],['draft','📝 Черновик']], st.status);
-  h += '<div class="btns"><button class="btn" id="bSave">Сохранить</button><div class="btns two" style="margin:0"><button class="btn ghost" id="bPrev">👁 Прислать мне</button><button class="btn ghost" id="bClose">Закрыть</button></div><button class="btn danger" id="bArch">🗄 Убрать в архив</button></div>' +
-    '<div class="note">Текст и картинки меняются в боте: <b>/posts</b> → этот пост → ✏️ «Текст и картинки».</div>';
+  if (p.kind === 'node') h += '<div class="note">' + (parents.length ? 'Сюда ведут: ' + parents.map((x) => '«' + esc(postName(x.p).slice(0, 30)) + '» → кнопка «' + esc(x.b.text) + '»').join('; ') : 'Пока сюда не ведёт ни одна кнопка. Привяжи его: в нужном посте добавь кнопку → «Пост» → выбери этот.') + '</div>';
+  // кнопки
+  h += '<label class="f" id="btnsLbl">Кнопки под постом</label><div id="bEd"></div>' +
+    '<div class="btns two" style="margin-top:8px"><button class="btn ghost" type="button" id="bRow">＋ Кнопка</button><button class="btn ghost" type="button" id="bNext">＋ Следующий пост</button></div>' +
+    '<div class="toggle" id="onceWrap"><span><b>Кнопки-выбор</b><br><span class="small muted">После нажатия под постом остаётся только выбранный вариант с ✓ — человек не нажмёт второй</span></span><label class="sw"><input type="checkbox" id="fOnce" ' + (st.once ? 'checked' : '') + '><span></span></label></div>';
+  if (p.kind !== 'node') h += '<label class="f">Кому</label>' + segHtml('fAud', [['all', 'Всем'], ['start', 'Начинающим'], ['pro', 'Продолжающим']], st.audience);
+  h += '<label class="f">Статус</label>' + segHtml('fSt', [['active', '✅ Включён'], ['paused', '⏸ Пауза'], ['draft', '📝 Черновик']], st.status);
+  h += '<div class="btns"><button class="btn" id="bSave">' + (isNew ? 'Создать пост' : 'Сохранить') + '</button>' +
+    (isNew ? '<button class="btn ghost" id="bClose">Отмена</button>' : '<div class="btns two" style="margin:0"><button class="btn ghost" id="bPrev">👁 Прислать мне</button><button class="btn ghost" id="bClose">Закрыть</button></div><button class="btn danger" id="bArch">🗄 Убрать в архив</button>') + '</div>';
   sheet(h);
+
+  // текст: панель оформления и счётчик
+  const ta = $('fMd');
+  const count = () => { const n = ta.value.replace(/\\*\\*|__|~~/g, '').replace(/\\[([^\\]]*)\\]\\([^)]*\\)/g, '$1').length; $('mdCount').textContent = n + ' / ' + (st.files.length ? '1024 в подписи' : '4096') + (st.files.length && n > 1024 ? ' — текст уйдёт отдельным сообщением под картинками' : ''); };
+  ta.oninput = count;
+  $('fmtBar').onclick = (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    const s = ta.selectionStart, en = ta.selectionEnd, sel = ta.value.slice(s, en);
+    let ins, cur;
+    if (b.dataset.w) { ins = b.dataset.w + (sel || 'текст') + b.dataset.w; cur = sel ? s + ins.length : s + b.dataset.w.length; }
+    else if (b.dataset.l) { ins = '[' + (sel || 'текст') + '](https://)'; cur = s + ins.length - 1; }
+    else { ins = b.dataset.v; cur = s + ins.length; }
+    ta.value = ta.value.slice(0, s) + ins + ta.value.slice(en); ta.focus();
+    if (b.dataset.w && !sel) { ta.selectionStart = s + b.dataset.w.length; ta.selectionEnd = s + b.dataset.w.length + 5; } else ta.selectionStart = ta.selectionEnd = cur;
+    count(); haptic();
+  };
+  if ($('richEdit')) $('richEdit').onclick = () => { st.editRich = true; ta.readOnly = false; $('fmtBar').hidden = false; $('richNote').remove(); ta.focus(); };
+  count();
+
+  // вложения
+  const drawFiles = () => {
+    $('fFiles').innerHTML = st.files.map((f, i) => '<div class="fl">' + (f.type === 'photo' ? '<img alt="" data-fid="' + esc(f.file_id) + '">' : '<span class="fl-ic">' + ({ video: '🎬', animation: '🎞', document: '📄' }[f.type] || '📎') + '<i>' + esc((f.name || f.type).slice(0, 14)) + '</i></span>') +
+      '<button type="button" class="fl-x" data-del="' + i + '" aria-label="убрать">✕</button>' + (i > 0 ? '<button type="button" class="fl-l" data-left="' + i + '" aria-label="левее">‹</button>' : '') + '</div>').join('') +
+      (st.files.length < 10 ? '<button type="button" class="fl add" id="fAdd">＋<span>добавить</span></button>' : '');
+    $('fFiles').querySelectorAll('img[data-fid]').forEach((img) => thumb(img, img.dataset.fid));
+    if ($('fAdd')) $('fAdd').onclick = () => $('fFile').click();
+    count();
+  };
+  $('fFiles').onclick = (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.del) { st.files.splice(+b.dataset.del, 1); haptic(); drawFiles(); }
+    if (b.dataset.left) { const i = +b.dataset.left; [st.files[i - 1], st.files[i]] = [st.files[i], st.files[i - 1]]; haptic(); drawFiles(); }
+  };
+  $('fFile').onchange = async () => {
+    const list = [...$('fFile').files].slice(0, 10 - st.files.length); $('fFile').value = '';
+    for (const f of list) {
+      toast('Загружаю ' + f.name + '…');
+      const fd = new FormData(); fd.append('file', f);
+      try {
+        const r = await fetch('/api/panel/upload', { method: 'POST', headers: { 'x-init-data': INIT }, body: fd });
+        const d = await r.json().catch(() => ({ error: 'Сервер не ответил' }));
+        if (!r.ok || d.error) throw new Error(d.error || 'Ошибка');
+        st.files.push(d.file); drawFiles();
+      } catch (e) { toast(f.name + ': ' + e.message); }
+    }
+    if (list.length) { haptic('medium'); toast('Загружено ✓'); }
+  };
+  drawFiles();
+
+  // когда (лента)
   const showMode = () => { if (!$('pDay')) return; $('pDay').style.display = st.mode === 'day' ? '' : 'none'; $('pTimer').style.display = st.mode === 'timer' ? '' : 'none'; $('pAfter').style.display = st.mode === 'after' ? '' : 'none'; hints(); };
   const delayOf = (n, u) => Math.max(0, Math.round((+$(n).value || 0) * +$(u).value));
   const hints = () => {
     if ($('tHint')) $('tHint').textContent = 'Через ' + fmtDelay(delayOf('tNum', 'tUnit')) + ' после того, как человек согласился на рассылку (в любое время суток).';
-    if ($('aHint')) { const par = S.posts.find((x) => x.id === +$('aPost').value); $('aHint').textContent = 'Через ' + fmtDelay(delayOf('aNum', 'aUnit')) + ' после того, как человек получил «' + (par ? postName(par).slice(0, 40) : '') + '». Пока тот пост не ушёл — этот не уйдёт.'; }
+    if ($('aHint') && $('aPost')) { const par = S.posts.find((x) => x.id === +$('aPost').value); $('aHint').textContent = 'Через ' + fmtDelay(delayOf('aNum', 'aUnit')) + ' после того, как человек получил «' + (par ? postName(par).slice(0, 40) : '') + '»' + (par && par.kind === 'node' ? ' (то есть нажал кнопку, которая ведёт туда)' : '') + '. Пока тот пост не пришёл — этот не уйдёт.'; }
   };
   if ($('fMode')) { segBind('fMode', (v) => { st.mode = v; haptic(); showMode(); }); ['tNum', 'tUnit', 'aNum', 'aUnit', 'aPost'].forEach((i) => { if ($(i)) $(i).oninput = hints; }); showMode(); }
   const upd = () => { if (!$('dVal')) return; $('dVal').textContent = st.day; $('tWrap').style.display = st.day === 0 ? 'none' : ''; $('dHint').textContent = 'День ' + st.day + ' — ' + dayLabel(st.day) + (st.day ? ', в ' + ($('fTime').value || st.time) + ' по Москве' : ''); };
   if ($('dMinus')) { $('dMinus').onclick = () => { st.day = Math.max(0, st.day - 1); haptic(); upd(); }; $('dPlus').onclick = () => { st.day = Math.min(365, st.day + 1); haptic(); upd(); }; $('fTime').oninput = upd; upd(); }
-  segBind('fAud', (v) => st.audience = v); segBind('fSt', (v) => st.status = v);
-  // редактор кнопок
-  let rows = JSON.parse(JSON.stringify(p.rows || []));
-  const syncRows = () => { document.querySelectorAll('#bEd [data-r]').forEach((el) => { const r = +el.dataset.r, i = +el.dataset.i; if (rows[r] && rows[r][i]) rows[r][i][el.dataset.f] = el.value; }); };
+  if ($('fAud')) segBind('fAud', (v) => st.audience = v);
+  segBind('fSt', (v) => st.status = v);
+
+  // кнопки: ссылка / пост / документ / оплата
+  let rows = JSON.parse(JSON.stringify(p.rows || [])).map((row) => row.map((b) => Object.assign({ t: b.go ? 'go' : b.doc ? 'doc' : b.pay ? 'pay' : 'url' }, b)));
+  const targets = S.posts.filter((x) => x.id !== p.id);
+  const optPosts = (cur) => '<option value="">— выбери пост —</option><option value="new"' + (cur === 'new' ? ' selected' : '') + '>＋ Новый пост-ответ (создам пустой)</option>' +
+    ['node', 'drip', 'date', 'gift'].map((k) => { const l = targets.filter((x) => x.kind === k); return l.length ? '<optgroup label="' + KIND[k] + '">' + l.map((x) => '<option value="' + x.id + '"' + (+cur === x.id ? ' selected' : '') + '>' + esc(postName(x).slice(0, 44)) + (x.status !== 'active' ? ' · ' + (x.status === 'draft' ? 'черновик' : 'пауза') : '') + '</option>').join('') + '</optgroup>' : ''; }).join('');
+  const valueField = (b, r, i) => {
+    const a = 'data-r="' + r + '" data-i="' + i + '"';
+    if (b.t === 'go') return '<select ' + a + ' data-f="go">' + optPosts(b.go) + '</select>';
+    if (b.t === 'doc') return '<select ' + a + ' data-f="doc">' + Object.keys(S.docNames).map((k) => '<option value="' + k + '"' + (b.doc === k ? ' selected' : '') + '>' + esc(S.docNames[k]) + (S.docs[k] ? '' : ' — ссылка не задана') + '</option>').join('') + '</select>';
+    if (b.t === 'pay') return '<select ' + a + ' data-f="pay">' + Object.keys(TARIFF).map((k) => '<option value="' + k + '"' + (b.pay === k ? ' selected' : '') + '>' + TARIFF[k] + '</option>').join('') + '</select><p class="small muted" style="margin:2px">Оплату через продамус подключим позже — пока кнопка отвечает «откроется в день продаж».</p>';
+    return '<input type="text" placeholder="https://ссылка" inputmode="url" ' + a + ' data-f="url" value="' + esc(b.url || '') + '">';
+  };
+  const sync = () => { document.querySelectorAll('#bEd [data-f]').forEach((el) => { const r = +el.dataset.r, i = +el.dataset.i; if (rows[r] && rows[r][i]) rows[r][i][el.dataset.f] = el.value; }); };
   const drawRows = () => {
     $('bEd').innerHTML = rows.length ? rows.map((row, r) =>
-      '<div class="box" style="margin:8px 0;padding:10px"><div class="row" style="justify-content:space-between;margin-bottom:6px"><span class="small muted">Ряд ' + (r + 1) + '</span><span>' +
-      (r > 0 ? '<button type="button" class="chip" data-up="' + r + '">↑</button> ' : '') + (r < rows.length - 1 ? '<button type="button" class="chip" data-down="' + r + '">↓</button>' : '') + '</span></div>' +
-      row.map((b, i) => '<div style="display:grid;grid-template-columns:1fr auto;gap:6px;margin-bottom:6px"><input type="text" placeholder="Текст кнопки" maxlength="60" data-r="' + r + '" data-i="' + i + '" data-f="text" value="' + esc(b.text) + '"><button type="button" class="chip" data-del="' + r + ':' + i + '" aria-label="убрать">✕</button>' +
-        '<input type="text" placeholder="https://ссылка" inputmode="url" data-r="' + r + '" data-i="' + i + '" data-f="url" value="' + esc(b.url) + '" style="grid-column:1/-1"></div>').join('') +
-      (row.length < 4 ? '<button type="button" class="chip" data-add="' + r + '">＋ Кнопка в этот ряд</button>' : '') + '</div>').join('')
-      : '<p class="small muted" style="margin:2px">Кнопок нет.</p>';
+      '<div class="brow"><div class="row" style="justify-content:space-between;margin-bottom:6px"><span class="small muted">' + (row.length > 1 ? 'Ряд ' + (r + 1) + ' · кнопки рядом' : 'Ряд ' + (r + 1)) + '</span><span>' +
+      (r > 0 ? '<button type="button" class="chip" data-up="' + r + '" aria-label="выше">↑</button> ' : '') + (r < rows.length - 1 ? '<button type="button" class="chip" data-down="' + r + '" aria-label="ниже">↓</button>' : '') + '</span></div>' +
+      row.map((b, i) => '<div class="bcard"><div style="display:grid;grid-template-columns:1fr auto;gap:6px"><input type="text" placeholder="Текст кнопки" maxlength="60" data-r="' + r + '" data-i="' + i + '" data-f="text" value="' + esc(b.text || '') + '"><button type="button" class="chip" data-del="' + r + ':' + i + '" aria-label="убрать кнопку">✕</button></div>' +
+        '<div class="btype">' + [['url', '🔗 Ссылка'], ['go', '➡️ Пост'], ['doc', '📄 Документ'], ['pay', '💳 Оплата']].map(([k, t]) => '<button type="button" data-type="' + k + '" data-r="' + r + '" data-i="' + i + '" class="' + (b.t === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>' + valueField(b, r, i) + '</div>').join('') +
+      (row.length < 4 ? '<button type="button" class="chip" data-add="' + r + '">＋ кнопка рядом</button>' : '') + '</div>').join('')
+      + '<button type="button" class="addb" id="bClear" data-clear="1">убрать все кнопки</button>'
+      : '<p class="small muted" style="margin:2px">Кнопок нет. Кнопка может вести на ссылку, на другой пост бота (развилка), на документ или на оплату тарифа.</p>';
+    $('onceWrap').style.display = rows.some((row) => row.some((b) => b.t === 'go')) ? '' : 'none';
   };
-  $('bEd').addEventListener('input', syncRows);
+  $('bEd').addEventListener('input', sync);
+  $('bEd').addEventListener('change', sync);
   $('bEd').addEventListener('click', (e) => {
-    const t = e.target.closest('button'); if (!t) return; syncRows();
-    if (t.dataset.add !== undefined) rows[+t.dataset.add].push({ text: '', url: '' });
+    const t = e.target.closest('button'); if (!t) return; sync();
+    if (t.dataset.type) { const b = rows[+t.dataset.r][+t.dataset.i]; b.t = t.dataset.type; if (b.t === 'doc' && !b.doc) b.doc = 'policy'; if (b.t === 'pay' && !b.pay) b.pay = 'curator'; }
+    if (t.dataset.add !== undefined) { const rr = rows[+t.dataset.add]; rr.push({ t: rr[rr.length - 1].t, text: '', url: '', go: '', doc: 'policy', pay: 'curator' }); }
+    if (t.dataset.clear) rows = [];
     if (t.dataset.del) { const [r, i] = t.dataset.del.split(':').map(Number); rows[r].splice(i, 1); if (!rows[r].length) rows.splice(r, 1); }
     if (t.dataset.up) { const r = +t.dataset.up; [rows[r - 1], rows[r]] = [rows[r], rows[r - 1]]; }
     if (t.dataset.down) { const r = +t.dataset.down; [rows[r + 1], rows[r]] = [rows[r], rows[r + 1]]; }
     haptic(); drawRows();
   });
-  $('bRow').onclick = () => { syncRows(); rows.push([{ text: '', url: '' }]); drawRows(); };
-  $('bClear').onclick = () => { rows = []; drawRows(); };
+  $('bRow').onclick = () => { sync(); rows.push([{ t: 'url', text: '', url: '' }]); drawRows(); const l = $('bEd').querySelectorAll('input[data-f="text"]'); if (l.length) l[l.length - 1].focus(); };
+  // следующий пост по времени — без кнопки: «через N после этого»
+  $('bNext').onclick = () => {
+    if (!p.id) return toast('Сначала создай этот пост — потом добавишь следующий');
+    openNew({ kind: 'drip', mode: 'after', after: p.id, delay: 1440 });
+  };
   drawRows();
-  $('bClose').onclick = closeSheet;
-  $('bPrev').onclick = async () => { try { const r = await api('/post/' + p.id + '/preview', {}); toast(r.warn ? '⚠️ ' + r.warn : 'Отправила тебе в бот 👀'); } catch (e) { toast(e.message); } };
-  $('bArch').onclick = async () => { try { await api('/post/' + p.id, { status: 'archived' }); S.posts = S.posts.filter((x) => x.id !== p.id); closeSheet(); toast('В архиве. Вернуть можно в боте: /posts → 🗄 Архив'); render(); } catch (e) { toast(e.message); } };
+  if (opt.focus === 'buttons') setTimeout(() => { $('btnsLbl').scrollIntoView({ block: 'start', behavior: 'smooth' }); }, 280);
+
+  const close = () => closeSheet();
+  $('bX').onclick = close; $('bClose').onclick = close;
+  if ($('bPrev')) $('bPrev').onclick = async () => { try { const r = await api('/post/' + p.id + '/preview', {}); toast(r.warn ? '⚠️ ' + r.warn : 'Отправила тебе в бот 👀'); } catch (e) { toast(e.message); } };
+  if ($('bArch')) $('bArch').onclick = async () => { try { await api('/post/' + p.id, { status: 'archived' }); closeSheet(); toast('В архиве. Вернуть можно в боте: /posts → 🗄 Архив'); await reload(); } catch (e) { toast(e.message); } };
   $('bSave').onclick = async () => {
-    syncRows();
-    const body = { title: $('fTitle').value.trim(), audience: st.audience, status: st.status, rows };
-    if (p.kind === 'drip') {
-      body.mode = st.mode; body.catchup = $('fCatch').checked;
-      if (st.mode === 'day') { body.day = st.day; if (st.day > 0) body.time = $('fTime').value || st.time; }
-      if (st.mode === 'timer') body.delay_min = delayOf('tNum', 'tUnit');
-      if (st.mode === 'after') { if (!$('aPost')) return toast('Нет поста, после которого отправлять'); body.after_id = +$('aPost').value; body.delay_min = delayOf('aNum', 'aUnit'); }
-    }
-    if (p.kind === 'date') { const t = fromLocal($('fRun').value); if (!t) return toast('Выбери дату и время'); body.run_at = t; }
+    sync();
+    const btn = $('bSave'); btn.disabled = true;
     try {
-      const r = await api('/post/' + p.id, body);
-      Object.assign(p, r.post, { sent: p.sent, clicks: p.clicks });
-      closeSheet(); haptic('medium'); toast('Сохранено · сейчас подходит людей: ' + r.reach); render();
+      // кнопки «＋ новый пост-ответ»: сначала создаём пустые посты-ответы
+      const created = [];
+      for (const row of rows) for (const b of row) {
+        if (b.t === 'go' && b.go === 'new') {
+          if (!b.text.trim()) throw new Error('Сначала напиши текст кнопки, потом создавай пост-ответ');
+          const r = await api('/post/new', { kind: 'node', title: b.text.trim(), md: '', status: 'draft' });
+          b.go = r.post.id; created.push(r.post.id);
+        }
+      }
+      const outRows = rows.map((row) => row.map((b) => b.t === 'go' ? { text: b.text, go: +b.go || null } : b.t === 'doc' ? { text: b.text, doc: b.doc } : b.t === 'pay' ? { text: b.text, pay: b.pay } : { text: b.text, url: b.url }));
+      for (const b of outRows.flat()) if (b.go === null && b.text) throw new Error('У кнопки «' + b.text + '» не выбран пост');
+      const body = { title: $('fTitle').value.trim(), status: st.status, rows: outRows, once: $('fOnce').checked, files: st.files };
+      if (!p.rich || st.editRich) body.md = ta.value;
+      if (p.kind !== 'node') body.audience = st.audience;
+      if (p.kind === 'drip') {
+        body.mode = st.mode; body.catchup = $('fCatch').checked;
+        if (st.mode === 'day') { body.day = st.day; body.time = st.day > 0 ? ($('fTime').value || st.time) : '00:00'; }
+        if (st.mode === 'timer') body.delay_min = delayOf('tNum', 'tUnit');
+        if (st.mode === 'after') { if (!$('aPost')) throw new Error('Нет поста, после которого отправлять'); body.after_id = +$('aPost').value; body.delay_min = delayOf('aNum', 'aUnit'); }
+      }
+      if (p.kind === 'date') { const t = fromLocal($('fRun').value); if (!t && st.status === 'active') throw new Error('Выбери дату и время'); if (t) body.run_at = t; }
+      let r;
+      if (isNew) r = await api('/post/new', Object.assign({ kind: p.kind }, body));
+      else r = await api('/post/' + p.id, body);
+      haptic('medium');
+      await reload();
+      if (created.length) { toast('Сохранено. Теперь заполни пост-ответ 👇'); openPost(created[0]); return; }
+      closeSheet(); toast(isNew ? 'Пост создан ✓' : 'Сохранено ✓' + (r.reach !== undefined && p.kind !== 'node' ? ' · сейчас подходит людей: ' + r.reach : ''));
     } catch (e) { toast(e.message); }
+    finally { btn.disabled = false; }
   };
 }
+async function reload() { try { S = await api('/state'); render(); } catch (e) { toast(e.message); } }
 
 function openMsg(key) {
   const m = S.msgs.find((x) => x.key === key); if (!m) return;

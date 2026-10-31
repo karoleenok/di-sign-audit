@@ -453,4 +453,113 @@ step('когда отправлять: по таймеру после входа
 }
 step('путь ученика: пауза перед шагом и свои кнопки-ссылки');
 
+// ---------- конструктор сценариев: пост-ответ, кнопки-выбор, документы, оплата ----------
+{
+  const { handlePanelApi } = await import('../src/panel-api.js');
+  const { mdToEntities, entitiesToMd } = await import('../src/fmt.js');
+  const crypto = await import('node:crypto');
+  // подписанный вход в панель, как его даёт Telegram
+  const initFor = (uid) => {
+    const p = new URLSearchParams({ auth_date: String(NOW), user: JSON.stringify({ id: uid, first_name: 'Админ' }) });
+    const dcs = [...p.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, v]) => `${k}=${v}`).join('\n');
+    const secret = crypto.createHmac('sha256', 'WebAppData').update(env.BOT_TOKEN).digest();
+    p.set('hash', crypto.createHmac('sha256', secret).update(dcs).digest('hex'));
+    return p.toString();
+  };
+  const api = async (path, body, uid = 100) => {
+    const req = new Request('https://bot.test/api/panel' + path, { method: body ? 'POST' : 'GET', headers: { 'x-init-data': initFor(uid), 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+    const r = await handlePanelApi(C(), req, new URL(req.url));
+    return { status: r.status, ...(await r.json()) };
+  };
+  // разметка
+  const f = mdToEntities('Привет, **дизайнер**! Читай __внимательно__ и [наш сайт](t.me/diuuupin)');
+  assert.equal(f.text, 'Привет, дизайнер! Читай внимательно и наш сайт');
+  assert.deepEqual(f.entities.map((e) => e.type), ['bold', 'italic', 'text_link']);
+  assert.equal(f.entities[2].url, 'https://t.me/diuuupin');
+  assert.equal(entitiesToMd(f.text, f.entities).md, 'Привет, **дизайнер**! Читай __внимательно__ и [наш сайт](https://t.me/diuuupin)', 'обратно без потерь');
+  assert.equal(entitiesToMd('a 🐾', [{ type: 'custom_emoji', offset: 2, length: 2 }]).rich, true, 'премиум-эмодзи — предупреждаем');
+  assert.equal((await api('/state', null, 555)).status, 403, 'чужой в панель не войдёт');
+
+  // документы из панели
+  let r = await api('/docs', { policy: 'disign.ru/policy' });
+  assert.match(r.error, /https/);
+  r = await api('/docs', { policy: 'https://disign.ru/policy-v2', offer: 'https://disign.ru/offer', owner: 'Самозанятая К. Б.' });
+  assert.equal(r.docs.policy, 'https://disign.ru/policy-v2');
+
+  // два поста-ответа и пост с развилкой
+  const a1 = (await api('/post/new', { kind: 'node', title: 'Ответ: с нуля', md: 'Отлично, начнём с **базы**', status: 'active' })).post;
+  const a2 = (await api('/post/new', { kind: 'node', title: 'Ответ: уже работаю', md: 'Тогда тебе в портфолио', status: 'active' })).post;
+  assert.equal((await api('/post/new', { kind: 'node', md: '   ', status: 'active' })).error, 'Добавь текст или картинку');
+  r = await api('/post/new', { kind: 'date', md: 'Кто ты?', run_at: NOW + 60, status: 'active', once: true, audience: 'all',
+    rows: [[{ text: 'Начинаю с нуля', go: a1.id }, { text: 'Уже работаю', go: a2.id }], [{ text: 'Политика', doc: 'policy' }], [{ text: 'Оплатить тариф', pay: 'mentor' }]] });
+  const q = r.post;
+  assert.deepEqual(q.rows[0].map((b) => b.go), [a1.id, a2.id]);
+  assert.equal((await api('/post/' + q.id, { rows: [[{ text: 'Сам на себя', go: q.id }]] })).error, 'Кнопка «Сам на себя» ведёт на этот же пост');
+  assert.match((await api('/post/' + q.id, { rows: [[{ text: 'Нет такого', go: 99999 }]] })).error, /не найден/);
+  // пост «через 1 день после ответа»
+  const fol = (await api('/post/new', { kind: 'drip', md: 'Как успехи с базой?', status: 'active', mode: 'after', after_id: a1.id, delay_min: 1440 })).post;
+  assert.equal(fol.after, a1.id);
+  // правка текста в панели
+  r = await api('/post/' + a2.id, { md: 'Тогда тебе в **портфолио**' });
+  assert.equal(r.post.md, 'Тогда тебе в **портфолио**');
+  const st = await api('/state');
+  assert.ok(st.posts.some((p) => p.kind === 'node') && st.docs.offer === 'https://disign.ru/offer', 'панель видит посты-ответы и документы');
+
+  // ученик в рассылке получает развилку
+  const U = 1300;
+  await msg(U, '/start'); await cb(U, 'c:pd'); await cb(U, 'lv:start'); await cb(U, 'c:ads:1');
+  NOW += 120; const t0 = calls.length;
+  await tick(C(), 40);
+  const ask = calls.slice(t0).find((c) => c.body.chat_id === U && c.body.text === 'Кто ты?');
+  assert.ok(ask, 'пост с развилкой пришёл');
+  const kbd = ask.body.reply_markup.inline_keyboard;
+  assert.deepEqual(kbd[0].map((b) => b.callback_data), [`go:${q.id}:0-0`, `go:${q.id}:0-1`]);
+  assert.equal(kbd[1][0].url, 'https://disign.ru/policy-v2', 'кнопка-документ ведёт на ссылку из панели');
+  assert.equal(kbd[2][0].callback_data, `buy:${q.id}:2-0`);
+  // нажимает «Начинаю с нуля»
+  const g0 = calls.length;
+  await handleUpdate(C(), { callback_query: { id: 'g1', from: { id: U }, data: `go:${q.id}:0-0`, message: { message_id: ask.res.message_id, chat: { id: U } } } });
+  const gs = calls.slice(g0).filter((c) => c.body.chat_id === U);
+  const edit = gs.find((c) => c.method === 'editMessageReplyMarkup');
+  assert.deepEqual(edit.body.reply_markup.inline_keyboard, [[{ text: '✓ Начинаю с нуля', callback_data: 'go:done' }]], 'кнопки-выбор: осталась выбранная с ✓');
+  const ans = gs.find((c) => c.method === 'sendMessage');
+  assert.equal(ans.body.text, 'Отлично, начнём с базы');
+  assert.equal(ans.body.entities[0].type, 'bold');
+  // двойное нажатие — без дубля
+  const g1 = calls.length;
+  await handleUpdate(C(), { callback_query: { id: 'g2', from: { id: U }, data: `go:${q.id}:0-0`, message: { message_id: ask.res.message_id, chat: { id: U } } } });
+  assert.ok(!calls.slice(g1).some((c) => c.body.chat_id === U && c.method === 'sendMessage'), 'второе быстрое нажатие не дублирует пост');
+  const clicks = await db.first(`SELECT COUNT(*) AS n FROM clicks WHERE post_id = ? AND tg_id = ?`, [q.id, U]);
+  assert.equal(clicks.n, 1, 'нажатие посчитано');
+  // через сутки после ответа — следующий пост цепочки; второй ветки человек не выбирал
+  NOW += 1440 * 60 + 60; const t1 = calls.length;
+  await tick(C(), 40);
+  const later = calls.slice(t1).filter((c) => c.body.chat_id === U && c.method === 'sendMessage').map((c) => c.body.text);
+  assert.ok(later.includes('Как успехи с базой?'), 'пост «через 1 день после ответа» пришёл');
+  assert.ok(!later.includes('Тогда тебе в портфолио'), 'пост-ответ сам по расписанию не уходит');
+  // оплата: пока всплывашка
+  const b0 = calls.length;
+  await handleUpdate(C(), { callback_query: { id: 'b1', from: { id: U }, data: `buy:${q.id}:2-0`, message: { message_id: 5, chat: { id: U } } } });
+  const pop = calls.slice(b0).find((c) => c.method === 'answerCallbackQuery');
+  assert.ok(pop.body.show_alert && /день продаж/.test(pop.body.text), 'оплата: пока «откроется в день продаж»');
+  // черновик-ответ ученику не уходит
+  await api('/post/' + a2.id, { status: 'draft' });
+  const d0 = calls.length;
+  await handleUpdate(C(), { callback_query: { id: 'g3', from: { id: U }, data: `go:${q.id}:0-1`, message: { message_id: 7, chat: { id: U } } } });
+  assert.ok(!calls.slice(d0).some((c) => c.body.chat_id === U && c.method === 'sendMessage'), 'черновик-ответ ученику не уходит');
+  // в чате админа: кнопка «на пост» через #номер
+  await msg(100, '/new'); await msg(100, 'Выбери вариант'); await cb(100, 'w:done'); await cb(100, 'w:kind:node');
+  await msg(100, `Вариант Б | #99999`);
+  assert.match(lastText(100), /Поста #99999 нет/);
+  await msg(100, `Вариант А | #${a1.id}; Наш сайт | https://disign.ru\nПолитика | политика`);
+  const pvb = calls.filter((c) => c.body.chat_id === 100 && c.body.text === 'Выбери вариант').pop();
+  assert.equal(pvb.body.reply_markup.inline_keyboard[0][0].callback_data, 'go:x', 'предпросмотр с кнопкой на пост');
+  assert.equal(pvb.body.reply_markup.inline_keyboard[1][0].url, 'https://disign.ru/policy-v2', 'документ в предпросмотре');
+  await cb(100, 'w:save:1');
+  const saved = await db.first(`SELECT * FROM posts ORDER BY id DESC LIMIT 1`);
+  assert.equal(saved.kind, 'node'); assert.equal(JSON.parse(saved.buttons)[0][0].go, a1.id);
+  await db.run(`UPDATE posts SET status = 'archived' WHERE id IN (?, ?, ?, ?, ?)`, [a1.id, a2.id, q.id, fol.id, saved.id]);
+}
+step('конструктор сценариев: посты-ответы, кнопки-выбор, цепочка после ответа, документы из панели, оплата-заглушка, #номер в чате');
+
 console.log('\nВсе сценарии прошли. Запросов к фейковому Telegram:', calls.length);

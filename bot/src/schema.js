@@ -88,6 +88,11 @@ export const MIGRATIONS = [
       run_id INTEGER NOT NULL, post_id INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (run_id, post_id)
     )`,
   ],
+  // v5: конструктор сценариев — посты-ответы (kind = 'node', уходят по кнопке «открыть пост»),
+  //     «кнопки-выбор»: после нажатия под постом остаётся только выбранная
+  [
+    `ALTER TABLE posts ADD COLUMN once INTEGER NOT NULL DEFAULT 0`,
+  ],
 ];
 
 // Обновить базу при первом запуске после выкладки новой версии (один раз на процесс)

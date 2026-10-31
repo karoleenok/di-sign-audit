@@ -4,27 +4,33 @@ import { fmtTime, fmtWhen, MSK, DAY } from './time.js';
 const CAPTION_MAX = 1024;
 const j = (s, d) => { try { return s ? JSON.parse(s) : d; } catch { return d; } };
 
-// Кнопки поста: [[{text,url}], ...]. Ссылки идут через наш адрес /r/..., чтобы считать нажатия.
-export function keyboard(post, uid, publicUrl) {
+// Кнопки поста: [[{text, url} | {text, go} | {text, doc} | {text, pay}], ...]
+//   url — ссылка (идёт через наш адрес /r/..., чтобы считать нажатия)
+//   go  — открыть другой пост этого бота (пост-ответ, развилка)
+//   doc — документ: политика, согласие, оферта (ссылка из настроек панели)
+//   pay — оплата тарифа (продамус подключим позже — пока кнопка отвечает «скоро»)
+export const DOCS = { policy: 'Политика обработки данных', consent: 'Согласие на обработку данных', offer: 'Оферта' };
+export function keyboard(post, uid, publicUrl, docs) {
   const rows = j(post.buttons, []);
   if (!rows.length) return undefined;
-  return {
-    inline_keyboard: rows.map((row, ri) => row.map((b, bi) => ({
-      text: b.text,
-      url: publicUrl && post.id ? `${publicUrl}/r/${post.id}/${ri}-${bi}/${uid || 0}` : b.url,
-    }))),
-  };
+  const out = rows.map((row, ri) => row.map((b, bi) => {
+    if (b.go) return { text: b.text, callback_data: post.id ? `go:${post.id}:${ri}-${bi}` : 'go:x' };
+    if (b.pay) return { text: b.text, callback_data: post.id ? `buy:${post.id}:${ri}-${bi}` : 'buy:x' };
+    if (b.doc) { const u = docs && docs[b.doc]; return u ? { text: b.text, url: u } : null; }
+    return { text: b.text, url: publicUrl && post.id ? `${publicUrl}/r/${post.id}/${ri}-${bi}/${uid || 0}` : b.url };
+  }).filter(Boolean)).filter((r) => r.length);
+  return out.length ? { inline_keyboard: out } : undefined;
 }
 
 const stripCustom = (ents) => (ents || []).filter((e) => e.type !== 'custom_emoji');
 const hasCustom = (ents) => (ents || []).some((e) => e.type === 'custom_emoji');
 
 // Отправить пост одному человеку. Возвращает { warn } если премиум-эмодзи пришлось убрать.
-export async function sendPost(tg, chatId, post, { uid, publicUrl, arrow } = {}) {
+export async function sendPost(tg, chatId, post, { uid, publicUrl, arrow, docs } = {}) {
   const text = post.text || '';
   const ents = j(post.entities, []);
   const media = j(post.media, []);
-  const kb = keyboard(post, uid, publicUrl);
+  const kb = keyboard(post, uid, publicUrl, docs);
   let warn = null;
 
   const attempt = async (entities) => {
@@ -139,6 +145,7 @@ export function postLabel(p) {
 }
 export function postWhen(p) {
   if (p.kind === 'gift') return 'подарок после теста';
+  if (p.kind === 'node') return 'по нажатию кнопки';
   if (p.kind === 'date') return p.run_at ? `дата ${fmtWhen(p.run_at)}` : 'дата не задана';
   if (p.mode === 'timer') return `через ${fmtDelay(p.delay_min)} после входа`;
   if (p.mode === 'after') return `через ${fmtDelay(p.delay_min)} после поста #${p.after_id}`;
@@ -150,7 +157,7 @@ export function postSummary(p) {
   return [
     `#${p.id} · ${st}`,
     `Когда: ${postWhen(p)}`,
-    `Кому: ${AUD[p.audience] || p.audience}`,
+    ...(p.kind === 'node' ? [] : [`Кому: ${AUD[p.audience] || p.audience}`]),
     `Кнопок: ${btns}${p.kind === 'drip' ? ` · догонять опоздавших: ${p.catchup ? 'да' : 'нет'}` : ''}`,
   ].join('\n');
 }
@@ -174,4 +181,19 @@ export function offsetMin(p, byId, depth = 0) {
   if (day === 0) return 0;
   const t = timeSec(p.send_time) / 60;
   return day * 1440 + t - 600;
+}
+
+// Ссылки на документы: из панели (settings doc:*), если там пусто — из настроек Cloudflare
+export async function loadDocs(ctx) {
+  if (ctx._docs) return ctx._docs;
+  const rows = await ctx.db.all(`SELECT key, value FROM settings WHERE key LIKE 'doc:%'`);
+  const o = Object.fromEntries(rows.map((r) => [r.key.slice(4), r.value]));
+  const env = ctx.env || {};
+  ctx._docs = {
+    policy: o.policy || env.POLICY_URL || '',
+    consent: o.consent || env.CONSENT_URL || '',
+    offer: o.offer || env.OFFER_URL || '',
+    owner: o.owner || env.OWNER_INFO || '',
+  };
+  return ctx._docs;
 }
