@@ -341,8 +341,10 @@ async function sendFbBonus(ctx, u) {
 }
 
 // догнать бонус тем, кто оставил отзыв раньше (с момента since). dry — только посчитать
-export async function backfillFb(ctx, since, dry) {
-  const users = await ctx.db.all(`SELECT * FROM users WHERE fb_at IS NOT NULL AND fb_at >= ? AND status = 'active'`, [since]);
+export async function backfillFb(ctx, since, dry, only) {
+  const users = only
+    ? await ctx.db.all(`SELECT * FROM users WHERE tg_id = ? AND fb_at IS NOT NULL`, [only])
+    : await ctx.db.all(`SELECT * FROM users WHERE fb_at IS NOT NULL AND fb_at >= ? AND status = 'active'`, [since]);
   const posts = await ctx.db.all(`SELECT * FROM posts WHERE kind = 'fb' AND status = 'active' ORDER BY pos, id`);
   const docs = await loadDocs(ctx);
   const arrow = await btn(ctx, 'buttonsArrow');

@@ -213,6 +213,34 @@ export async function handlePanelApi(ctx, request, url) {
     return json({ ok: true, ...r });
   }
 
+  // CRM отзывов: контакты, время, суть, статус бонуса
+  if (path === '/reviews') {
+    const rows = await ctx.db.all(`SELECT tg_id, first_name, username, contact_name, phone, email, level, track, status, fb_like, fb_improve, fb_at FROM users WHERE fb_at IS NOT NULL ORDER BY fb_at DESC LIMIT 300`);
+    const dl = await ctx.db.all(`SELECT d.tg_id, d.post_id, d.sent_at, p.title, p.status AS pstatus FROM deliveries d JOIN posts p ON p.id = d.post_id WHERE p.kind = 'fb' AND d.ok = 1`);
+    const active = await ctx.db.all(`SELECT id, title FROM posts WHERE kind = 'fb' AND status = 'active'`);
+    const by = {};
+    for (const d of dl) (by[d.tg_id] = by[d.tg_id] || []).push({ post_id: d.post_id, sent_at: d.sent_at });
+    return json({
+      active: active.length,
+      reviews: rows.map((u) => {
+        const sent = by[u.tg_id] || [];
+        const left = active.filter((a) => !sent.some((x) => x.post_id === a.id)).length;
+        return { ...u, bonus: { sent: sent.length, last_at: sent.reduce((m, x) => Math.max(m, x.sent_at), 0) || null, pending: left } };
+      }),
+    });
+  }
+  // отправить бонус одному человеку
+  if (path === '/fb/send' && request.method === 'POST') {
+    const id = Number(body.tg_id);
+    const u = id && (await ctx.db.first(`SELECT status FROM users WHERE tg_id = ?`, [id]));
+    if (!u) return json({ error: 'Человека нет' }, 404);
+    if (u.status === 'blocked') return json({ error: 'Человек заблокировал бота — написать ему нельзя' }, 400);
+    const r = await backfillFb(ctx, 0, false, id);
+    if (!r.posts) return json({ error: 'Нет включённых постов «бонус за отзыв»: включи пост (статус «активен»)' }, 400);
+    if (r.failed) return json({ error: 'Telegram не принял сообщение — возможно, человек заблокировал бота' }, 400);
+    return json({ ok: true, ...r });
+  }
+
   // копия существующего поста в другой раздел (текст, оформление, премиум-эмодзи, файлы и кнопки сохраняются; оригинал не трогаем)
   m = /^\/post\/(\d+)\/copy$/.exec(path);
   if (m && request.method === 'POST') {

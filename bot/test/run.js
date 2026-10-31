@@ -685,6 +685,17 @@ step('кнопка «файл»: у шага и у поста по нажати�
     assert.ok(go.sent >= 1 && calls.slice(c0).some((c) => c.body.chat_id === 1500), 'бонус ушёл');
     const again = await api('/fb/backfill', { since: 'today' });
     assert.equal(again.sent, 0, 'второй раз никому не уходит');
+    // CRM отзывов
+    await db.run(`UPDATE users SET fb_at = ?, fb_like = 'круто', fb_improve = 'быстрее', status = 'active' WHERE tg_id = 1400`, [NOW - 60]);
+    const rv = await api('/reviews');
+    const u1400 = rv.reviews.find((x) => x.tg_id === 1400), u1500 = rv.reviews.find((x) => x.tg_id === 1500);
+    assert.equal(u1400.bonus.pending, 1, 'у 1400 бонус ещё не отправлен');
+    assert.equal(u1500.bonus.pending, 0); assert.ok(u1500.bonus.last_at, 'у 1500 видно, когда отправили');
+    assert.equal((await api('/fb/send', { tg_id: 1400 })).sent, 1);
+    assert.equal((await api('/reviews')).reviews.find((x) => x.tg_id === 1400).bonus.pending, 0, 'после отправки статус «отправлен»');
+    assert.equal((await api('/fb/send', { tg_id: 424242 })).status, 404);
+    await db.run(`UPDATE users SET fb_at = NULL, fb_like = NULL, fb_improve = NULL WHERE tg_id IN (1400, 1500)`);
+    await db.run(`DELETE FROM deliveries WHERE tg_id IN (1400, 1500)`);
   }
 }
 step('конструктор сценариев: порядок и выключатели шагов входа, посты-ответы, кнопки-выбор, цепочка после ответа, документы из панели, оплата-заглушка, #номер в чате');
