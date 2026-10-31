@@ -211,6 +211,29 @@
 .kb-out{font-size:13.5px;color:var(--k-body);line-height:1.45;margin:12px 0 0}.kb-out b{color:var(--k-ink);font-weight:500}
 .kb-btn{display:block;text-align:center;text-decoration:none;background:var(--k-pr);color:#fff;border-radius:14px;padding:15px;font-weight:500;font-size:15.5px;margin-top:14px}
 .kb-btn:hover{background:#5B7BD1}
+#botLink[hidden]{display:none!important}
+.kmap{max-width:400px;margin-left:auto!important;margin-right:auto!important}
+.res .kb .kb-hint{font-size:12px;color:var(--k-soft);margin:0 0 4px;text-align:left}
+.kb-hint{font-size:12px;color:var(--k-soft);margin:0 0 4px;display:flex;align-items:center;gap:6px}
+.kb-hint:before{content:"";width:6px;height:6px;border-radius:50%;background:var(--k-pr);animation:khp 1.6s ease-in-out infinite}
+@keyframes khp{50%{opacity:.25}}
+.kmap{margin:0 -4px 12px}
+.kmap .stop{width:36%;opacity:.5}
+.kmap .stop .d{font-size:11px;color:var(--k-soft)}
+.kmap .stop .n{font-size:13.5px;font-weight:500;line-height:1.2;color:var(--k-ink)}
+.kmap .stop .x{font-size:11.5px;color:var(--k-soft);line-height:1.25;margin-top:2px}
+.kmap .stop.on{opacity:1}.kmap .stop.on .d{color:var(--k-pr);font-weight:500}
+.kmap .stop.fin .n{font-family:"Instrument Serif",serif;font-style:italic;font-weight:400;font-size:18px;line-height:1.05;color:var(--k-deep)}
+.kmap .me{width:52px;transition:none}
+.kmap .me.hop{animation:khop .45s ease-out}
+@keyframes khop{0%,100%{translate:0 0}40%{translate:0 -14px}}
+#rdog{cursor:pointer;-webkit-tap-highlight-color:transparent}
+#rdog.wig{animation:kwig .6s ease-in-out}
+@keyframes kwig{0%,100%{rotate:0deg;scale:1}20%{rotate:-7deg;scale:1.04}45%{rotate:6deg}70%{rotate:-3deg}}
+.dogsay{position:relative;display:inline-block;margin:-2px auto 8px;background:#fff;border:1px solid #EEEBE6;border-radius:14px;padding:7px 12px;font:500 13px "Inter Tight",sans-serif;color:#1D1B19;box-shadow:0 6px 16px rgba(40,50,80,.08);opacity:0;transform:translateY(4px);transition:opacity .25s,transform .25s;pointer-events:none}
+.dogsay.on{opacity:1;transform:none}
+.dogsay:before{content:"";position:absolute;left:50%;top:-6px;width:10px;height:10px;background:#fff;border-left:1px solid #EEEBE6;border-top:1px solid #EEEBE6;transform:translateX(-50%) rotate(45deg)}
+@media (prefers-reduced-motion:reduce){.kb-hint:before,#rdog.wig,.kmap .me.hop{animation:none}}
 </style>
 </head>
 <body>
@@ -246,7 +269,8 @@
 
   <section class="screen res" id="result">
     <span class="pill">Твой аудит</span>
-    <img class="dog" id="rdog" alt="">
+    <img class="dog" id="rdog" alt="Таксик — нажми на него">
+    <div><span class="dogsay" id="dogsay"></span></div>
     <div class="leakpill" id="leakpill"></div>
     <h2 class="display" id="rtitle"></h2>
     <p class="rtext" id="rtext"></p>
@@ -313,15 +337,16 @@
       <div class="kb-pane" data-p="course">
         <div class="kb-k">бесплатно · 12 материалов</div>
         <div class="kb-t">Серия постеров для кофейни в кампусе</div>
-        <div class="kb-road"><i></i><i></i><i></i><i></i></div>
-        <div class="kb-mods"><div><b>блок 1</b>Добро пожаловать в мир дизайна</div><div><b>блок 2</b>Уверенно сразу к делу</div><div><b>блок 3</b>Повяжите бантик и готово!</div><div><b>блок 4</b>Сикрет-бокс</div></div>
+        <p class="kb-hint">листай вниз — таксик побежит по курсу</p>
+        <div class="map kmap" id="trCourse"></div>
         <p class="kb-out"><b>На выходе:</b> серия постеров по ТЗ от таксы-клиента, пост-кейс и разбор «первый постер против финального».</p>
         <a class="kb-btn" id="botCourse" href="#" target="_blank" rel="noopener">Начать мини-курс в Telegram</a>
       </div>
       <div class="kb-pane" data-p="month" hidden>
         <div class="kb-k">бесплатно · месяц</div>
         <div class="kb-t">Полезные материалы: от шрифтов до продаж</div>
-        <div class="kb-weeks"><div><b>неделя 1</b>шрифты и композиция</div><div><b>неделя 2</b>Figma и нейросети</div><div><b>неделя 3</b>портфолио и кейсы</div><div><b>неделя 4</b>клиенты, цена и продажи</div></div>
+        <p class="kb-hint">листай вниз — таксик побежит по неделям</p>
+        <div class="map kmap" id="trMonth"></div>
         <p class="kb-out">Гайды, чек-листы и шаблоны — новый материал каждые пару дней.</p>
         <a class="kb-btn" id="botMonth" href="#" target="_blank" rel="noopener">Получать материалы в Telegram</a>
       </div>
@@ -515,6 +540,75 @@ function initMap(P,W,H){
   dog.addEventListener('load',req); update();
 }
 
+/* === Тропинки с таксиком (подарок в боте) === */
+const TRAILS=[]; let trTick=false;
+function buildTrail(id,items,dogSrc){
+  const box=$(id); if(!box) return;
+  const W=320, step=84, H=(items.length-1)*step+96;
+  const P=items.map((m,k)=>({x:k%2?W*0.6:W*0.4, y:28+k*step}));
+  let d='M'+P[0].x+' '+P[0].y; for(let k=1;k<P.length;k++){ const a=P[k-1],q=P[k]; d+=' C'+a.x+' '+(a.y+step*0.55)+' '+q.x+' '+(q.y-step*0.55)+' '+q.x+' '+q.y; }
+  let c='<svg viewBox="0 0 '+W+' '+H+'" aria-hidden="true"><path class="tb" d="'+d+'" fill="none" stroke="#C9D3E6" stroke-width="2" stroke-dasharray="5 6" stroke-linecap="round"/><path class="td" d="'+d+'" fill="none" stroke="#6C8CE0" stroke-width="3" stroke-linecap="round" stroke-dasharray="0 9999"/>';
+  P.forEach((p,k)=>{ c+='<circle class="pt" data-k="'+k+'" cx="'+p.x+'" cy="'+p.y+'" r="'+(k===0||k===P.length-1?9:7)+'" fill="#fff" stroke="#B9C6E2" stroke-width="2"/>'; });
+  c+='</svg>';
+  items.forEach((m,k)=>{ const p=P[k]; const pos=k%2?'right:0;':'left:0;text-align:right;';
+    c+='<div class="stop'+(m.fin?' fin':'')+'" data-k="'+k+'" style="'+pos+'top:'+((p.y-15)/H*100)+'%;"><div class="d">'+esc(m.d)+'</div><div class="n">'+esc(m.n)+'</div>'+(m.x?'<div class="x">'+esc(m.x)+'</div>':'')+'</div>'; });
+  c+='<img class="me" alt="" src="'+dogSrc+'">';
+  box.innerHTML=c;
+  const t={box,P,W,H,base:box.querySelector('.tb'),done:box.querySelector('.td'),dog:box.querySelector('.me'),pts:[...box.querySelectorAll('.pt')],stops:[...box.querySelectorAll('.stop')],lens:null,last:-1};
+  const old=TRAILS.findIndex(x=>x.box===box); if(old>=0) TRAILS.splice(old,1,t); else TRAILS.push(t);
+  t.dog.addEventListener('load',trReq);
+  trReq();
+}
+function trUpdate(){
+  trTick=false;
+  const vh=window.innerHeight||800;
+  TRAILS.forEach(t=>{
+    const r=t.box.getBoundingClientRect(); if(!r.height) return;
+    if(!t.lens){ const L=t.base.getTotalLength(); if(!L) return; t.L=L;
+      t.lens=t.P.map(p=>{ let best=0,bd=1e9; for(let s=0;s<=L;s+=2){ const q=t.base.getPointAtLength(s); const dd=(q.x-p.x)**2+(q.y-p.y)**2; if(dd<bd){bd=dd;best=s;} } return best; }); }
+    const sc=r.width/t.W;
+    let prog=(vh*0.6-r.top)/r.height; prog=Math.max(0,Math.min(1,prog));
+    const len=prog*t.L, q=t.base.getPointAtLength(len);
+    const back=(t.prevLen!=null&&len<t.prevLen); t.prevLen=len;
+    t.dog.style.transform='translate('+(q.x*sc-t.dog.offsetWidth/2)+'px,'+(q.y*sc-t.dog.offsetHeight*0.85)+'px)'+(back?' scaleX(-1)':'');
+    t.done.setAttribute('stroke-dasharray',len+' 9999');
+    let reached=-1;
+    t.pts.forEach((c,k)=>{ const on=t.lens[k]<=len+1; if(on) reached=k; c.setAttribute('fill',on?'#6C8CE0':'#fff'); c.setAttribute('stroke',on?'#6C8CE0':'#B9C6E2'); });
+    t.stops.forEach((s,k)=>s.classList.toggle('on',t.lens[k]<=len+1));
+    if(reached>t.last&&t.last>=0){ t.dog.classList.remove('hop'); void t.dog.offsetWidth; t.dog.classList.add('hop'); }
+    t.last=reached;
+  });
+}
+function trReq(){ if(!trTick){ trTick=true; requestAnimationFrame(trUpdate); } }
+window.addEventListener('scroll',trReq,{passive:true}); window.addEventListener('resize',trReq);
+function buildGiftTrails(gift,dogSrc){
+  buildTrail('trCourse',[
+    {d:'сегодня',n:'Твой материал по аудиту',x:gift},
+    {d:'материалы 1–3',n:'Добро пожаловать в мир дизайна',x:'виды дизайна, принципы, тест «твой стиль»'},
+    {d:'материалы 4–6',n:'Уверенно сразу к делу',x:'Figma и ТЗ от таксы-клиента'},
+    {d:'материалы 7–9',n:'Повяжите бантик и готово!',x:'мокапы и пост-кейс'},
+    {d:'материалы 10–12',n:'Сикрет-бокс',x:'первый постер против финального'},
+    {d:'финиш',n:'серия постеров и пост-кейс',fin:true}
+  ],dogSrc);
+  const t0=new Date(), dt=k=>{ const x=new Date(t0); x.setDate(t0.getDate()+k*7); return x.getDate()+' '+MON[x.getMonth()]; };
+  buildTrail('trMonth',[
+    {d:'сегодня',n:'Твой материал по аудиту',x:gift},
+    {d:'неделя 1 · с '+dt(0),n:'Шрифты и композиция'},
+    {d:'неделя 2 · с '+dt(1),n:'Figma и нейросети'},
+    {d:'неделя 3 · с '+dt(2),n:'Портфолио и кейсы'},
+    {d:'неделя 4 · с '+dt(3),n:'Клиенты, цена и продажи'},
+    {d:'через месяц',n:'база от шрифтов до продаж',fin:true}
+  ],dogSrc);
+}
+const DOGSAY=['гав! листай вниз — побегу по твоему пути','ещё погладь 🐾','в кампусе есть кофейня, пошли','мини-курс — моя любимая часть','тяв! жми на подарок ниже'];
+let dsN=0, dsT;
+function dogTap(){
+  const d=$('rdog'), b=$('dogsay');
+  d.classList.remove('wig'); void d.offsetWidth; d.classList.add('wig');
+  b.textContent=DOGSAY[dsN++%DOGSAY.length]; b.classList.add('on');
+  clearTimeout(dsT); dsT=setTimeout(()=>b.classList.remove('on'),2400);
+}
+
 /* === Логика === */
 const $ = id => document.getElementById(id);
 let i=0, pts={}, answers={};
@@ -600,7 +694,8 @@ function finish(){
     d.innerHTML='<b></b><div><div class="nm"></div><div class="ds"></div><span class="bd"></span></div>';
     d.querySelector('b').textContent=c[0]; d.querySelector('.nm').textContent=c[1]; d.querySelector('.ds').textContent=CHDESC[n];
     d.querySelector('.bd').textContent=hits.has(n)?'особенно важна для тебя: закроет твою зону':'усилит результат'; path.appendChild(d); });
-  $('giftTitle').textContent=R.gift; $('giftText').textContent=R.giftText; buildWeek(R.gift);
+  $('giftTitle').textContent=R.gift; $('giftText').textContent=R.giftText; buildGiftTrails(R.gift,DOGS[R.dog]);
+  setTimeout(dogTap,900);
   $('botLink').href=BOT_URL+(BOT_URL.includes('?')?'&':'?')+'start=audit_'+(allGood?'top':leak)+'_'+(answers.stage||'x');
   window._result={title:R.title, leak:allGood?null:Z[leak].name};
   show('result');
@@ -609,7 +704,8 @@ function finish(){
 $('start').onclick=()=>{ i=0; pts={}; answers={}; render(); show('quiz'); };
 $('next').onclick=advance;
 $('again').onclick=()=>show('intro');
-document.querySelectorAll('.kb-tabs button').forEach(b=>b.onclick=()=>{ document.querySelectorAll('.kb-tabs button').forEach(x=>{ x.classList.toggle('on',x===b); x.setAttribute('aria-selected',String(x===b)); }); document.querySelectorAll('.kb-pane').forEach(p=>p.hidden=p.dataset.p!==b.dataset.t); });
+document.querySelectorAll('.kb-tabs button').forEach(b=>b.onclick=()=>{ document.querySelectorAll('.kb-tabs button').forEach(x=>{ x.classList.toggle('on',x===b); x.setAttribute('aria-selected',String(x===b)); }); document.querySelectorAll('.kb-pane').forEach(p=>p.hidden=p.dataset.p!==b.dataset.t); trReq(); });
+$('rdog').onclick=dogTap;
 $('share').onclick=async()=>{
   const r=window._result||{}; const text=r.leak?('Прошла аудит: моя главная утечка заказов — «'+r.leak.toLowerCase()+'». Я — «'+r.title+'». А у тебя?'):('Прошла аудит дизайнера: «'+r.title+'». А ты?');
   try{ if(navigator.share){ await navigator.share({text,url:location.href}); return; } await navigator.clipboard.writeText(text+' '+location.href); $('shared').textContent='Текст скопирован — вставь в сторис или чат'; }
