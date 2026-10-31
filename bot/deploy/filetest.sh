@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Проверка превью картинок: берёт фото из поста, скачивает через мосты, показывает код ответа.
 set -euo pipefail
+# аргумент v4 — сначала IPv4 (проверка гипотезы про зависание соединений)
+OPT=''; [ "${1:-}" = v4 ] && OPT='--dns-result-order=ipv4first'
 set -a; . /etc/di-sign-bot.env; set +a
 cd /opt/di-sign-bot/bot
-runuser -u bot -- env NODE_OPTIONS="${NODE_OPTIONS:-}" DB_FILE="$DB_FILE" BOT_TOKEN="$BOT_TOKEN" TG_API_ROOT="$TG_API_ROOT" TG_RELAY_KEY="$TG_RELAY_KEY" node --no-warnings --input-type=module -e '
+runuser -u bot -- env NODE_OPTIONS="$OPT" DB_FILE="$DB_FILE" BOT_TOKEN="$BOT_TOKEN" TG_API_ROOT="$TG_API_ROOT" TG_RELAY_KEY="$TG_RELAY_KEY" node --no-warnings --input-type=module -e '
 import { nodeSqliteAdapter } from "./src/db-node.js";
 import { makeTg } from "./src/tg.js";
 const db = await nodeSqliteAdapter(process.env.DB_FILE);
