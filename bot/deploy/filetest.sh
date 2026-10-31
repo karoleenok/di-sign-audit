@@ -7,7 +7,7 @@ runuser -u bot -- env DB_FILE="$DB_FILE" BOT_TOKEN="$BOT_TOKEN" TG_API_ROOT="$TG
 import { nodeSqliteAdapter } from "./src/db-node.js";
 import { makeTg } from "./src/tg.js";
 const db = await nodeSqliteAdapter(process.env.DB_FILE);
-const rows = await db.all("SELECT id, media FROM posts WHERE media IS NOT NULL AND media != \"[]\" LIMIT 5");
+const rows = await db.all("SELECT id, media FROM posts WHERE media LIKE ? LIMIT 5", ["%photo%"]);
 let fid = null;
 for (const r of rows) { try { const m = JSON.parse(r.media).find((x) => x.type === "photo"); if (m) { fid = m.file_id; console.log("пост", r.id, "file_id", fid.slice(0, 12) + "…"); break; } } catch {} }
 if (!fid) { console.log("фото в постах не нашла"); process.exit(0); }
