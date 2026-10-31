@@ -271,6 +271,47 @@
 .bt-cal i.on{background:var(--k-pr);box-shadow:0 0 0 2px rgba(108,140,224,.2)}
 @keyframes btUp{from{transform:scaleY(0);opacity:0}}
 @media (prefers-reduced-motion:reduce){.bt-cells i{animation:none}}
+.kb-works .kb-w{font:inherit;text-align:left;cursor:pointer;color:inherit;transition:border-color .2s,box-shadow .2s,transform .2s}
+.kb-works .kb-w:hover{border-color:#C9D6F2}
+.kb-works .kb-w.on{border-color:var(--k-pr);box-shadow:0 8px 22px rgba(80,110,180,.16)}
+.kb-works .kb-w:focus-visible{outline:2px solid var(--k-pr);outline-offset:2px}
+.kb-wm{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--k-pr);margin-top:2px}
+.kb-wm i{width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg);margin-top:-3px;transition:transform .2s}
+.kb-w.on .kb-wm i{transform:rotate(-135deg);margin-top:3px}
+.kb-wd{grid-column:1/-1;position:relative;background:#F7F9FD;border-radius:16px;padding:14px 14px 4px}
+.kb-wd:before{content:"";position:absolute;top:-6px;left:var(--ar,25%);width:12px;height:12px;background:#F7F9FD;transform:translateX(-50%) rotate(45deg);border-radius:2px}
+.kb-wd.show .kb-wd-in{animation:wdIn .35s cubic-bezier(.2,.8,.2,1)}
+@keyframes wdIn{from{opacity:0;transform:translateY(-6px)}}
+.kb-wc{padding-bottom:12px}
+.kb-wc+.kb-wc{border-top:1px solid #E6ECF7;padding-top:12px}
+.kb-wc-h{display:grid;grid-template-columns:34px 1fr;gap:10px;align-items:center}
+.kb-wc-h b{display:grid;place-items:center;height:28px;border-radius:8px;background:#fff;color:var(--k-deep);font-size:12px;font-weight:500}
+.kb-wc-h i{display:block;font-style:normal;font-size:14.5px;font-weight:500;line-height:1.2}.kb-wc-h small{font-size:12px;color:var(--k-soft)}
+.kb-wd ol{margin:8px 0 0 44px;padding:0 0 0 16px;font-size:13px;line-height:1.35;display:grid;gap:4px;color:var(--k-ink)}
+.kb-wd ol li::marker{color:var(--k-soft);font-size:11.5px}
+.res .kb .kb-wc-o{margin:8px 0 0 44px;font-size:12.5px;line-height:1.35;color:var(--k-body)}
+.kb-wc-o span{display:inline-block;font-size:11px;color:var(--k-deep);background:#E3EAF8;border-radius:999px;padding:1px 7px;margin-right:6px}
+@media (prefers-reduced-motion:reduce){.kb-wd.show .kb-wd-in{animation:none}}
+.trl{position:relative;margin:6px 0 12px;padding-left:58px}
+.trl ol{list-style:none;margin:0;padding:0;display:grid;gap:18px}
+.trl li{position:relative;min-height:22px;opacity:.55;transition:opacity .3s}
+.trl li.on{opacity:1}
+.trl-dot{position:absolute;left:-41px;top:4px;width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid #B9C6E2;transition:background .3s,border-color .3s}
+.trl li.on .trl-dot{background:var(--k-pr);border-color:var(--k-pr)}
+.trl li.fin .trl-dot{width:18px;height:18px;left:-43px;top:2px}
+.trl-rail{position:absolute;left:23px;width:2px;background:repeating-linear-gradient(#C9D3E6 0 5px,transparent 5px 10px)}
+.trl-fill{position:absolute;left:-0.5px;top:0;width:3px;border-radius:2px;background:var(--k-pr)}
+.trl-dog{position:absolute;left:2px;top:0;width:44px;height:auto;pointer-events:none;z-index:2;filter:drop-shadow(0 3px 3px rgba(44,13,2,.15))}
+.trl-dog.hop{animation:khop .45s ease-out}
+.trl-d{font-size:11.5px;color:var(--k-soft)}
+.trl li.on .trl-d{color:var(--k-pr);font-weight:500}
+.trl-n{font-size:15px;font-weight:500;line-height:1.25;color:var(--k-ink);margin-top:1px}
+.trl-x{font-size:12.5px;color:var(--k-soft);line-height:1.3;margin-top:2px}
+.trl li.fin .trl-n{font-family:"Instrument Serif",serif;font-style:italic;font-weight:400;font-size:22px;line-height:1.05;color:var(--k-deep)}
+@media (prefers-reduced-motion:reduce){.trl-dog.hop{animation:none}}
+#botGift .kb-pane{display:grid;gap:0}
+#botGift .kb-pane[hidden]{display:none}
+#botGift .kb-t{margin-bottom:6px}
 .kb-meta{font-size:13px;color:var(--k-soft);margin-top:10px}
 .kb-team{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center;font-size:11.5px;color:var(--k-soft);line-height:1.25}
 .kb-team i{display:grid;place-items:center;width:44px;height:44px;margin:0 auto 6px;border-radius:50%;background:var(--k-tint);color:var(--k-deep);font-family:"Instrument Serif",serif;font-size:21px}
@@ -368,12 +409,10 @@
     <div class="block kb">
       <span class="kb-l">программа · 57 уроков · ~20 недель</span>
       <h3>Что будет в твоём <em>портфолио</em></h3>
-      <p class="kb-lead">6 работ, и у каждой — свои главы курса.</p>
+      <p class="kb-lead">6 работ, и у каждой — свои главы курса. Нажми на работу — покажу главы и уроки.</p>
       <div class="kb-bar"><i style="flex:3"></i><i style="flex:11"></i><i style="flex:4"></i><i style="flex:2"></i></div>
       <div class="kb-barl"><span>база</span><span>первые кейсы</span><span>клиенты</span><span>выпуск</span></div>
       <div class="kb-works" id="works"></div>
-      <div class="kb-prog-h">Программа по главам <span>нажми на главу, чтобы раскрыть уроки</span></div>
-      <div class="kb-prog" id="prog"></div>
     </div>
 
     <div class="block kb kb-exit">
@@ -415,16 +454,16 @@
       <div class="kb-pane" data-p="course">
         <div class="kb-k">бесплатно · 12 материалов</div>
         <div class="kb-t">Серия постеров по ТЗ из рандомайзера</div>
-        <p class="kb-hint">листай вниз — таксик побежит по курсу</p>
-        <div class="map kmap" id="trCourse"></div>
+        <p class="kb-hint">листай — таксик побежит по курсу</p>
+        <div id="trCourse"></div>
         <p class="kb-out"><b>На выходе:</b> серия постеров по ТЗ от таксы-клиента, пост-кейс и разбор «первый постер против финального».</p>
         <a class="kb-btn" id="botCourse" href="#" target="_blank" rel="noopener">Начать мини-курс в Telegram</a>
       </div>
       <div class="kb-pane" data-p="month" hidden>
         <div class="kb-k">бесплатно · месяц</div>
         <div class="kb-t">Полезные материалы: от шрифтов до продаж</div>
-        <p class="kb-hint">листай вниз — таксик побежит по неделям</p>
-        <div class="map kmap" id="trMonth"></div>
+        <p class="kb-hint">листай — таксик побежит по неделям</p>
+        <div id="trMonth"></div>
         <p class="kb-out">Гайды, чек-листы и шаблоны — новый материал каждые пару дней.</p>
         <a class="kb-btn" id="botMonth" href="#" target="_blank" rel="noopener">Получать материалы в Telegram</a>
       </div>
@@ -562,14 +601,8 @@ const LESSONS = {
   I:[['07.3','Антикризисное управление','правки, сроки, выгорание'],['10.2','Проект за неделю','работа по ТЗ от начала до конца'],['100%','Разбор каждой домашки','обратная связь вместо гаданий «достаточно ли я хорош»']],
   T:[['02.3','Auto Layout','макеты, которые подстраиваются сами'],['05.4','Сайты с помощью Claude','от задачи до живой страницы'],['05.3','Мокапы нейросетями','подача работ без фотостудии']]
 };
-const PROG=[
- ['00','Введение','Карта пути: что делать на каждом шаге и что получишь на выходе',['Экскурсия по университету']],
- ['01','Основы дизайна','Композиция, типографика, цвет: фундамент, на котором держатся и цена, и кейсы',['Композиция: что это и зачем','Золотые правила','Сетка','Разбор частых ошибок','Шрифты: в мире дикой природы','Как сочетать шрифты']],
- ['02','Figma','Макеты быстро и аккуратно: Auto Layout, компоненты, сдача работ без правок',['Первое свидание + шпаргалка','Булевы операции','Auto Layout','Стили','Компоненты']],
- ['03','Брендинг','Сквозной проект с клиентом: бриф, концепция, презентация. Первый настоящий кейс',['Что такое брендинг','Анализ проекта, ниши и конкурентов','Постановка задач','Где искать идеи: мудборд','Ценности и концепция','Разработка логотипа','Работа с типографикой','Фирменные графические элементы','Гибкая система дизайн-кода','Упаковка: от идеи до дизайна','Подготовка к печати + шпаргалка','Визуализация проекта','Презентация проекта']],
- ['04','Сайты','Сайты для бизнеса: кейс, который объясняет пользу и оправдывает цену',['Какие бывают сайты','Сетки и композиция сайтов','Смысловая структура и путь пользователя','Анализ проекта, ниши и конкурентов','Работа с референсами','Первый прототип','Дизайн первого лендинга','Дизайн многостраничного сайта','Адаптивность: мобильная версия','Визуализация проекта','Презентация проекта']],
- ['05','Нейросети и вёрстка','ИИ в работе, свой сайт-портфолио, бриф, КП и договор: всё, чтобы брать заказы',['Введение в этот дивный мир','Основы написания промптов','Скиллы и плагины для Figma. Коннекторы','Создание мокапов','Презентации: гайдлайны, брендбуки, PPTX','Сайты с Claude и перенос в Tilda','Инструменты для работы с клиентом']]
-];
+const CHS={"00": ["Введение", "паспорт студента и свой заказчик", ["Экскурсия по университету"]], "01": ["Основы дизайна", "серия типографических постеров", ["Композиция: что это и зачем", "Золотые правила", "Сетка", "Разбор частых ошибок", "Шрифты: в мире дикой природы", "Как сочетать шрифты"]], "02": ["Figma", "свой мини UI-кит", ["Первое свидание + шпаргалка", "Булевы операции", "Auto Layout", "Стили", "Компоненты"]], "03": ["Брендинг", "фирменный стиль для бренда с нуля", ["Что такое брендинг", "Анализ проекта, ниши и конкурентов", "Постановка задач", "Где искать идеи: мудборд", "Ценности и концепция", "Разработка логотипа", "Работа с типографикой", "Фирменные графические элементы", "Гибкая система дизайн-кода", "Упаковка: от идеи до дизайна", "Подготовка к печати + шпаргалка", "Визуализация проекта", "Презентация проекта"]], "04": ["Сайты", "сайт для бренда", ["Какие бывают сайты", "Сетки и композиция сайтов", "Смысловая структура и путь пользователя", "Анализ проекта, ниши и конкурентов", "Работа с референсами", "Первый прототип", "Дизайн первого лендинга", "Дизайн многостраничного сайта", "Адаптивность: мобильная версия", "Визуализация проекта", "Презентация проекта"]], "05": ["Нейросети и вёрстка", "навык вайбкодинга: сайты с Claude, свои скиллы и плагины для Figma", ["Основы промптов в этом дивном мире", "Скиллы и плагины для Figma. Коннекторы", "Создание мокапов", "Презентации: гайдлайны, брендбуки, PPTX", "Сайты с Claude и перенос в Tilda"]], "06": ["Клиенты", "умеешь вести клиента от первого контакта до повторного заказа", ["Искусство коммуникации", "Брифинг", "Маркетинг: как себя позиционировать и продавать", "Боли, потребности и возвращение клиента"]], "07": ["Менеджмент проекта", "стоимость часа, точка безубыточности, доска проекта и реестр рисков", ["Основы менеджмента: рынок, деньги, метрики", "Планирование проекта", "Ведём проект в планере", "Антикризисное управление проектом", "Логика и методики переговоров", "Деловые коммуникации"]], "08": ["Портфолио и кейсы", "упакованные кейсы и структура сайта-портфолио", ["Структура кейсов", "Собственный сайт-портфолио", "Кейс, который продаёт"]], "09": ["Блог", "блог, из которого приходят заказчики", []], "10": ["Дипломная работа", "дипломный проект в формате полноценного кейса", ["Брифинг по техническому заданию", "Реализация проекта за неделю", "Защита проекта"]], "11": ["Выпускной", "переход от учебных проектов к своей работе", []]};
+const WCH=[["00", "01"], ["02"], ["03", "05"], ["04", "05"], ["06", "07", "08", "09"], ["10", "11"]];
 const CHAPTERS=[['00','Введение'],['01','Основы дизайна'],['02','Figma'],['03','Брендинг'],['04','Сайты'],['05','Нейросети и вёрстка']];
 const CHDESC=['Карта пути: что делать на каждом шаге и что получишь на выходе','Композиция, типографика, цвет: фундамент, на котором держатся и цена, и кейсы','Макеты быстро и аккуратно: Auto Layout, компоненты, сдача работ без правок','Сквозной проект с клиентом: бриф, концепция, презентация. Первый настоящий кейс','Сайты для бизнеса: кейс, который объясняет пользу и оправдывает цену','ИИ в работе, свой сайт-портфолио, бриф, КП и договор: всё, чтобы брать заказы'];
 const ZCH={B:[1],P:[3,4],V:[5],S:[5],C:[3,5],I:[0,3],T:[2,5]};
@@ -630,17 +663,9 @@ function initMap(P,W,H){
 const TRAILS=[]; let trTick=false;
 function buildTrail(id,items,dogSrc){
   const box=$(id); if(!box) return;
-  const W=320, step=84, H=(items.length-1)*step+96;
-  const P=items.map((m,k)=>({x:k%2?W*0.6:W*0.4, y:28+k*step}));
-  let d='M'+P[0].x+' '+P[0].y; for(let k=1;k<P.length;k++){ const a=P[k-1],q=P[k]; d+=' C'+a.x+' '+(a.y+step*0.55)+' '+q.x+' '+(q.y-step*0.55)+' '+q.x+' '+q.y; }
-  let c='<svg viewBox="0 0 '+W+' '+H+'" aria-hidden="true"><path class="tb" d="'+d+'" fill="none" stroke="#C9D3E6" stroke-width="2" stroke-dasharray="5 6" stroke-linecap="round"/><path class="td" d="'+d+'" fill="none" stroke="#6C8CE0" stroke-width="3" stroke-linecap="round" stroke-dasharray="0 9999"/>';
-  P.forEach((p,k)=>{ c+='<circle class="pt" data-k="'+k+'" cx="'+p.x+'" cy="'+p.y+'" r="'+(k===0||k===P.length-1?9:7)+'" fill="#fff" stroke="#B9C6E2" stroke-width="2"/>'; });
-  c+='</svg>';
-  items.forEach((m,k)=>{ const p=P[k]; const pos=k%2?'right:0;':'left:0;text-align:right;';
-    c+='<div class="stop'+(m.fin?' fin':'')+'" data-k="'+k+'" style="'+pos+'top:'+((p.y-15)/H*100)+'%;"><div class="d">'+esc(m.d)+'</div><div class="n">'+esc(m.n)+'</div>'+(m.x?'<div class="x">'+esc(m.x)+'</div>':'')+'</div>'; });
-  c+='<img class="me" alt="" src="'+dogSrc+'">';
-  box.innerHTML=c;
-  const t={box,P,W,H,base:box.querySelector('.tb'),done:box.querySelector('.td'),dog:box.querySelector('.me'),pts:[...box.querySelectorAll('.pt')],stops:[...box.querySelectorAll('.stop')],lens:null,last:-1};
+  box.className='trl';
+  box.innerHTML='<div class="trl-rail"><i class="trl-fill"></i></div><img class="trl-dog" alt="" src="'+dogSrc+'"><ol>'+items.map(m=>'<li class="'+(m.fin?'fin':'')+'"><span class="trl-dot"></span><div class="trl-d">'+esc(m.d)+'</div><div class="trl-n">'+esc(m.n)+'</div>'+(m.x?'<div class="trl-x">'+esc(m.x)+'</div>':'')+'</li>').join('')+'</ol>';
+  const t={box,rail:box.querySelector('.trl-rail'),fill:box.querySelector('.trl-fill'),dog:box.querySelector('.trl-dog'),lis:[...box.querySelectorAll('li')],last:-1};
   const old=TRAILS.findIndex(x=>x.box===box); if(old>=0) TRAILS.splice(old,1,t); else TRAILS.push(t);
   t.dog.addEventListener('load',trReq);
   trReq();
@@ -650,17 +675,12 @@ function trUpdate(){
   const vh=window.innerHeight||800;
   TRAILS.forEach(t=>{
     const r=t.box.getBoundingClientRect(); if(!r.height) return;
-    if(!t.lens){ const L=t.base.getTotalLength(); if(!L) return; t.L=L;
-      t.lens=t.P.map(p=>{ let best=0,bd=1e9; for(let s=0;s<=L;s+=2){ const q=t.base.getPointAtLength(s); const dd=(q.x-p.x)**2+(q.y-p.y)**2; if(dd<bd){bd=dd;best=s;} } return best; }); }
-    const sc=r.width/t.W;
-    let prog=(vh*0.6-r.top)/r.height; prog=Math.max(0,Math.min(1,prog));
-    const len=prog*t.L, q=t.base.getPointAtLength(len);
-    const back=(t.prevLen!=null&&len<t.prevLen); t.prevLen=len;
-    t.dog.style.transform='translate('+(q.x*sc-t.dog.offsetWidth/2)+'px,'+(q.y*sc-t.dog.offsetHeight*0.85)+'px)'+(back?' scaleX(-1)':'');
-    t.done.setAttribute('stroke-dasharray',len+' 9999');
-    let reached=-1;
-    t.pts.forEach((c,k)=>{ const on=t.lens[k]<=len+1; if(on) reached=k; c.setAttribute('fill',on?'#6C8CE0':'#fff'); c.setAttribute('stroke',on?'#6C8CE0':'#B9C6E2'); });
-    t.stops.forEach((s,k)=>s.classList.toggle('on',t.lens[k]<=len+1));
+    const y0=t.lis[0].offsetTop+11, y1=t.lis[t.lis.length-1].offsetTop+11;
+    let prog=(vh*0.6-r.top-y0)/(y1-y0); prog=Math.max(0,Math.min(1,prog));
+    const y=y0+prog*(y1-y0);
+    t.rail.style.top=y0+'px'; t.rail.style.height=(y1-y0)+'px'; t.fill.style.height=(prog*100)+'%';
+    t.dog.style.transform='translate(0,'+(y-t.dog.offsetHeight*0.62)+'px)';
+    let reached=-1; t.lis.forEach((li,k)=>{ const on=li.offsetTop+11<=y+1; if(on) reached=k; li.classList.toggle('on',on); });
     if(reached>t.last&&t.last>=0){ t.dog.classList.remove('hop'); void t.dog.offsetWidth; t.dog.classList.add('hop'); }
     t.last=reached;
   });
@@ -764,8 +784,21 @@ function finish(){
   const focus=(weakest.length?weakest:sorted.slice(0,3));
   const hits=new Set(); focus.forEach(k=>ZCH[k].forEach(c=>hits.add(c)));
   const WORKS=[['Серия постеров','неделя 2 · главы 00–01','kw1','my<br>rule'],['UI-кит в Figma','неделя 3 · глава 02','kw2',''],['Фирменный стиль','неделя 9 · главы 03, 05','kw3','K'],['Сайт для бренда','неделя 14 · главы 04, 05','kw4',''],['Кейсы и сайт-портфолио','неделя 18 · главы 06–09','kw5','кейс'],['Дипломный проект','неделя 20 · главы 10–11','kw6','✦']];
-  $('works').innerHTML=WORKS.map(w=>'<div class="kb-w"><span class="kb-th '+w[2]+'">'+w[3]+'</span><b>'+w[0]+'</b><small>'+w[1]+'</small></div>').join('');
-  $('prog').innerHTML=PROG.map((p,n)=>'<details class="kb-ch"><summary><b>'+p[0]+'</b><span><i>'+p[1]+'</i><small>'+p[3].length+' '+(p[3].length%10==1&&p[3].length%100!=11?'урок':p[3].length%10>=2&&p[3].length%10<=4&&(p[3].length%100<10||p[3].length%100>=20)?'урока':'уроков')+'</small></span></summary><p>'+p[2]+'</p><ol>'+p[3].map(l=>'<li>'+l+'</li>').join('')+'</ol></details>').join('');
+  const plural=n=>n%10==1&&n%100!=11?'урок':n%10>=2&&n%10<=4&&(n%100<10||n%100>=20)?'урока':'уроков';
+  $('works').innerHTML=WORKS.map((w,n)=>'<button type="button" class="kb-w" data-n="'+n+'" aria-expanded="false"><span class="kb-th '+w[2]+'">'+w[3]+'</span><b>'+w[0]+'</b><small>'+w[1]+'</small><span class="kb-wm">уроки <i></i></span></button>').join('')+'<div class="kb-wd" id="wd" hidden><div class="kb-wd-in" id="wdIn"></div></div>';
+  const wd=$('wd'), wdIn=$('wdIn'); let wOpen=-1;
+  function wDetail(n){
+    return WCH[n].map(c=>{ const x=CHS[c]; return '<div class="kb-wc"><div class="kb-wc-h"><b>'+c+'</b><span><i>'+x[0]+'</i><small>'+(x[2].length?x[2].length+' '+plural(x[2].length):'практика и эфир')+'</small></span></div>'+(x[2].length?'<ol>'+x[2].map(l=>'<li>'+l+'</li>').join('')+'</ol>':'')+'<p class="kb-wc-o"><span>результат</span>'+x[1]+'</p></div>'; }).join('');
+  }
+  $('works').querySelectorAll('.kb-w').forEach(btn=>btn.onclick=()=>{
+    const n=+btn.dataset.n, all=[...$('works').querySelectorAll('.kb-w')];
+    all.forEach(b=>{b.classList.remove('on');b.setAttribute('aria-expanded','false');});
+    if(wOpen===n){ wOpen=-1; wd.hidden=true; return; }
+    wOpen=n; btn.classList.add('on'); btn.setAttribute('aria-expanded','true');
+    const rowEnd=all[Math.min(all.length-1,(n|1))]; rowEnd.after(wd);
+    wdIn.innerHTML=wDetail(n); wd.hidden=false; wd.style.setProperty('--ar',(n%2?75:25)+'%');
+    wd.classList.remove('show'); void wd.offsetWidth; wd.classList.add('show');
+  });
   const tagB='start=audit_'+(allGood?'top':leak)+'_'+(answers.stage||'x');
   $('botCourse').href=BOT_URL+'?'+tagB+'_course'; $('botMonth').href=BOT_URL+'?'+tagB+'_month';
   const path=$('path')||document.createElement('div'); path.innerHTML='';
