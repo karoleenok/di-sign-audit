@@ -280,6 +280,19 @@ await page.click('[data-sw="fbOffer"]'); await page.waitForTimeout(400);
 await page.click('[data-down="askName"]'); await page.waitForTimeout(400); // вернули как было
 step('шаги входа: порядок ▲▼, выключатель, согласие всегда первое, нажатие открывает текст');
 
+// 8б. свой пост без дня — перетащить на шаг входа вместо шаблона
+assert.ok(await page.$('.pool-card'), 'пул свободных постов показан');
+await page.setViewportSize({ width: 390, height: 1800 }); await page.evaluate(() => window.scrollTo(0, 0)); await page.waitForTimeout(150); const pc = await page.$('.pool-card .handle'); const pcb = await pc.boundingBox();
+const nm = await page.$('.stp[data-k="consentAds"]'); const nmb = await nm.boundingBox();
+await page.mouse.move(pcb.x + 5, pcb.y + 5); await page.mouse.down();
+await page.mouse.move(nmb.x + 80, nmb.y + nmb.height / 2, { steps: 8 });
+assert.ok(await page.$('.stp.drop[data-k="consentAds"]'), 'шаг подсвечивается при наведении');
+await page.mouse.up(); await page.waitForTimeout(500);
+const dropped = await db.first(`SELECT value FROM settings WHERE key = 'msgx:consentAds'`);
+assert.ok(dropped && JSON.parse(dropped.value).post, 'пост встал на шаг «как обращаться»');
+await db.run(`DELETE FROM settings WHERE key = 'msgx:consentAds'`); await page.setViewportSize({ width: 390, height: 844 });
+step('свои посты без дня: перетащил на шаг входа — встал вместо шаблона');
+
 // 9. открыть не из Telegram
 INIT = '';
 const p2 = await b.newPage(); await p2.route('**/telegram-web-app.js', (r) => r.fulfill({ contentType: 'application/javascript', body: stub('') }));

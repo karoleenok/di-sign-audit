@@ -25,6 +25,7 @@ h1{font:400 34px/1.05 var(--serif);margin:12px 0 4px}
 h1 i{font-style:italic}
 .lead{color:var(--soft);margin:0 0 14px}
 .tabs{position:sticky;top:0;z-index:20;background:var(--bg);padding:8px 0 10px;margin:0 -16px;padding-left:16px;padding-right:16px;border-bottom:1px solid var(--line)}
+.stp.drop{outline:2px dashed var(--accent,#c4572a);background:rgba(196,87,42,.08)}.pool-card{display:flex;align-items:center;gap:8px;padding:8px 10px;margin-top:6px;border:1px solid var(--line);border-radius:12px;background:var(--card)}.pool-card .handle{touch-action:none;cursor:grab}.pool-card .pt{flex:1;min-width:0;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pool-card .small{white-space:nowrap}.dragfloat{position:fixed;z-index:99;pointer-events:none;padding:8px 12px;border-radius:12px;background:var(--card);box-shadow:var(--shadow);font-weight:500;max-width:70vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .seg{display:flex;gap:4px;background:rgba(44,13,2,.06);border-radius:14px;padding:4px}
 .seg button{flex:1;border:0;background:transparent;border-radius:10px;padding:9px 6px;font-weight:500;cursor:pointer;white-space:nowrap}
 .seg button.on{background:var(--card);box-shadow:var(--shadow)}
@@ -614,6 +615,7 @@ function renderFlow() {
   const drip = S.posts.filter((p) => p.kind === 'drip' && isRoot(p)).sort((a, b) => offMin(a, ids) - offMin(b, ids) || a.pos - b.pos || a.id - b.id);
   const dates = S.posts.filter((p) => p.kind === 'date').sort((a, b) => (a.run_at || 9e12) - (b.run_at || 9e12));
   let h = '<div class="btns" style="margin-top:16px"><button class="btn" type="button" id="newPost">＋ Новый пост</button></div>';
+  h += poolBox();
   h += entryBox();
   h += viewBox() + runBox();
   const sec = (title, note, list, kind) => '<div class="grp">' + title + '</div>' + (note ? '<p class="small muted" style="margin:-2px 2px 10px">' + note + '</p>' : '') +
@@ -625,16 +627,61 @@ function renderFlow() {
     '<div class="btns two" style="margin:8px 0 4px"><button type="button" class="btn ghost" data-newk="drip">＋ Новый пост</button><button type="button" class="btn ghost" data-pickk="drip">📋 Из существующих</button></div>';
   h += sec('🕒 В дату', 'Уходит один раз в выбранные дату и время всем, кто уже в боте. Для эфиров и анонсов.', dates, 'date');
   h += sec('💬 Бонус за отзыв', 'Уходит сразу после отзыва о прототипе кабинета.', S.posts.filter((p) => p.kind === 'fb').sort((a, b) => a.pos - b.pos || a.id - b.id), 'fb');
-  const lost = S.posts.filter((p) => p.kind === 'node' && !shown.has(p.id));
-  if (lost.length) h += sec('🔘 Посты-ответы без кнопки', 'На них пока не ведёт ни одна кнопка — человек их не получит. Привяжи: открой нужный пост → «＋ кнопка» → «Пост».', lost);
+  const stepPosts = new Set((S.msgs || []).map((m) => m.post).filter(Boolean));
+  const lost = S.posts.filter((p) => p.kind === 'node' && !shown.has(p.id) && !stepPosts.has(p.id));
+  if (lost.length) h += sec('🔘 Посты-ответы без кнопки', 'На них пока не ведёт ни одна кнопка и они не стоят на шаге входа — человек их не получит. Привяжи кнопкой («＋ кнопка» → «Пост») или перетащи на шаг входа выше.', lost);
   $('body').innerHTML = h;
   $('newPost').onclick = () => openNew();
   document.querySelectorAll('[data-newk]').forEach((el) => el.onclick = () => { haptic(); openNew({ kind: el.dataset.newk }); });
   document.querySelectorAll('[data-fbback]').forEach((el) => el.onclick = () => { haptic(); fbBackfill(); });
   document.querySelectorAll('[data-pickk]').forEach((el) => el.onclick = () => { haptic(); pickExisting(el.dataset.pickk); });
-  bindEntry(); bindView(); bindRun(); bindDays();
+  bindEntry(); bindPool(); bindView(); bindRun(); bindDays();
   document.querySelectorAll('.fn,.ref').forEach((el) => el.onclick = () => openPost(+el.dataset.id));
   document.querySelectorAll('[data-add]').forEach((el) => el.onclick = () => openPost(+el.dataset.add, { focus: 'buttons' }));
+}
+
+
+// «свои посты для шагов»: посты без дня (kind = node). Тащи за ⋮⋮ на шаг входа — пост встанет вместо шаблонного сообщения
+function poolBox() {
+  const nodes = S.posts.filter((p) => p.kind === 'node' && p.status !== 'archived');
+  const usedBy = (id) => (S.msgs || []).filter((m) => m.post === id).map((m) => (ENTRY[m.key] ? ENTRY[m.key][0] : m.key));
+  return '<div class="box"><h3>Свои посты для шагов</h3><p class="small muted" style="margin:0 0 6px">Посты без дня. Перетащи за ⋮⋮ на шаг входа выше — он заменит шаблонное сообщение. Тот же пост можно поставить на несколько шагов.</p>' +
+    (nodes.length ? nodes.map((p) => { const u = usedBy(p.id); return '<div class="pool-card" data-id="' + p.id + '"><div class="handle" aria-label="перетащить на шаг">⋮⋮</div><span class="pt">' + esc(postName(p)) + '</span>' + (u.length ? '<span class="small muted">на шаге: ' + esc(u.join(', ').slice(0, 40)) + '</span>' : '') + '</div>'; }).join('') : '<p class="small muted dash">Пока пусто — создай пост кнопкой ниже.</p>') +
+    '<div class="btns" style="margin:8px 0 0"><button type="button" class="btn ghost" id="poolNew">＋ Новый пост для шага</button></div></div>';
+}
+function bindPool() {
+  if ($('poolNew')) $('poolNew').onclick = () => { haptic(); openNew({ kind: 'node' }); };
+  document.querySelectorAll('.pool-card').forEach((card) => {
+    card.onclick = (e) => { if (!e.target.closest('.handle')) openPost(+card.dataset.id); };
+    const h = card.querySelector('.handle');
+    h.onpointerdown = (e) => {
+      e.preventDefault();
+      const id = +card.dataset.id, p = S.posts.find((x) => x.id === id);
+      const fl = document.createElement('div'); fl.className = 'dragfloat'; fl.textContent = '🔁 ' + postName(p);
+      document.body.appendChild(fl);
+      let tgt = null, cy = 0;
+      const auto = setInterval(() => { if (cy && cy < 80) window.scrollBy(0, -14); else if (cy && cy > innerHeight - 80) window.scrollBy(0, 14); }, 16);
+      const move = (ev) => {
+        cy = ev.clientY;
+        fl.style.left = ev.clientX + 12 + 'px'; fl.style.top = ev.clientY + 12 + 'px';
+        const el = document.elementFromPoint(ev.clientX, ev.clientY);
+        const row = el && el.closest('.stp[data-k]');
+        if (tgt && tgt !== row) tgt.classList.remove('drop');
+        tgt = row && (S.msgs.find((m) => m.key === row.dataset.k) || {}).canMedia ? row : null;
+        if (tgt) tgt.classList.add('drop');
+      };
+      const up = async () => {
+        document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); document.removeEventListener('pointercancel', up);
+        fl.remove(); clearInterval(auto);
+        if (!tgt) return;
+        const key = tgt.dataset.k; tgt.classList.remove('drop');
+        try { const r = await api('/msg/' + key, { post: id }); S.msgs = r.msgs; haptic('medium'); toast('Готово: на шаге «' + (ENTRY[key] ? ENTRY[key][0].replace(/^\S+\s/, '') : key) + '» теперь этот пост'); render(); }
+        catch (er) { toast(er.message); }
+      };
+      document.addEventListener('pointermove', move); document.addEventListener('pointerup', up); document.addEventListener('pointercancel', up);
+      move(e);
+    };
+  });
 }
 
 // вход в бот: служебные шаги по порядку + документы
