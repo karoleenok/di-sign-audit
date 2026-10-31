@@ -315,7 +315,7 @@ function daysHtml() {
 function bindDays() {
   if (window.Sortable) document.querySelectorAll('.list').forEach((el) => {
     Sortable.create(el, {
-      group: 'drip', handle: '.handle', animation: 160, ghostClass: 'ghost', chosenClass: 'chosen', forceFallback: true, fallbackTolerance: 4, scroll: true, bubbleScroll: true,
+      group: 'drip', delay: 170, delayOnTouchOnly: true, touchStartThreshold: 6, filter: 'button,input,select,a', preventOnFilter: false, scrollSensitivity: 120, scrollSpeed: 18, animation: 160, ghostClass: 'ghost', chosenClass: 'chosen', forceFallback: true, fallbackTolerance: 4, scroll: true, bubbleScroll: true,
       onStart: () => dragWatch(true),
       onEnd: (ev) => { dragWatch(false); onDrop(ev); },
     });
