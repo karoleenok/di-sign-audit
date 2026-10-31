@@ -12,7 +12,7 @@ const set = (k, v) => db.run("INSERT INTO settings (key, value) VALUES (?, ?) ON
 await set("doc:policy", process.env.PUB + "/policy");
 await set("doc:consent", process.env.PUB + "/consent");
 await set("doc:owner", "Дупина Диана Николаевна, самозанятая, ИНН 271705350550, diana.dupina@mail.ru");
-const rows = await db.all("SELECT key, value FROM settings WHERE key LIKE \"doc:%\"");
+const rows = await db.all("SELECT key, value FROM settings WHERE key LIKE ?", ["doc:%"]);
 for (const r of rows) console.log(r.key, "=", r.value);
 '
 echo "✓ ссылки на документы и данные владельца записаны"
