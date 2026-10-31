@@ -138,13 +138,15 @@ export async function onStart(ctx, msg, payload) {
 // ---------- порядок шагов входа (меняется в панели: Сценарий → Вход в бот) ----------
 export const FLOW_STEPS = ['consentPd', 'consentAds', 'askLevel', 'askName', 'askContact', 'fbOffer', 'askTrack', 'testOffer'];
 export const FLOW_OPTIONAL = ['askName', 'askContact', 'fbOffer', 'askTrack', 'testOffer']; // эти можно выключить
+// свой пост, вставленный в сценарий входа новым шагом: ключ «post:<id>»
+export const isPostStep = (k) => /^post:\d+$/.test(String(k));
 export function normFlow(order, off) {
   const seen = [];
-  for (const k of Array.isArray(order) ? order : []) if (FLOW_STEPS.includes(k) && !seen.includes(k)) seen.push(k);
+  for (const k of Array.isArray(order) ? order : []) if ((FLOW_STEPS.includes(k) || isPostStep(k)) && !seen.includes(k)) seen.push(k);
   for (const k of FLOW_STEPS) if (!seen.includes(k)) seen.push(k);
   // согласие на данные всегда первое: без него ничего не собираем
   const o = ['consentPd', ...seen.filter((k) => k !== 'consentPd')];
-  const f = (Array.isArray(off) ? off : []).filter((k) => FLOW_OPTIONAL.includes(k));
+  const f = (Array.isArray(off) ? off : []).filter((k) => FLOW_OPTIONAL.includes(k) || isPostStep(k));
   return { order: o, off: [...new Set(f)] };
 }
 export async function loadFlow(ctx) {
@@ -254,9 +256,23 @@ export async function previewStep(ctx, id, k, u = {}) {
   if (k === 'askTrack') return say(ctx, id, 'askTrack', {}, { reply_markup: kb([[{ text: await btn(ctx, 'trackCourse'), callback_data: 'tr:course' }], [{ text: await btn(ctx, 'trackMat'), callback_data: 'tr:mat' }]]) });
   if (k === 'testOffer') { const url = ctx.env.TEST_URL; return say(ctx, id, 'testOffer', {}, url ? { reply_markup: kb([[{ text: await btn(ctx, 'testBtn'), url }]]) } : {}); }
   if (k === 'schedCourse' || k === 'schedMat') return say(ctx, id, k, {});
+  if (isPostStep(k)) {
+    const p = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [+k.slice(5)]);
+    if (!p) throw new Error('поста нет');
+    return sendPost(ctx.tg, id, p, { uid: id, publicUrl: ctx.publicUrl, docs: await loadDocs(ctx) });
+  }
   throw new Error('нет такого шага: ' + k);
 }
 
+// свой пост-шаг: уходит один раз, ответа не ждём — вход идёт дальше
+async function runPostStep(ctx, u, pid) {
+  const p = await ctx.db.first(`SELECT * FROM posts WHERE id = ? AND kind = 'node'`, [pid]);
+  if (!p) return;
+  if (await ctx.db.first(`SELECT 1 AS x FROM deliveries WHERE post_id = ? AND tg_id = ?`, [pid, u.tg_id])) return;
+  let ok = true;
+  try { await sendPost(ctx.tg, u.tg_id, p, { uid: u.tg_id, publicUrl: ctx.publicUrl, docs: await loadDocs(ctx) }); } catch { ok = false; }
+  await recordDeliveries(ctx.db, pid, [{ tg_id: u.tg_id, ok }], ctx.now);
+}
 export async function nextStep(ctx, u) {
   const id = u.tg_id;
   const { order, off } = await loadFlow(ctx);
@@ -265,6 +281,7 @@ export async function nextStep(ctx, u) {
       if (k === 'testOffer' && u.zone) await sendGift(ctx, u, (await delayOf(ctx, 'noGift')) * 1000); // подарок после теста не теряем
       continue;
     }
+    if (isPostStep(k)) { await runPostStep(ctx, u, +k.slice(5)); continue; }
     if (await STEP_RUN[k](ctx, u)) return;
   }
   if (!u.sched_at) {

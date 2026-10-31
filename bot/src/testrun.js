@@ -80,7 +80,7 @@ export async function runFullPath(ctx, adminId, level, fromAudit, pauseMs = 900)
   for (const key of order) {
     if (off.includes(key)) continue;
     if (fromAudit && (key === 'askLevel' || key === 'askTrack' || key === 'testOffer')) continue; // эти из аудита уже известны
-    await run(`шаг ${++step} · ${STEP_TITLE[key]}`, () => previewStep(ctx, adminId, key, me));
+    await run(`шаг ${++step} · ${STEP_TITLE[key] || 'свой пост'}`, () => previewStep(ctx, adminId, key, me));
   }
   if (fromAudit) for (const p of gifts) await run(`шаг ${++step} · 🎁 подарок после теста · «${p.title || 'без названия'}»`, async () => sendPost(ctx.tg, adminId, p, { uid: adminId, publicUrl: ctx.publicUrl, arrow, docs: await loadDocs(ctx) }));
   await run(`шаг ${++step} · ${STEP_TITLE.schedCourse} (если выбрал мини-курс)`, () => previewStep(ctx, adminId, 'schedCourse', me));

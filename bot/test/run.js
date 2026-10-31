@@ -697,6 +697,22 @@ step('кнопка «файл»: у шага и у поста по нажати�
     await db.run(`UPDATE users SET fb_at = NULL, fb_like = NULL, fb_improve = NULL WHERE tg_id IN (1400, 1500)`);
     await db.run(`DELETE FROM deliveries WHERE tg_id IN (1400, 1500)`);
   }
+  // свой пост — отдельный шаг входа между другими шагами
+  {
+    const sp = (await api('/post/new', { kind: 'node', title: 'Шаг-пост', md: 'ВСТАВНОЙ ШАГ ТЕКСТ', status: 'active' })).post;
+    const fr = await api('/flow', { order: ['consentAds', 'post:' + sp.id, 'askName', 'post:99999x'], off: [] });
+    assert.equal(fr.flow.order[2], 'post:' + sp.id, 'пост встал между шагами'); assert.ok(!fr.flow.order.includes('post:99999x'), 'мусорный ключ убран');
+    const X = 1600;
+    await msg(X, '/start audit_P_start_course'); await cb(X, 'c:pd'); await cb(X, 'c:ads:1');
+    const got = calls.filter((c) => c.body.chat_id === X && /ВСТАВНОЙ ШАГ/.test(c.body.text || ''));
+    assert.equal(got.length, 1, 'свой пост-шаг пришёл один раз');
+    assert.match(lastText(X), /имя|зовут|называть/i, 'после него вход идёт дальше');
+    await cb(X, 'n:ok');
+    assert.equal(calls.filter((c) => c.body.chat_id === X && /ВСТАВНОЙ ШАГ/.test(c.body.text || '')).length, 1, 'второй раз не уходит');
+    assert.equal((await api('/run/preview', { level: 'start', full: true, fromAudit: false })).ok, true);
+    await api('/flow', { order: [], off: [] });
+    await db.run(`UPDATE posts SET status = 'archived' WHERE id = ?`, [sp.id]);
+  }
   // перенос между лентой и постами для шагов
   {
     const np = (await api('/post/new', { kind: 'drip', title: 'Переносимый', md: 'текст', status: 'active', day: 2, time: '12:00' })).post;

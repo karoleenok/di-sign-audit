@@ -25,6 +25,7 @@ h1{font:400 34px/1.05 var(--serif);margin:12px 0 4px}
 h1 i{font-style:italic}
 .lead{color:var(--soft);margin:0 0 14px}
 .tabs{position:sticky;top:0;z-index:20;background:var(--bg);padding:8px 0 10px;margin:0 -16px;padding-left:16px;padding-right:16px;border-bottom:1px solid var(--line)}
+.stp.insb{box-shadow:0 -4px 0 0 var(--accent,#c4572a)}.stp.insa{box-shadow:0 4px 0 0 var(--accent,#c4572a)}.stp,.pool-card,.fn,.handle{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .stp.drop{outline:2px dashed var(--accent,#c4572a);background:rgba(196,87,42,.08)}.poolList{min-height:46px;border-radius:12px;border:1.5px dashed var(--line);padding:0 6px 6px}.pool-card{display:flex;align-items:center;gap:8px;padding:8px 10px;margin-top:6px;border:1px solid var(--line);border-radius:12px;background:var(--card)}.pool-card .handle{touch-action:none;cursor:grab}.pool-card .pt{flex:1;min-width:0;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pool-card .small{white-space:nowrap}.dragfloat{position:fixed;z-index:99;pointer-events:none;padding:8px 12px;border-radius:12px;background:var(--card);box-shadow:var(--shadow);font-weight:500;max-width:70vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .strip{display:flex;gap:4px;margin-top:8px;flex-wrap:wrap}.strip img,.strip .ph{width:56px;height:56px;object-fit:cover;border-radius:8px;background:rgba(44,13,2,.07);display:flex;align-items:center;justify-content:center;font-size:20px}.strip .more{width:56px;height:56px;border-radius:8px;background:rgba(44,13,2,.07);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:var(--soft)}.pool-card .strip{margin:0;flex-wrap:nowrap}.pool-card .strip img,.pool-card .strip .ph,.pool-card .strip .more{width:36px;height:36px;font-size:14px}
 .seg{display:flex;gap:4px;background:rgba(44,13,2,.06);border-radius:14px;padding:4px}
@@ -330,6 +331,13 @@ async function onDrop(ev) {
   const fromPool = !!ev.from.dataset.pool, toPool = !!ev.to.dataset.pool;
   // пост из «постов для шагов», брошенный на шаг входа — встаёт вместо шаблона
   if (fromPool) {
+    const ins = insertAt(ev.originalEvent);
+    if (ins) {
+      const f = S.flow, o = f.order.filter((x) => x !== 'post:' + id);
+      let at = ins.key === 'schedCourse' ? o.length : Math.max(1, o.indexOf(ins.key) + (ins.side === 'after' ? 1 : 0));
+      o.splice(at, 0, 'post:' + id);
+      await saveFlow(o, f.off); haptic('medium'); return;
+    }
     const row = stepRowAt(ev.originalEvent);
     if (row) {
       const key = row.dataset.k;
@@ -697,7 +705,7 @@ function renderFlow() {
 function poolBox() {
   const nodes = S.posts.filter((p) => p.kind === 'node' && p.status !== 'archived');
   const usedBy = (id) => (S.msgs || []).filter((m) => m.post === id).map((m) => (ENTRY[m.key] ? ENTRY[m.key][0] : m.key));
-  return '<div class="box"><h3>Свои посты для шагов</h3><p class="small muted" style="margin:0 0 6px">Посты без дня. Перетащи за ⋮⋮ на шаг входа — он заменит шаблонное сообщение. Перетащи в день ленты ниже — пост станет обычным постом ленты, а пост из ленты можно перетащить сюда.</p>' +
+  return '<div class="box"><h3>Свои посты для шагов</h3><p class="small muted" style="margin:0 0 6px">Посты без дня. Перетащи на середину шага входа — он заменит шаблонное сообщение; на верхний или нижний край шага (появится линия) — встанет отдельным шагом между шагами. Перетащи в день ленты ниже — пост станет обычным постом ленты, а пост из ленты можно перетащить сюда.</p>' +
     '<div class="list poolList" data-pool="1">' + nodes.map((p) => { const u = usedBy(p.id); return '<div class="pool-card" data-id="' + p.id + '"><div class="handle" aria-label="перетащить">⋮⋮</div>' + mediaStrip(p, 2) + '<span class="pt">' + esc(postName(p)) + '</span>' + (u.length ? '<span class="small muted">на шаге: ' + esc(u.join(', ').slice(0, 40)) + '</span>' : '') + '</div>'; }).join('') + '</div>' + (nodes.length ? '' : '<p class="small muted" style="margin:6px 2px 0">Пока пусто. Создай пост кнопкой ниже или перетащи сюда пост из ленты по дням.</p>') +
     '<div class="btns" style="margin:8px 0 0"><button type="button" class="btn ghost" id="poolNew">＋ Новый пост для шага</button></div></div>';
 }
@@ -713,11 +721,25 @@ function stepRowAt(e) {
   const row = el && el.closest('.stp[data-k]');
   return row && (S.msgs.find((m) => m.key === row.dataset.k) || {}).canMedia ? row : null;
 }
+// край шага под пальцем: верх/низ строки — вставить новым шагом, середина — заменить шаблон
+function insertAt(e) {
+  const pt = ptOf(e); if (!pt) return null;
+  const el = document.elementFromPoint(pt.x, pt.y);
+  const row = el && el.closest('#flowList .stp[data-k]');
+  if (!row) return null;
+  const r = row.getBoundingClientRect(), y = (pt.y - r.top) / r.height, k = row.dataset.k;
+  const side = y < 0.32 ? 'before' : y > 0.68 ? 'after' : null;
+  if (!side) return null;
+  if (k === 'hello') return null;
+  if (k === 'schedCourse') return side === 'before' ? { key: k, side } : null;
+  if (k === 'consentPd' && side === 'before') return null;
+  return { key: k, side, row };
+}
 let dragHl = null;
 function dragWatch(on) {
-  if (!on) { document.removeEventListener('pointermove', dragWatch.fn); document.removeEventListener('mousemove', dragWatch.fn); document.removeEventListener('touchmove', dragWatch.fn); document.querySelectorAll('.stp.drop').forEach((x) => x.classList.remove('drop')); clearInterval(dragWatch.t); return; }
+  if (!on) { document.removeEventListener('pointermove', dragWatch.fn); document.removeEventListener('mousemove', dragWatch.fn); document.removeEventListener('touchmove', dragWatch.fn); document.querySelectorAll('.stp.drop,.stp.insb,.stp.insa').forEach((x) => x.classList.remove('drop', 'insb', 'insa')); clearInterval(dragWatch.t); return; }
   let cy = 0;
-  dragWatch.fn = (e) => { const pt = ptOf(e); if (!pt) return; cy = pt.y; const row = stepRowAt(e); if (dragHl && dragHl !== row) dragHl.classList.remove('drop'); dragHl = row; if (row) row.classList.add('drop'); };
+  dragWatch.fn = (e) => { const pt = ptOf(e); if (!pt) return; cy = pt.y; document.querySelectorAll('.stp.insb,.stp.insa').forEach((x) => x.classList.remove('insb', 'insa')); const ins = insertAt(e); if (ins) { if (dragHl) dragHl.classList.remove('drop'); dragHl = null; ins.row ? ins.row.classList.add(ins.side === 'before' ? 'insb' : 'insa') : (document.querySelector('#flowList .stp[data-k="schedCourse"]') || document.body).classList.add('insb'); return; } const row = stepRowAt(e); if (dragHl && dragHl !== row) dragHl.classList.remove('drop'); dragHl = row; if (row) row.classList.add('drop'); };
   dragWatch.t = setInterval(() => { if (cy && cy < 80) window.scrollBy(0, -14); else if (cy && cy > innerHeight - 80) window.scrollBy(0, 14); }, 16);
   document.addEventListener('pointermove', dragWatch.fn); document.addEventListener('mousemove', dragWatch.fn); document.addEventListener('touchmove', dragWatch.fn, { passive: true });
 }
@@ -742,11 +764,17 @@ function entryBox() {
     (o.mv ? '<div class="handle" aria-label="перетащить">⋮⋮</div>' : '<div class="lock" title="это место менять нельзя">🔒</div>') +
     '<b>' + i + '</b><span class="st-t">' + t + (sub ? '<i>' + sub + '</i>' : '') + '</span>' +
     (o.mv && !window.Sortable ? '<span class="mv"><button type="button" class="chip" data-up="' + k + '" aria-label="выше">▲</button><button type="button" class="chip" data-down="' + k + '" aria-label="ниже">▼</button></span>' : '') +
-    (o.sw ? '<button type="button" class="chip sw' + (o.off ? '' : ' on') + '" data-sw="' + k + '">' + (o.off ? 'выкл' : 'вкл') + '</button>' : '') + '</div>';
+    (o.rm ? '<button type="button" class="chip" data-rm="' + k + '" aria-label="убрать из сценария">✕</button>' : '') + (o.sw ? '<button type="button" class="chip sw' + (o.off ? '' : ' on') + '" data-sw="' + k + '">' + (o.off ? 'выкл' : 'вкл') + '</button>' : '') + '</div>';
   const pt = (k) => { const m = S.msgs.find((x) => x.key === k); const p = m && m.post && S.posts.find((x) => x.id === m.post); return p ? ' · 🔁 твой пост «' + esc((p.title || p.text || '#' + p.id).slice(0, 30)) + '»' : ''; };
   let n = 1;
   let h = row('hello', '👋 Приветствие', 'из аудита приходит выбор: мини-курс или материалы' + pt('hello'), n++, {});
-  fl.order.forEach((k) => { h += row(k, ENTRY[k][0], ENTRY[k][1]() + pt(k), n++, { mv: k !== 'consentPd', sw: opt.includes(k), off: fl.off.includes(k) }); });
+  fl.order.forEach((k) => {
+    if (/^post:\d+$/.test(k)) {
+      const p = S.posts.find((x) => x.id === +k.slice(5));
+      if (!p) return;
+      h += row(k, '🔁 Свой пост «' + esc(postName(p).slice(0, 34)) + '»', 'отдельный шаг: уходит один раз, вход идёт дальше', n++, { mv: true, sw: true, off: fl.off.includes(k), rm: true });
+    } else h += row(k, ENTRY[k][0], ENTRY[k][1]() + pt(k), n++, { mv: k !== 'consentPd', sw: opt.includes(k), off: fl.off.includes(k) });
+  });
   h += row('schedCourse', '🗓 Пост-расписание по треку', 'последний шаг: отсюда считается лента' + pt('schedCourse'), n++, {});
   const miss = !d.policy || !d.consent;
   return '<div class="box"><h3>Вход в бот</h3><p class="small muted" style="margin:0 0 10px">Так бот встречает нового человека. Тяни за ⋮⋮, чтобы поменять порядок; «вкл/выкл» — показывать шаг или пропускать. Нажми на шаг — поменять текст, паузу и кнопки или подставить вместо него свой пост из ленты. Первым всегда стоит согласие на данные — по закону сначала оно.</p><div class="steps" id="flowList">' + h + '</div>' +
@@ -766,14 +794,15 @@ function bindEntry() {
   const list = $('flowList');
   const cur = () => (S.flow || { order: Object.keys(ENTRY), off: [] });
   list.querySelectorAll('.stp[data-k]').forEach((el) => {
-    const open = () => { const k = el.dataset.k; if (k === 'testOffer') { openMsg('testOffer'); return; } openMsg(k); };
-    el.onclick = (e) => { if (e.target.closest('.handle,[data-sw],[data-up],[data-down]')) return; open(); };
+    const open = () => { const k = el.dataset.k; if (/^post:\d+$/.test(k)) { openPost(+k.slice(5)); return; } openMsg(k); };
+    el.onclick = (e) => { if (e.target.closest('.handle,[data-sw],[data-up],[data-down],[data-rm]')) return; open(); };
     el.onkeydown = (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === el) { e.preventDefault(); open(); } };
   });
   list.querySelectorAll('[data-sw]').forEach((b) => b.onclick = () => {
     const f = cur(), k = b.dataset.sw;
     saveFlow(f.order.slice(), f.off.includes(k) ? f.off.filter((x) => x !== k) : [...f.off, k]);
   });
+  list.querySelectorAll('[data-rm]').forEach((b) => b.onclick = () => { const f = cur(), k = b.dataset.rm; saveFlow(f.order.filter((x) => x !== k), f.off.filter((x) => x !== k)); });
   const move = (k, dir) => {
     const f = cur(), o = f.order.slice(), i = o.indexOf(k), j = i + dir;
     if (i < 0 || j < 1 || j >= o.length) return; // на место согласия — нельзя
@@ -922,6 +951,9 @@ function openPost(id, opt) {
     h += '<div class="box" style="margin-top:14px"><h3>Куда поставить этот пост</h3><p class="small muted" style="margin:0 0 8px">Выбери шаг входа: пост заменит шаблонное сообщение (или другой свой пост, если он там уже стоял).</p>' +
       '<select id="bStepSel"><option value="">— выбери шаг —</option>' + steps.map((m) => '<option value="' + m.key + '">' + esc(m.title) + (m.post && m.post !== p.id ? ' (там уже пост #' + m.post + ')' : '') + (m.post === p.id ? ' (уже стоит)' : '') + '</option>').join('') + '</select>' +
       '<div class="btns" style="margin-top:8px"><button class="btn ghost" id="bToSlot" type="button">🔁 Поставить на шаг</button></div>' +
+      '<h3 style="margin-top:16px">Или новым шагом входа — между шагами</h3>' +
+      '<select id="bInsSel">' + (() => { const fl = (S.flow && S.flow.order) || []; const nm = (k) => /^post:/.test(k) ? '🔁 свой пост' : (ENTRY[k] ? ENTRY[k][0] : k); const cur = fl.indexOf('post:' + p.id); return '<option value="0">после согласия на данные</option>' + fl.slice(1).filter((k) => k !== 'post:' + p.id).map((k, i) => '<option value="' + k + '">после «' + esc(nm(k).replace(/^\S+\s/, '')) + '»</option>').join('') + (cur >= 0 ? '' : ''); })() + '</select>' +
+      '<div class="btns" style="margin-top:8px"><button class="btn ghost" id="bToIns" type="button">➕ Вставить шагом</button></div>' +
       '<h3 style="margin-top:16px">Или в ленту по дням — между другими постами</h3>' +
       '<div class="row2"><div><label class="f">День</label><input id="bFeedDay" type="number" min="0" max="365" value="1" inputmode="numeric"></div><div><label class="f">Куда в этом дне</label><select id="bFeedPos"></select></div></div>' +
       '<div class="btns" style="margin-top:8px"><button class="btn ghost" id="bToFeed" type="button">↔ Поставить в ленту</button></div></div>';
@@ -1060,6 +1092,11 @@ function openPost(id, opt) {
       await api('/reorder', { items: order.map((x, i) => ({ id: x.id, day, time: x.time || '11:00', pos: i })) });
       closeSheet(); haptic('medium'); toast('Пост в ленте: день ' + day + ', время ' + time + '. Время можно поменять в самом посте'); await reload();
     } catch (e) { toast(e.message); }
+  };
+  if ($('bToIns')) $('bToIns').onclick = async () => {
+    const f = S.flow, o = f.order.filter((x) => x !== 'post:' + p.id), v = $('bInsSel').value;
+    o.splice(v === '0' ? 1 : o.indexOf(v) + 1, 0, 'post:' + p.id);
+    closeSheet(); haptic('medium'); await saveFlow(o, f.off); toast('Пост теперь отдельный шаг входа');
   };
   if ($('bToSlot')) $('bToSlot').onclick = async () => { const k = $('bStepSel').value; if (!k) { toast('Выбери шаг'); return; } try { const r = await api('/msg/' + k, { post: p.id }); S.msgs = r.msgs; closeSheet(); haptic('medium'); toast('Готово: на этом шаге теперь твой пост'); render(); } catch (e) { toast(e.message); } };
   if ($('bArch')) $('bArch').onclick = async () => { try { await api('/post/' + p.id, { status: 'archived' }); closeSheet(); toast('В архиве. Вернуть можно в боте: /posts → 🗄 Архив'); await reload(); } catch (e) { toast(e.message); } };
