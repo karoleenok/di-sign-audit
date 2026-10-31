@@ -109,6 +109,12 @@ export const MIGRATIONS = [
     `ALTER TABLE users ADD COLUMN sched_at INTEGER`,
     `ALTER TABLE posts ADD COLUMN track TEXT NOT NULL DEFAULT 'all'`,
   ],
+  [
+    `CREATE TABLE IF NOT EXISTS leads (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tg_id INTEGER NOT NULL, source TEXT, created_at INTEGER NOT NULL
+    )`,
+  ],
 ];
 
 // Обновить базу при первом запуске после выкладки новой версии (один раз на процесс)

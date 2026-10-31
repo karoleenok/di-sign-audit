@@ -88,6 +88,8 @@ export const MSG = {
   deleted: ['cmd', '/delete — данные удалены', 'Данные удалены. Спасибо, что были с нами 🐾', []],
   deleteCancel: ['cmd', '/delete — отмена (всплывающее)', 'Ок, ничего не удаляем.', []],
   needStart: ['cmd', 'Если человек не нажал /start', 'Нажми /start 🐾', []],
+  leadThanks: ['cmd', 'Заявка принята (после кнопки «Оставить заявку»)', 'Заявка принята ✨ Мы напишем тебе первыми, как только откроем запись.', []],
+  leadAgain: ['cmd', 'Заявка уже есть (если нажала второй раз)', 'Твоя заявка уже у нас 🐾 Мы напишем тебе, как только откроем запись.', []],
   payLater: ['cmd', 'Кнопка «оплатить», пока оплата не подключена (всплывашка)', 'Оплата откроется в день продаж — анонс придёт сюда, в бот 🐾', []],
   unknown: ['cmd', 'Ответ на непонятное сообщение',
     'Я бот с материалами 🐾 Команды: /level — сменить уровень, /stop — отписаться, /policy — документы, /delete — удалить данные.', []],
@@ -146,11 +148,12 @@ export function cleanRows(rows) {
       const text = String((b && b.text) || '').trim().slice(0, 60);
       let link = String((b && b.url) || '').trim();
       const go = parseInt(b && b.go, 10) || null;
-      if (!text && !link && !go && !(b && (b.doc || b.pay || b.file))) continue;
+      if (!text && !link && !go && !(b && (b.doc || b.pay || b.file || b.lead))) continue;
       if (!text) throw new Error('У кнопки нет текста');
       if (go) { r.push({ text, go }); continue; }
       if (b.file) { const f = cleanFile(b.file); if (!f) throw new Error(`У кнопки «${text}» не выбран файл`); r.push(f.type === 'link' ? { text, url: f.url, file: f } : { text, file: f }); continue; }
       if (b.doc) { if (!['policy', 'consent', 'offer'].includes(b.doc)) throw new Error('Неизвестный документ'); r.push({ text, doc: b.doc }); continue; }
+      if (b.lead) { r.push({ text, lead: true }); continue; }
       if (b.pay) { r.push({ text, pay: ['curator', 'mentor'].includes(b.pay) ? b.pay : 'curator' }); continue; }
       if (/^t\.me\//i.test(link)) link = 'https://' + link;
       if (!/^https?:\/\/\S+$/i.test(link)) throw new Error(`Ссылка у кнопки «${text}» должна начинаться с https://`);
@@ -168,6 +171,7 @@ export async function linkRows(ctx, key) {
   const docs = rows.some((r) => r.some((b) => b.doc)) ? await loadDocs(ctx) : {};
   return rows.map((row, ri) => row.map((b, bi) => {
     if (b.go) return { text: b.text, callback_data: `gm:${key}:${ri}-${bi}` };
+    if (b.lead) return { text: b.text, callback_data: `ld:s:${key}` };
     if (b.pay) return { text: b.text, callback_data: `gp:${key}` };
     if (b.file && b.file.type !== 'link') return { text: b.text, callback_data: `fm:${key}:${ri}-${bi}` };
     if (b.doc) return docs[b.doc] ? { text: b.text, url: docs[b.doc] } : null;

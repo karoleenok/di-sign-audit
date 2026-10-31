@@ -409,6 +409,15 @@ export async function backfillFb(ctx, since, dry, only) {
   return { people, sent, failed, posts: posts.length };
 }
 
+// новая заявка — админам в бот
+async function notifyLead(ctx, u, src) {
+  const ids = new Set([...String(ctx.env.ADMIN_IDS || '').split(/[\s,;]+/).filter(Boolean).map(Number), ...(await ctx.db.all(`SELECT tg_id FROM admins`)).map((r) => r.tg_id)]);
+  const who = (u.contact_name || u.first_name || 'без имени') + (u.username ? ' · @' + u.username : '') + (u.phone ? ' · ' + u.phone : '') + (u.email ? ' · ' + u.email : '');
+  const trk = u.track === 'course' ? 'мини-курс' : u.track === 'mat' ? 'материалы' : '—';
+  const text = `📝 Новая заявка на предзапись\n${who}\nТрек: ${trk}\nОткуда: ${src}` + (u.username || u.phone || u.email ? '' : `\n\n⚠️ Контактов нет — написать можно только через бота: tg://user?id=${u.tg_id}`);
+  for (const a of ids) if (a !== u.tg_id) await ctx.tg.call('sendMessage', { chat_id: a, text: text.slice(0, 4000), disable_notification: false }).catch(() => {});
+}
+
 // новый отзыв о кабинете — админам в бот
 async function notifyAdmins(ctx, u) {
   const ids = new Set([...String(ctx.env.ADMIN_IDS || '').split(/[\s,;]+/).filter(Boolean).map(Number), ...(await ctx.db.all(`SELECT tg_id FROM admins`)).map((r) => r.tg_id)]);
@@ -562,6 +571,19 @@ export async function onUserCallback(ctx, cq) {
     await ctx.db.run(`UPDATE users SET track = ? WHERE tg_id = ?`, [d.slice(3) === 'course' ? 'course' : 'mat', id]);
     await done();
     return nextStep(ctx, await getUser(ctx, id));
+  }
+  if (d.startsWith('ld:')) {
+    // «Оставить заявку»: один раз на человека, админам уходит карточка
+    await answer();
+    if (await ctx.db.first(`SELECT id FROM leads WHERE tg_id = ?`, [id])) { await say(ctx, id, 'leadAgain', {}); return; }
+    let src = 'кнопка';
+    const mp = /^ld:p:(\d+)$/.exec(d), ms = /^ld:s:(\w+)$/.exec(d);
+    if (mp) { const p = await ctx.db.first(`SELECT title, text FROM posts WHERE id = ?`, [+mp[1]]); if (p) src = 'пост «' + String(p.title || p.text || '#' + mp[1]).split('\n')[0].slice(0, 50) + '»'; }
+    else if (ms) src = 'шаг входа «' + ms[1] + '»';
+    await ctx.db.run(`INSERT INTO leads (tg_id, source, created_at) VALUES (?, ?, ?)`, [id, src, ctx.now]);
+    await notifyLead(ctx, u, src);
+    await say(ctx, id, 'leadThanks', {});
+    return;
   }
   if (d.startsWith('buy:')) {
     // оплата тарифа: продамус подключим позже — пока всплывашка

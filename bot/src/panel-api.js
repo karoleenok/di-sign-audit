@@ -220,7 +220,9 @@ export async function handlePanelApi(ctx, request, url) {
     const active = await ctx.db.all(`SELECT id, title FROM posts WHERE kind = 'fb' AND status = 'active'`);
     const by = {};
     for (const d of dl) (by[d.tg_id] = by[d.tg_id] || []).push({ post_id: d.post_id, sent_at: d.sent_at });
+    const leads = await ctx.db.all(`SELECT l.id, l.tg_id, l.source, l.created_at, u.first_name, u.username, u.contact_name, u.phone, u.email, u.track FROM leads l LEFT JOIN users u ON u.tg_id = l.tg_id ORDER BY l.id DESC LIMIT 200`);
     return json({
+      leads,
       active: active.length,
       reviews: rows.map((u) => {
         const sent = by[u.tg_id] || [];
@@ -438,7 +440,7 @@ export async function cleanButtons(ctx, rowsIn, selfId) {
       const text = String(b.text || '').trim().slice(0, 60);
       let link = String(b.url || '').trim();
       const go = parseInt(b.go, 10) || null;
-      if (!text && !link && !go && !b.doc && !b.pay && !b.file) continue;
+      if (!text && !link && !go && !b.doc && !b.pay && !b.file && !b.lead) continue;
       if (!text) return { error: 'У кнопки нет текста' };
       if (go) {
         if (go === selfId) return { error: `Кнопка «${text}» ведёт на этот же пост` };
@@ -448,6 +450,7 @@ export async function cleanButtons(ctx, rowsIn, selfId) {
       }
       if (b.file) { const f = cleanFile(b.file); if (!f) return { error: `У кнопки «${text}» не выбран файл` }; r.push(f.type === 'link' ? { text, url: f.url, file: f } : { text, file: f }); continue; }
       if (b.doc) { if (!DOCS[b.doc]) return { error: 'Неизвестный документ' }; r.push({ text, doc: b.doc }); continue; }
+      if (b.lead) { r.push({ text, lead: true }); continue; }
       if (b.pay) { const pay = ['curator', 'mentor'].includes(b.pay) ? b.pay : 'curator'; r.push({ text, pay }); continue; }
       if (/^t\.me\//i.test(link)) link = 'https://' + link;
       if (!/^https?:\/\/\S+$/i.test(link)) return { error: `Ссылка у кнопки «${text}» должна начинаться с https://` };

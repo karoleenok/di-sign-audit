@@ -708,6 +708,24 @@ step('кнопка «файл»: у шага и у поста по нажати�
     await api('/flow', { order: [], off: [] });
     await db.run(`UPDATE posts SET status = 'archived' WHERE id = ?`, [sp.id]);
   }
+  // кнопка «Оставить заявку»
+  {
+    const lp = (await api('/post/new', { kind: 'node', title: 'С заявкой', md: 'Хочешь в предзапись?', status: 'active', rows: [[{ text: 'Оставить заявку', lead: true }]] })).post;
+    assert.equal(lp.rows[0][0].lead, true, 'кнопка-заявка сохранилась');
+    const Y = 1800;
+    await msg(Y, '/start audit_P_start_course'); await cb(Y, 'c:pd'); await cb(Y, 'c:ads:1');
+    const kb = (await import('../src/posts.js')).keyboard({ id: lp.id, buttons: JSON.stringify(lp.rows) }, Y, 'https://bot.test', {});
+    assert.equal(kb.inline_keyboard[0][0].callback_data, 'ld:p:' + lp.id);
+    const c0 = calls.length;
+    await cb(Y, 'ld:p:' + lp.id);
+    assert.equal((await db.first(`SELECT COUNT(*) AS n FROM leads WHERE tg_id = ?`, [Y])).n, 1, 'заявка записана');
+    assert.ok(calls.slice(c0).some((c) => c.body.chat_id === Y && /Заявка принята/.test(c.body.text || '')), 'человеку «заявка принята»');
+    assert.ok(calls.slice(c0).some((c) => c.body.chat_id === 100 && /Новая заявка/.test(c.body.text || '')), 'админу пришла карточка');
+    await cb(Y, 'ld:p:' + lp.id);
+    assert.equal((await db.first(`SELECT COUNT(*) AS n FROM leads WHERE tg_id = ?`, [Y])).n, 1, 'второй раз не дублируется');
+    assert.equal((await api('/reviews')).leads.length >= 1, true, 'заявки видны в панели');
+    await db.run(`UPDATE posts SET status = 'archived' WHERE id = ?`, [lp.id]);
+  }
   // перенос между лентой и постами для шагов
   {
     const np = (await api('/post/new', { kind: 'drip', title: 'Переносимый', md: 'текст', status: 'active', day: 2, time: '12:00' })).post;
