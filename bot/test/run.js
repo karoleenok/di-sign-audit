@@ -507,6 +507,32 @@ step('шаг пути можно заменить своим постом: те�
   await saveMsgExtra(C(), 'askLevel', { links: [] });
 }
 step('кнопки шага: ссылка, пост, документ, оплата');
+{
+  const { saveMsgExtra } = await import('../src/msgs.js');
+  const file = { type: 'document', file_id: 'BQACAgIAAxkBAAIBfileid123', name: 'чеклист.pdf' };
+  await assert.rejects(() => saveMsgExtra(C(), 'askLevel', { links: [[{ text: 'Файл', file: { type: 'document', file_id: 'x' } }]] }), /не выбран файл/);
+  await saveMsgExtra(C(), 'askLevel', { links: [[{ text: 'Скачать чеклист', file }]] });
+  const c0 = calls.length;
+  await handleUpdate(C(), { message: { message_id: 6301, from: { id: 1500, first_name: 'Лена' }, chat: { id: 1500, type: 'private' }, text: '/start' } });
+  await cb(1500, 'c:pd'); await cb(1500, 'c:ads:1');
+  const kbm = calls.slice(c0).find((c) => c.body.chat_id === 1500 && (c.body.reply_markup?.inline_keyboard || []).flat().some((b) => b.text === 'Скачать чеклист'));
+  assert.ok(kbm, 'кнопка-файл дошла до ученика');
+  const fb = kbm.body.reply_markup.inline_keyboard.flat().find((b) => b.text === 'Скачать чеклист');
+  assert.match(fb.callback_data, /^fm:askLevel:0-0$/);
+  const c1 = calls.length;
+  await cb(1500, fb.callback_data);
+  const sent = calls.slice(c1).find((c) => c.method === 'sendDocument' && c.body.chat_id === 1500);
+  assert.equal(sent && sent.body.document, file.file_id, 'по нажатию ушёл файл');
+  await saveMsgExtra(C(), 'askLevel', { links: [] });
+  // у поста
+  const pid = (await db.first(`SELECT id FROM posts WHERE title = 'Мой привет'`)).id;
+  await db.run(`UPDATE posts SET buttons = ? WHERE id = ?`, [JSON.stringify([[{ text: 'Скачать', file }]]), pid]);
+  const c2 = calls.length;
+  await cb(1500, `fl:${pid}:0-0`);
+  assert.ok(calls.slice(c2).some((c) => c.method === 'sendDocument' && c.body.document === file.file_id), 'кнопка-файл у поста тоже отдаёт файл');
+}
+step('кнопка «файл»: у шага и у поста по нажатию приходит файл');
+
 
 
 

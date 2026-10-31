@@ -1,6 +1,6 @@
 import { ZONES, LEVELS } from './texts.js';
 import { say, btn, msg as msgText, delayOf, linksOf } from './msgs.js';
-import { sendPost, recordDeliveries, loadDocs } from './posts.js';
+import { sendPost, recordDeliveries, loadDocs, sendButtonFile } from './posts.js';
 import { isAdmin } from './admin.js';
 
 const CONSENT_VERSION = 'v1';
@@ -427,6 +427,21 @@ export async function onUserCallback(ctx, cq) {
   if (d === 'del:no') { await answer('deleteCancel'); return done(); }
   if (d.startsWith('go:')) return onGo(ctx, cq, u, answer);
   if (d.startsWith('gp:')) { await ctx.tg.call('answerCallbackQuery', { callback_query_id: cq.id, text: (await msgText(ctx, 'payLater')).text.slice(0, 190), show_alert: true }).catch(() => {}); return; }
+  if (d.startsWith('fl:') || d.startsWith('fm:')) {
+    // кнопка «файл»: присылаем прикреплённый файл
+    await answer();
+    const m = /^(fl|fm):([A-Za-z0-9_]+):(\d+)-(\d+)$/.exec(d);
+    if (!m) return;
+    let rows = [];
+    if (m[1] === 'fl') { const src = await ctx.db.first(`SELECT buttons FROM posts WHERE id = ?`, [+m[2]]); rows = src ? JSON.parse(src.buttons || '[]') : []; }
+    else rows = await linksOf(ctx, m[2]);
+    const b = (rows[+m[3]] || [])[+m[4]];
+    if (!b || !b.file) return;
+    if (m[1] === 'fl') await ctx.db.run(`INSERT INTO clicks (post_id, tg_id, btn, at) VALUES (?, ?, ?, ?)`, [+m[2], id, b.text, ctx.now]);
+    try { await sendButtonFile(ctx.tg, id, b.file); }
+    catch (e) { if (e.code === 403) await ctx.db.run(`UPDATE users SET status = 'blocked' WHERE tg_id = ?`, [id]); }
+    return;
+  }
   if (d.startsWith('gm:')) {
     // кнопка «пост» под служебным сообщением шага: присылаем выбранный пост
     await answer();

@@ -3,7 +3,7 @@
 // (так подделать вход нельзя) и что человек — админ.
 import { isAdmin } from './admin.js';
 import { AUD, LEVELS } from './texts.js';
-import { sendPost, audienceCount, loadDocs, DOCS, TRACKS } from './posts.js';
+import { sendPost, audienceCount, loadDocs, DOCS, TRACKS, cleanFile } from './posts.js';
 import { mdToEntities, entitiesToMd } from './fmt.js';
 import { runPreview, startFastRun, stopRuns, stepRuns, activeRun } from './testrun.js';
 import { onStart, docVars, consentView, loadFlow, normFlow, FLOW_OPTIONAL } from './users.js';
@@ -362,7 +362,7 @@ export async function cleanButtons(ctx, rowsIn, selfId) {
       const text = String(b.text || '').trim().slice(0, 60);
       let link = String(b.url || '').trim();
       const go = parseInt(b.go, 10) || null;
-      if (!text && !link && !go && !b.doc && !b.pay) continue;
+      if (!text && !link && !go && !b.doc && !b.pay && !b.file) continue;
       if (!text) return { error: 'У кнопки нет текста' };
       if (go) {
         if (go === selfId) return { error: `Кнопка «${text}» ведёт на этот же пост` };
@@ -370,6 +370,7 @@ export async function cleanButtons(ctx, rowsIn, selfId) {
         if (!t) return { error: `Пост для кнопки «${text}» не найден` };
         r.push({ text, go }); continue;
       }
+      if (b.file) { const f = cleanFile(b.file); if (!f) return { error: `У кнопки «${text}» не выбран файл` }; r.push({ text, file: f }); continue; }
       if (b.doc) { if (!DOCS[b.doc]) return { error: 'Неизвестный документ' }; r.push({ text, doc: b.doc }); continue; }
       if (b.pay) { const pay = ['curator', 'mentor'].includes(b.pay) ? b.pay : 'curator'; r.push({ text, pay }); continue; }
       if (/^t\.me\//i.test(link)) link = 'https://' + link;

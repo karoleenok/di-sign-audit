@@ -426,15 +426,32 @@ function rowsEditor(el, rows) {
   return () => { sync(); return rows; };
 }
 
+// выбрать файл для кнопки: грузим в Telegram, возвращаем {type, file_id, name}
+function pickBtnFile(done) {
+  const inp = document.createElement('input'); inp.type = 'file';
+  inp.onchange = async () => {
+    const f = inp.files[0]; if (!f) return;
+    toast('Загружаю ' + f.name + '…');
+    const fd = new FormData(); fd.append('file', f);
+    try {
+      const r = await fetch('/api/panel/upload', { method: 'POST', headers: { 'x-init-data': INIT }, body: fd });
+      const d = await r.json().catch(() => ({ error: 'Сервер не ответил' }));
+      if (!r.ok || d.error) throw new Error(d.error || 'Ошибка');
+      d.file.name = f.name; haptic('medium'); toast('Файл загружен ✓'); done(d.file);
+    } catch (e) { toast(f.name + ': ' + e.message); }
+  };
+  inp.click();
+}
 // редактор кнопок шага: ссылка / пост / документ / оплата (как у постов)
 function stepBtnEditor(el, rowsIn) {
-  let rows = rowsIn.map((row) => row.map((b) => Object.assign({ t: b.go ? 'go' : b.doc ? 'doc' : b.pay ? 'pay' : 'url' }, b)));
+  let rows = rowsIn.map((row) => row.map((b) => Object.assign({ t: b.go ? 'go' : b.doc ? 'doc' : b.pay ? 'pay' : b.file ? 'file' : 'url' }, b)));
   const sync = () => { el.querySelectorAll('[data-f]').forEach((i) => { const r = +i.dataset.r, k = +i.dataset.i; if (rows[r] && rows[r][k]) rows[r][k][i.dataset.f] = i.value; }); };
   const optPosts = (cur) => '<option value="">— выбери пост —</option>' + ['node', 'drip', 'date', 'gift'].map((k) => { const l = S.posts.filter((x) => x.kind === k); return l.length ? '<optgroup label="' + KIND[k] + '">' + l.map((x) => '<option value="' + x.id + '"' + (+cur === x.id ? ' selected' : '') + '>' + esc(postName(x).slice(0, 44)) + '</option>').join('') + '</optgroup>' : ''; }).join('');
   const field = (b, r, i) => {
     const a = 'data-r="' + r + '" data-i="' + i + '"';
     if (b.t === 'go') return '<select ' + a + ' data-f="go">' + optPosts(b.go) + '</select>';
     if (b.t === 'doc') return '<select ' + a + ' data-f="doc">' + Object.keys(S.docNames).map((k) => '<option value="' + k + '"' + (b.doc === k ? ' selected' : '') + '>' + esc(S.docNames[k]) + (S.docs[k] ? '' : ' — ссылка не задана') + '</option>').join('') + '</select>';
+    if (b.t === 'file') return '<div class="small" style="margin:4px 2px">' + (b.file ? '📎 ' + esc(b.file.name || b.file.type) : 'файл не выбран') + '</div><button type="button" class="chip" data-pick="' + r + ':' + i + '">' + (b.file ? 'заменить файл' : '＋ выбрать файл') + '</button><p class="small muted" style="margin:4px 2px 0">По нажатию бот пришлёт этот файл в чат (до 50 МБ).</p>';
     if (b.t === 'pay') return '<select ' + a + ' data-f="pay">' + Object.keys(TARIFF).map((k) => '<option value="' + k + '"' + (b.pay === k ? ' selected' : '') + '>' + TARIFF[k] + '</option>').join('') + '</select>';
     return '<input type="text" placeholder="https://ссылка" inputmode="url" ' + a + ' data-f="url" value="' + esc(b.url || '') + '">';
   };
@@ -442,13 +459,14 @@ function stepBtnEditor(el, rowsIn) {
     el.innerHTML = (rows.length ? rows.map((row, r) => '<div class="brow"><div class="row" style="justify-content:space-between;margin-bottom:6px"><span class="small muted">Ряд ' + (r + 1) + '</span><span>' +
       (r > 0 ? '<button type="button" class="chip" data-up="' + r + '">↑</button> ' : '') + (r < rows.length - 1 ? '<button type="button" class="chip" data-down="' + r + '">↓</button>' : '') + '</span></div>' +
       row.map((b, i) => '<div class="bcard"><div style="display:grid;grid-template-columns:1fr auto;gap:6px"><input type="text" placeholder="Текст кнопки" maxlength="60" data-r="' + r + '" data-i="' + i + '" data-f="text" value="' + esc(b.text || '') + '"><button type="button" class="chip" data-del="' + r + ':' + i + '">✕</button></div>' +
-        '<div class="btype">' + [['url', '🔗 Ссылка'], ['go', '➡️ Пост'], ['doc', '📄 Документ'], ['pay', '💳 Оплата']].map(([k, t]) => '<button type="button" data-type="' + k + '" data-r="' + r + '" data-i="' + i + '" class="' + (b.t === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>' + field(b, r, i) + '</div>').join('') +
+        '<div class="btype">' + [['url', '🔗 Ссылка'], ['go', '➡️ Пост'], ['doc', '📄 Документ'], ['pay', '💳 Оплата'], ['file', '📎 Файл']].map(([k, t]) => '<button type="button" data-type="' + k + '" data-r="' + r + '" data-i="' + i + '" class="' + (b.t === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>' + field(b, r, i) + '</div>').join('') +
       (row.length < 4 ? '<button type="button" class="chip" data-add="' + r + '">＋ кнопка рядом</button>' : '') + '</div>').join('') : '<p class="small muted" style="margin:2px">Своих кнопок нет.</p>') +
       '<button type="button" class="btn ghost" data-newrow="1" style="margin-top:6px">＋ Кнопка</button>';
   };
   el.addEventListener('input', sync); el.addEventListener('change', sync);
   el.addEventListener('click', (e) => {
     const t = e.target.closest('button'); if (!t) return; sync();
+    if (t.dataset.pick) { const [r, i] = t.dataset.pick.split(':').map(Number); pickBtnFile((f) => { rows[r][i].file = f; draw(); }); return; }
     if (t.dataset.type) { const b = rows[+t.dataset.r][+t.dataset.i]; b.t = t.dataset.type; if (b.t === 'doc' && !b.doc) b.doc = 'policy'; if (b.t === 'pay' && !b.pay) b.pay = 'curator'; }
     else if (t.dataset.newrow) rows.push([{ t: 'url', text: '', url: '' }]);
     else if (t.dataset.add !== undefined) { const rr = rows[+t.dataset.add]; rr.push({ t: rr[rr.length - 1].t, text: '', url: '', go: '', doc: 'policy', pay: 'curator' }); }
@@ -459,7 +477,7 @@ function stepBtnEditor(el, rowsIn) {
     haptic(); draw();
   });
   draw();
-  return () => { sync(); return rows.map((row) => row.map((b) => b.t === 'go' ? { text: b.text, go: +b.go || null } : b.t === 'doc' ? { text: b.text, doc: b.doc } : b.t === 'pay' ? { text: b.text, pay: b.pay } : { text: b.text, url: b.url })); };
+  return () => { sync(); return rows.map((row) => row.map((b) => b.t === 'go' ? { text: b.text, go: +b.go || null } : b.t === 'doc' ? { text: b.text, doc: b.doc } : b.t === 'pay' ? { text: b.text, pay: b.pay } : b.t === 'file' ? { text: b.text, file: b.file || null } : { text: b.text, url: b.url })); };
 }
 
 function bindCards() {
@@ -778,7 +796,7 @@ function openPost(id, opt) {
   segBind('fSt', (v) => st.status = v);
 
   // кнопки: ссылка / пост / документ / оплата
-  let rows = JSON.parse(JSON.stringify(p.rows || [])).map((row) => row.map((b) => Object.assign({ t: b.go ? 'go' : b.doc ? 'doc' : b.pay ? 'pay' : 'url' }, b)));
+  let rows = JSON.parse(JSON.stringify(p.rows || [])).map((row) => row.map((b) => Object.assign({ t: b.go ? 'go' : b.doc ? 'doc' : b.pay ? 'pay' : b.file ? 'file' : 'url' }, b)));
   const targets = S.posts.filter((x) => x.id !== p.id);
   const optPosts = (cur) => '<option value="">— выбери пост —</option><option value="new"' + (cur === 'new' ? ' selected' : '') + '>＋ Новый пост-ответ (создам пустой)</option>' +
     ['node', 'drip', 'date', 'gift'].map((k) => { const l = targets.filter((x) => x.kind === k); return l.length ? '<optgroup label="' + KIND[k] + '">' + l.map((x) => '<option value="' + x.id + '"' + (+cur === x.id ? ' selected' : '') + '>' + esc(postName(x).slice(0, 44)) + (x.status !== 'active' ? ' · ' + (x.status === 'draft' ? 'черновик' : 'пауза') : '') + '</option>').join('') + '</optgroup>' : ''; }).join('');
@@ -786,6 +804,7 @@ function openPost(id, opt) {
     const a = 'data-r="' + r + '" data-i="' + i + '"';
     if (b.t === 'go') return '<select ' + a + ' data-f="go">' + optPosts(b.go) + '</select>';
     if (b.t === 'doc') return '<select ' + a + ' data-f="doc">' + Object.keys(S.docNames).map((k) => '<option value="' + k + '"' + (b.doc === k ? ' selected' : '') + '>' + esc(S.docNames[k]) + (S.docs[k] ? '' : ' — ссылка не задана') + '</option>').join('') + '</select>';
+    if (b.t === 'file') return '<div class="small" style="margin:4px 2px">' + (b.file ? '📎 ' + esc(b.file.name || b.file.type) : 'файл не выбран') + '</div><button type="button" class="chip" data-pick="' + r + ':' + i + '">' + (b.file ? 'заменить файл' : '＋ выбрать файл') + '</button><p class="small muted" style="margin:4px 2px 0">По нажатию бот пришлёт этот файл в чат (до 50 МБ).</p>';
     if (b.t === 'pay') return '<select ' + a + ' data-f="pay">' + Object.keys(TARIFF).map((k) => '<option value="' + k + '"' + (b.pay === k ? ' selected' : '') + '>' + TARIFF[k] + '</option>').join('') + '</select><p class="small muted" style="margin:2px">Оплату через продамус подключим позже — пока кнопка отвечает «откроется в день продаж».</p>';
     return '<input type="text" placeholder="https://ссылка" inputmode="url" ' + a + ' data-f="url" value="' + esc(b.url || '') + '">';
   };
@@ -795,16 +814,17 @@ function openPost(id, opt) {
       '<div class="brow"><div class="row" style="justify-content:space-between;margin-bottom:6px"><span class="small muted">' + (row.length > 1 ? 'Ряд ' + (r + 1) + ' · кнопки рядом' : 'Ряд ' + (r + 1)) + '</span><span>' +
       (r > 0 ? '<button type="button" class="chip" data-up="' + r + '" aria-label="выше">↑</button> ' : '') + (r < rows.length - 1 ? '<button type="button" class="chip" data-down="' + r + '" aria-label="ниже">↓</button>' : '') + '</span></div>' +
       row.map((b, i) => '<div class="bcard"><div style="display:grid;grid-template-columns:1fr auto;gap:6px"><input type="text" placeholder="Текст кнопки" maxlength="60" data-r="' + r + '" data-i="' + i + '" data-f="text" value="' + esc(b.text || '') + '"><button type="button" class="chip" data-del="' + r + ':' + i + '" aria-label="убрать кнопку">✕</button></div>' +
-        '<div class="btype">' + [['url', '🔗 Ссылка'], ['go', '➡️ Пост'], ['doc', '📄 Документ'], ['pay', '💳 Оплата']].map(([k, t]) => '<button type="button" data-type="' + k + '" data-r="' + r + '" data-i="' + i + '" class="' + (b.t === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>' + valueField(b, r, i) + '</div>').join('') +
+        '<div class="btype">' + [['url', '🔗 Ссылка'], ['go', '➡️ Пост'], ['doc', '📄 Документ'], ['pay', '💳 Оплата'], ['file', '📎 Файл']].map(([k, t]) => '<button type="button" data-type="' + k + '" data-r="' + r + '" data-i="' + i + '" class="' + (b.t === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>' + valueField(b, r, i) + '</div>').join('') +
       (row.length < 4 ? '<button type="button" class="chip" data-add="' + r + '">＋ кнопка рядом</button>' : '') + '</div>').join('')
       + '<button type="button" class="addb" id="bClear" data-clear="1">убрать все кнопки</button>'
-      : '<p class="small muted" style="margin:2px">Кнопок нет. Кнопка может вести на ссылку, на другой пост бота (развилка), на документ или на оплату тарифа.</p>';
+      : '<p class="small muted" style="margin:2px">Кнопок нет. Кнопка может вести на ссылку, на другой пост бота (развилка), на документ, на оплату тарифа или отдавать файл.</p>';
     $('onceWrap').style.display = rows.some((row) => row.some((b) => b.t === 'go')) ? '' : 'none';
   };
   $('bEd').addEventListener('input', sync);
   $('bEd').addEventListener('change', sync);
   $('bEd').addEventListener('click', (e) => {
     const t = e.target.closest('button'); if (!t) return; sync();
+    if (t.dataset.pick) { const [r, i] = t.dataset.pick.split(':').map(Number); pickBtnFile((f) => { rows[r][i].file = f; drawRows(); }); return; }
     if (t.dataset.type) { const b = rows[+t.dataset.r][+t.dataset.i]; b.t = t.dataset.type; if (b.t === 'doc' && !b.doc) b.doc = 'policy'; if (b.t === 'pay' && !b.pay) b.pay = 'curator'; }
     if (t.dataset.add !== undefined) { const rr = rows[+t.dataset.add]; rr.push({ t: rr[rr.length - 1].t, text: '', url: '', go: '', doc: 'policy', pay: 'curator' }); }
     if (t.dataset.clear) rows = [];
@@ -839,8 +859,8 @@ function openPost(id, opt) {
           b.go = r.post.id; created.push(r.post.id);
         }
       }
-      const outRows = rows.map((row) => row.map((b) => b.t === 'go' ? { text: b.text, go: +b.go || null } : b.t === 'doc' ? { text: b.text, doc: b.doc } : b.t === 'pay' ? { text: b.text, pay: b.pay } : { text: b.text, url: b.url }));
-      for (const b of outRows.flat()) if (b.go === null && b.text) throw new Error('У кнопки «' + b.text + '» не выбран пост');
+      const outRows = rows.map((row) => row.map((b) => b.t === 'go' ? { text: b.text, go: +b.go || null } : b.t === 'doc' ? { text: b.text, doc: b.doc } : b.t === 'pay' ? { text: b.text, pay: b.pay } : b.t === 'file' ? { text: b.text, file: b.file || null } : { text: b.text, url: b.url }));
+      for (const b of outRows.flat()) { if (b.go === null && b.text) throw new Error('У кнопки «' + b.text + '» не выбран пост'); if (b.file === null) throw new Error('У кнопки «' + b.text + '» не выбран файл'); }
       const body = { title: $('fTitle').value.trim(), status: st.status, rows: outRows, once: $('fOnce').checked, files: st.files };
       if (!p.rich || st.editRich) body.md = ta.value;
       if (p.kind !== 'node' && p.kind !== 'fb') { body.audience = st.audience; body.track = st.track; }
@@ -884,7 +904,7 @@ function openMsg(key) {
       '<input type="file" id="mFile" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4" hidden><p class="small muted" style="margin:6px 2px 0">Текст станет подписью под картинкой (до 1024 знаков — длиннее уйдёт следующим сообщением).</p>' : '') +
     (m.canMedia ? '<label class="f">Подставить свой пост вместо этого шаблона</label><select id="mPost"><option value="">— нет, оставить шаблон —</option>' + (S.posts || []).map((p) => '<option value="' + p.id + '"' + (m.post === p.id ? ' selected' : '') + '>#' + p.id + ' · ' + esc((p.title || p.text || 'без названия').slice(0, 40)) + '</option>').join('') + '</select><p class="small muted" style="margin:6px 2px 0">Ученик получит выбранный пост (текст, картинки и все его кнопки: ссылки, другие посты, документы). Кнопки самого шага — «Даю согласие», «Всё верно» и т.п. — встанут под кнопками поста, чтобы путь не сломался. Пока выбран пост, текст шаблона выше не показывается.</p>' : '') +
     (m.canMedia ? '<label class="f">Пауза перед сообщением</label><div class="row"><input type="text" inputmode="decimal" id="mDelay" style="width:90px" value="' + String(m.delay).replace('.', ',') + '"><span class="muted">сек — столько бот «печатает» (• • •) перед ним' + (m.delay !== m.defDelay ? ' · было ' + String(m.defDelay).replace('.', ',') : '') + '</span></div>' +
-      '<label class="f">Кнопки под сообщением</label>' + builtinBtns(m.key) + '<div id="mLinks"></div><p class="small muted" style="margin:6px 2px 0">Кнопка может вести на ссылку, на другой пост бота, на документ или на оплату тарифа. Встают под встроенными кнопками шага.</p>' : '') +
+      '<label class="f">Кнопки под сообщением</label>' + builtinBtns(m.key) + '<div id="mLinks"></div><p class="small muted" style="margin:6px 2px 0">Кнопка может вести на ссылку, на другой пост бота, на документ, на оплату тарифа или отдавать файл. Встают под встроенными кнопками шага.</p>' : '') +
     (m.vars.length ? '<p class="small muted" style="margin:10px 2px 0">Нажми, чтобы вставить — бот подставит сам:</p><div class="vars" id="mVars">' + m.vars.map((v) => '<button type="button" data-v="{' + v + '}">{' + v + '}</button>').join('') + '</div>' : '') +
     '<div class="btns"><button class="btn" id="mSave">Сохранить</button><div class="btns two" style="margin:0"><button class="btn ghost" id="mPrev">👁 Прислать мне</button><button class="btn ghost" id="mClose">Закрыть</button></div>' +
     (m.changed ? '<button class="btn danger" id="mReset">↩️ Вернуть текст по умолчанию</button>' : '') + '</div>' +

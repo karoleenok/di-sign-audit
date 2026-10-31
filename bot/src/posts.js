@@ -8,6 +8,7 @@ const j = (s, d) => { try { return s ? JSON.parse(s) : d; } catch { return d; } 
 //   url — ссылка (идёт через наш адрес /r/..., чтобы считать нажатия)
 //   go  — открыть другой пост этого бота (пост-ответ, развилка)
 //   doc — документ: политика, согласие, оферта (ссылка из настроек панели)
+//   file — файл: по нажатию бот присылает его в чат ({type, file_id, name})
 //   pay — оплата тарифа (продамус подключим позже — пока кнопка отвечает «скоро»)
 export const TRACKS = { all: 'всем', course: 'мини-курс', mat: 'материалы' };
 export const DOCS = { policy: 'Политика обработки данных', consent: 'Согласие на обработку данных', offer: 'Оферта' };
@@ -17,6 +18,7 @@ export function keyboard(post, uid, publicUrl, docs) {
   const out = rows.map((row, ri) => row.map((b, bi) => {
     if (b.go) return { text: b.text, callback_data: post.id ? `go:${post.id}:${ri}-${bi}` : 'go:x' };
     if (b.pay) return { text: b.text, callback_data: post.id ? `buy:${post.id}:${ri}-${bi}` : 'buy:x' };
+    if (b.file) return { text: b.text, callback_data: post.id ? `fl:${post.id}:${ri}-${bi}` : 'fl:x' };
     if (b.doc) { const u = docs && docs[b.doc]; return u ? { text: b.text, url: u } : null; }
     return { text: b.text, url: publicUrl && post.id ? `${publicUrl}/r/${post.id}/${ri}-${bi}/${uid || 0}` : b.url };
   }).filter(Boolean)).filter((r) => r.length);
@@ -201,4 +203,15 @@ export async function loadDocs(ctx) {
     owner: o.owner || env.OWNER_INFO || '',
   };
   return ctx._docs;
+}
+
+// файл кнопки: отправить человеку
+const FILE_METHOD = { photo: 'sendPhoto', video: 'sendVideo', animation: 'sendAnimation', document: 'sendDocument' };
+export const FILE_TYPES = Object.keys(FILE_METHOD);
+export function cleanFile(f) {
+  if (!f || !FILE_TYPES.includes(f.type) || !/^[\w-]{10,200}$/.test(String(f.file_id || ''))) return null;
+  return { type: f.type, file_id: String(f.file_id), name: String(f.name || '').slice(0, 80) };
+}
+export async function sendButtonFile(tg, chatId, f) {
+  return tg.call(FILE_METHOD[f.type] || 'sendDocument', { chat_id: chatId, [FILE_METHOD[f.type] ? f.type : 'document']: f.file_id });
 }
