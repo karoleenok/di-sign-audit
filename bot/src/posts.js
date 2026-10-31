@@ -18,7 +18,7 @@ export function keyboard(post, uid, publicUrl, docs) {
   const out = rows.map((row, ri) => row.map((b, bi) => {
     if (b.go) return { text: b.text, callback_data: post.id ? `go:${post.id}:${ri}-${bi}` : 'go:x' };
     if (b.pay) return { text: b.text, callback_data: post.id ? `buy:${post.id}:${ri}-${bi}` : 'buy:x' };
-    if (b.file) return { text: b.text, callback_data: post.id ? `fl:${post.id}:${ri}-${bi}` : 'fl:x' };
+    if (b.file && b.file.type !== 'link') return { text: b.text, callback_data: post.id ? `fl:${post.id}:${ri}-${bi}` : 'fl:x' };
     if (b.doc) { const u = docs && docs[b.doc]; return u ? { text: b.text, url: u } : null; }
     return { text: b.text, url: publicUrl && post.id ? `${publicUrl}/r/${post.id}/${ri}-${bi}/${uid || 0}` : b.url };
   }).filter(Boolean)).filter((r) => r.length);
@@ -209,6 +209,11 @@ export async function loadDocs(ctx) {
 const FILE_METHOD = { photo: 'sendPhoto', video: 'sendVideo', animation: 'sendAnimation', document: 'sendDocument' };
 export const FILE_TYPES = Object.keys(FILE_METHOD);
 export function cleanFile(f) {
+  // большой файл лежит на нашем сервере: кнопка просто открывает ссылку
+  if (f && f.type === 'link') {
+    if (!/^https:\/\/[^\s]+\/f\/[a-z0-9]{24}\/[^\s]*$/i.test(String(f.url || ''))) return null;
+    return { type: 'link', url: String(f.url), name: String(f.name || '').slice(0, 80), size: Number(f.size) || 0 };
+  }
   if (!f || !FILE_TYPES.includes(f.type) || !/^[\w-]{10,200}$/.test(String(f.file_id || ''))) return null;
   return { type: f.type, file_id: String(f.file_id), name: String(f.name || '').slice(0, 80) };
 }

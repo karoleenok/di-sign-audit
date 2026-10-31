@@ -149,7 +149,7 @@ export function cleanRows(rows) {
       if (!text && !link && !go && !(b && (b.doc || b.pay || b.file))) continue;
       if (!text) throw new Error('У кнопки нет текста');
       if (go) { r.push({ text, go }); continue; }
-      if (b.file) { const f = cleanFile(b.file); if (!f) throw new Error(`У кнопки «${text}» не выбран файл`); r.push({ text, file: f }); continue; }
+      if (b.file) { const f = cleanFile(b.file); if (!f) throw new Error(`У кнопки «${text}» не выбран файл`); r.push(f.type === 'link' ? { text, url: f.url, file: f } : { text, file: f }); continue; }
       if (b.doc) { if (!['policy', 'consent', 'offer'].includes(b.doc)) throw new Error('Неизвестный документ'); r.push({ text, doc: b.doc }); continue; }
       if (b.pay) { r.push({ text, pay: ['curator', 'mentor'].includes(b.pay) ? b.pay : 'curator' }); continue; }
       if (/^t\.me\//i.test(link)) link = 'https://' + link;
@@ -169,7 +169,7 @@ export async function linkRows(ctx, key) {
   return rows.map((row, ri) => row.map((b, bi) => {
     if (b.go) return { text: b.text, callback_data: `gm:${key}:${ri}-${bi}` };
     if (b.pay) return { text: b.text, callback_data: `gp:${key}` };
-    if (b.file) return { text: b.text, callback_data: `fm:${key}:${ri}-${bi}` };
+    if (b.file && b.file.type !== 'link') return { text: b.text, callback_data: `fm:${key}:${ri}-${bi}` };
     if (b.doc) return docs[b.doc] ? { text: b.text, url: docs[b.doc] } : null;
     return { text: b.text, url: b.url };
   }).filter(Boolean)).filter((r) => r.length);

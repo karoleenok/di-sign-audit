@@ -531,6 +531,16 @@ step('кнопки шага: ссылка, пост, документ, опла�
   await cb(1500, `fl:${pid}:0-0`);
   assert.ok(calls.slice(c2).some((c) => c.method === 'sendDocument' && c.body.document === file.file_id), 'кнопка-файл у поста тоже отдаёт файл');
 }
+
+{
+  const { saveMsgExtra, linkRows } = await import('../src/msgs.js');
+  const big = { type: 'link', url: 'https://bot.test/f/0123456789abcdef01234567/%D1%84.pdf', name: 'большой.pdf', size: 99000000 };
+  await assert.rejects(() => saveMsgExtra(C(), 'askLevel', { links: [[{ text: 'Скачать', file: { type: 'link', url: 'https://evil.test/x' } }]] }), /не выбран файл/);
+  await saveMsgExtra(C(), 'askLevel', { links: [[{ text: 'Большой файл', file: big }]] });
+  const rows = await linkRows(C(), 'askLevel');
+  assert.equal(rows[0][0].url, big.url, 'большой файл — обычная ссылка-кнопка на наш сервер');
+  await saveMsgExtra(C(), 'askLevel', { links: [] });
+}
 step('кнопка «файл»: у шага и у поста по нажатию приходит файл');
 
 

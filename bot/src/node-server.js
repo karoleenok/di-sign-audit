@@ -9,10 +9,11 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import crypto from 'node:crypto';
 import { nodeSqliteAdapter } from './db-node.js';
 import { migrate } from './schema.js';
 import { makeCtx, handleUpdate, tick, setup, clickRedirect, exportAll } from './core.js';
-import { handlePanelApi } from './panel-api.js';
+import { handlePanelApi, panelAdmin } from './panel-api.js';
 import { stepRuns } from './testrun.js';
 import PANEL from './panel-html.js';
 
@@ -54,6 +55,38 @@ const server = http.createServer(async (req, res) => {
   try {
     // панель админа (кнопка в боте) и её API
     if (url.pathname === '/admin' || url.pathname === '/admin/') return send(200, PANEL, 'text/html; charset=utf-8', { 'cache-control': 'no-store' });
+    // большие файлы для кнопок: кладём на диск сервера (Telegram принимает от бота не больше 50 МБ)
+    if (url.pathname === '/api/panel/bigfile' && req.method === 'POST') {
+      const hdr = new Headers(); for (const [k, v] of Object.entries(req.headers)) if (typeof v === 'string') hdr.set(k, v);
+      const user = await panelAdmin(ctxFor(), new Request(url, { method: 'GET', headers: hdr }));
+      if (!user) { res.writeHead(401, { 'content-type': 'application/json' }); return res.end('{"error":"Открой панель из бота: /admin"}'); }
+      const MAX = 1024 * 1024 * 1024;
+      const len = Number(req.headers['content-length'] || 0);
+      const fail = (code, msg) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: msg })); };
+      if (len > MAX) { req.resume(); return fail(400, 'Файл больше 1 ГБ — на сервере столько не держим'); }
+      const name = (url.searchParams.get('name') || 'file').replace(/[\\/\r\n"]+/g, '_').slice(0, 80) || 'file';
+      const token = crypto.randomBytes(18).toString('hex').slice(0, 24);
+      const dir = path.join(path.dirname(file), 'files'); fs.mkdirSync(dir, { recursive: true });
+      const target = path.join(dir, token);
+      let size = 0, tooBig = false;
+      const out = fs.createWriteStream(target);
+      req.on('data', (c) => { size += c.length; if (size > MAX && !tooBig) { tooBig = true; req.destroy(); out.destroy(); } });
+      await new Promise((ok) => { req.pipe(out); out.on('finish', ok); out.on('error', ok); req.on('error', ok); req.on('close', ok); });
+      if (tooBig || (len && size < len)) { fs.rmSync(target, { force: true }); return fail(400, 'Файл не дозагрузился — попробуй ещё раз'); }
+      fs.writeFileSync(target + '.json', JSON.stringify({ name, type: url.searchParams.get('type') || '', size }));
+      const base = env.PUBLIC_URL || ('https://' + (req.headers.host || 'localhost'));
+      res.writeHead(200, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify({ ok: true, file: { type: 'link', url: `${base}/f/${token}/${encodeURIComponent(name)}`, name, size } }));
+    }
+    // открытая ссылка на такой файл
+    { const fm = /^\/f\/([a-z0-9]{24})\//.exec(url.pathname);
+      if (fm) {
+        const target = path.join(path.dirname(file), 'files', fm[1]);
+        let meta; try { meta = JSON.parse(fs.readFileSync(target + '.json', 'utf8')); } catch { res.writeHead(404); return res.end('not found'); }
+        res.writeHead(200, { 'content-type': meta.type || 'application/octet-stream', 'content-length': meta.size, 'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(meta.name)}`, 'cache-control': 'public, max-age=3600' });
+        if (req.method === 'HEAD') return res.end();
+        return fs.createReadStream(target).pipe(res);
+      } }
     if (url.pathname.startsWith('/api/panel/')) {
       const chunks = []; for await (const ch of req) chunks.push(ch);
       const body = Buffer.concat(chunks);

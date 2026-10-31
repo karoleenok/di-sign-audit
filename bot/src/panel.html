@@ -431,10 +431,13 @@ function pickBtnFile(done) {
   const inp = document.createElement('input'); inp.type = 'file';
   inp.onchange = async () => {
     const f = inp.files[0]; if (!f) return;
-    toast('Загружаю ' + f.name + '…');
-    const fd = new FormData(); fd.append('file', f);
+    const big = f.size > 45 * 1048576; // Telegram принимает от бота до 50 МБ — большие кладём на наш сервер и даём ссылку
+    if (f.size > 1024 * 1048576) return toast('Файл больше 1 ГБ — на сервере столько не держим');
+    toast('Загружаю ' + f.name + ' · ' + (f.size > 1048576 ? (f.size / 1048576).toFixed(1) + ' МБ' : Math.round(f.size / 1024) + ' КБ') + (big ? ' — большой, подожди' : ''));
     try {
-      const r = await fetch('/api/panel/upload', { method: 'POST', headers: { 'x-init-data': INIT }, body: fd });
+      let r;
+      if (big) r = await fetch('/api/panel/bigfile?name=' + encodeURIComponent(f.name) + '&type=' + encodeURIComponent(f.type || ''), { method: 'POST', headers: { 'x-init-data': INIT, 'content-type': 'application/octet-stream' }, body: f });
+      else { const fd = new FormData(); fd.append('file', f); r = await fetch('/api/panel/upload', { method: 'POST', headers: { 'x-init-data': INIT }, body: fd }); }
       const d = await r.json().catch(() => ({ error: 'Сервер не ответил' }));
       if (!r.ok || d.error) throw new Error(d.error || 'Ошибка');
       d.file.name = f.name; haptic('medium'); toast('Файл загружен ✓'); done(d.file);
@@ -451,7 +454,7 @@ function stepBtnEditor(el, rowsIn) {
     const a = 'data-r="' + r + '" data-i="' + i + '"';
     if (b.t === 'go') return '<select ' + a + ' data-f="go">' + optPosts(b.go) + '</select>';
     if (b.t === 'doc') return '<select ' + a + ' data-f="doc">' + Object.keys(S.docNames).map((k) => '<option value="' + k + '"' + (b.doc === k ? ' selected' : '') + '>' + esc(S.docNames[k]) + (S.docs[k] ? '' : ' — ссылка не задана') + '</option>').join('') + '</select>';
-    if (b.t === 'file') return '<div class="small" style="margin:4px 2px">' + (b.file ? '📎 ' + esc(b.file.name || b.file.type) : 'файл не выбран') + '</div><button type="button" class="chip" data-pick="' + r + ':' + i + '">' + (b.file ? 'заменить файл' : '＋ выбрать файл') + '</button><p class="small muted" style="margin:4px 2px 0">По нажатию бот пришлёт этот файл в чат (до 50 МБ).</p>';
+    if (b.t === 'file') return '<div class="small" style="margin:4px 2px">' + (b.file ? '📎 ' + esc(b.file.name || b.file.type) : 'файл не выбран') + '</div><button type="button" class="chip" data-pick="' + r + ':' + i + '">' + (b.file ? 'заменить файл' : '＋ выбрать файл') + '</button><p class="small muted" style="margin:4px 2px 0">По нажатию бот пришлёт файл в чат (до 45 МБ). Файлы больше — до 1 ГБ — лежат на нашем сервере, кнопка откроет ссылку на скачивание.</p>';
     if (b.t === 'pay') return '<select ' + a + ' data-f="pay">' + Object.keys(TARIFF).map((k) => '<option value="' + k + '"' + (b.pay === k ? ' selected' : '') + '>' + TARIFF[k] + '</option>').join('') + '</select>';
     return '<input type="text" placeholder="https://ссылка" inputmode="url" ' + a + ' data-f="url" value="' + esc(b.url || '') + '">';
   };

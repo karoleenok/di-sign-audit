@@ -53,6 +53,11 @@ function postOut(p, sent, clicks) {
   };
 }
 
+// админ по подписи Telegram (для загрузки больших файлов отдельным запросом)
+export async function panelAdmin(ctx, request) {
+  const user = await checkInitData(request.headers.get('x-init-data') || '', ctx.env.BOT_TOKEN, ctx.now);
+  return user && (await isAdmin(ctx, user.id)) ? user : null;
+}
 export async function handlePanelApi(ctx, request, url) {
   const init = request.headers.get('x-init-data') || '';
   const user = await checkInitData(init, ctx.env.BOT_TOKEN, ctx.now);
@@ -370,7 +375,7 @@ export async function cleanButtons(ctx, rowsIn, selfId) {
         if (!t) return { error: `Пост для кнопки «${text}» не найден` };
         r.push({ text, go }); continue;
       }
-      if (b.file) { const f = cleanFile(b.file); if (!f) return { error: `У кнопки «${text}» не выбран файл` }; r.push({ text, file: f }); continue; }
+      if (b.file) { const f = cleanFile(b.file); if (!f) return { error: `У кнопки «${text}» не выбран файл` }; r.push(f.type === 'link' ? { text, url: f.url, file: f } : { text, file: f }); continue; }
       if (b.doc) { if (!DOCS[b.doc]) return { error: 'Неизвестный документ' }; r.push({ text, doc: b.doc }); continue; }
       if (b.pay) { const pay = ['curator', 'mentor'].includes(b.pay) ? b.pay : 'curator'; r.push({ text, pay }); continue; }
       if (/^t\.me\//i.test(link)) link = 'https://' + link;
