@@ -156,6 +156,7 @@ textarea{min-height:120px;resize:vertical;line-height:1.45}
 .btype button.on{background:var(--card);box-shadow:var(--shadow);font-weight:600}
 @media (max-width:360px){ .btype{grid-template-columns:repeat(2,1fr)} }
 
+.row2{display:grid;grid-template-columns:90px 1fr;gap:10px}
 </style>
 </head>
 <body>
@@ -920,7 +921,10 @@ function openPost(id, opt) {
     const steps = (S.msgs || []).filter((m) => m.canMedia);
     h += '<div class="box" style="margin-top:14px"><h3>Куда поставить этот пост</h3><p class="small muted" style="margin:0 0 8px">Выбери шаг входа: пост заменит шаблонное сообщение (или другой свой пост, если он там уже стоял).</p>' +
       '<select id="bStepSel"><option value="">— выбери шаг —</option>' + steps.map((m) => '<option value="' + m.key + '">' + esc(m.title) + (m.post && m.post !== p.id ? ' (там уже пост #' + m.post + ')' : '') + (m.post === p.id ? ' (уже стоит)' : '') + '</option>').join('') + '</select>' +
-      '<div class="btns two" style="margin-top:8px"><button class="btn ghost" id="bToSlot" type="button">🔁 Поставить на шаг</button><button class="btn ghost" id="bToFeed" type="button">↔ В ленту по дням</button></div></div>';
+      '<div class="btns" style="margin-top:8px"><button class="btn ghost" id="bToSlot" type="button">🔁 Поставить на шаг</button></div>' +
+      '<h3 style="margin-top:16px">Или в ленту по дням — между другими постами</h3>' +
+      '<div class="row2"><div><label class="f">День</label><input id="bFeedDay" type="number" min="0" max="365" value="1" inputmode="numeric"></div><div><label class="f">Куда в этом дне</label><select id="bFeedPos"></select></div></div>' +
+      '<div class="btns" style="margin-top:8px"><button class="btn ghost" id="bToFeed" type="button">↔ Поставить в ленту</button></div></div>';
   }
   h += '<div class="btns"><button class="btn" id="bSave">' + (isNew ? 'Создать пост' : 'Сохранить') + '</button>' +
     (isNew ? '<button class="btn ghost" id="bClose">Отмена</button>' : '<div class="btns two" style="margin:0"><button class="btn ghost" id="bPrev">👁 Прислать мне</button><button class="btn ghost" id="bClose">Закрыть</button></div><button class="btn danger" id="bArch">🗄 Убрать в архив</button>') + '</div>';
@@ -1039,7 +1043,24 @@ function openPost(id, opt) {
   $('bX').onclick = close; $('bClose').onclick = close;
   if ($('bPrev')) $('bPrev').onclick = async () => { try { const r = await api('/post/' + p.id + '/preview', {}); toast(r.warn ? '⚠️ ' + r.warn : 'Отправила тебе в бот 👀'); } catch (e) { toast(e.message); } };
   if ($('bToStep')) $('bToStep').onclick = async () => { try { await api('/post/' + p.id + '/move', { to: 'node' }); closeSheet(); haptic('medium'); toast('Теперь это пост для шага: он в блоке «Свои посты для шагов»'); await reload(); } catch (e) { toast(e.message); } };
-  if ($('bToFeed')) $('bToFeed').onclick = async () => { try { await api('/post/' + p.id + '/move', { to: 'drip', day: 1 }); closeSheet(); haptic('medium'); toast('Пост в ленте: день 1, 11:00. Нажми на него — поменяй день и время'); await reload(); } catch (e) { toast(e.message); } };
+  const feedList = () => { const d = parseInt($('bFeedDay').value, 10); return S.posts.filter((x) => x.kind === 'drip' && x.day === d && x.id !== p.id).sort((a, b) => (a.pos || 0) - (b.pos || 0) || String(a.time).localeCompare(String(b.time))); };
+  const fillPos = () => { if (!$('bFeedPos')) return; const l = feedList(); $('bFeedPos').innerHTML = '<option value="0">в самое начало дня</option>' + l.map((x, i) => '<option value="' + (i + 1) + '"' + (i === l.length - 1 ? ' selected' : '') + '>после «' + esc(postName(x).slice(0, 40)) + '» (' + (x.time || '') + ')</option>').join(''); };
+  if ($('bFeedDay')) { $('bFeedDay').oninput = fillPos; fillPos(); }
+  if ($('bToFeed')) $('bToFeed').onclick = async () => {
+    try {
+      const day = parseInt($('bFeedDay').value, 10);
+      if (!(day >= 0 && day <= 365)) { toast('День — от 0 до 365'); return; }
+      const l = feedList().filter((x) => !x.mode || x.mode === 'day'); const at = +$('bFeedPos').value;
+      const all = feedList(); const after = at > 0 ? all[at - 1] : null;
+      const idx = after ? l.indexOf(after) + 1 : 0;
+      const prev = idx > 0 ? l[idx - 1] : null, next = l[idx] || null;
+      const time = day === 0 ? '00:00' : ((prev && prev.time) || (next && next.time) || '11:00');
+      await api('/post/' + p.id + '/move', { to: 'drip', day });
+      const order = l.slice(); order.splice(idx, 0, { id: p.id, time });
+      await api('/reorder', { items: order.map((x, i) => ({ id: x.id, day, time: x.time || '11:00', pos: i })) });
+      closeSheet(); haptic('medium'); toast('Пост в ленте: день ' + day + ', время ' + time + '. Время можно поменять в самом посте'); await reload();
+    } catch (e) { toast(e.message); }
+  };
   if ($('bToSlot')) $('bToSlot').onclick = async () => { const k = $('bStepSel').value; if (!k) { toast('Выбери шаг'); return; } try { const r = await api('/msg/' + k, { post: p.id }); S.msgs = r.msgs; closeSheet(); haptic('medium'); toast('Готово: на этом шаге теперь твой пост'); render(); } catch (e) { toast(e.message); } };
   if ($('bArch')) $('bArch').onclick = async () => { try { await api('/post/' + p.id, { status: 'archived' }); closeSheet(); toast('В архиве. Вернуть можно в боте: /posts → 🗄 Архив'); await reload(); } catch (e) { toast(e.message); } };
   $('bSave').onclick = async () => {
