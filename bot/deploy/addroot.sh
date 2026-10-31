@@ -4,7 +4,7 @@ set -euo pipefail
 ENVF=/etc/di-sign-bot.env
 grep -q '^ADMIN_IDS="' "$ENVF" || sed -i 's/^ADMIN_IDS=\(.*\)$/ADMIN_IDS="\1"/' "$ENVF"
 set -a; . "$ENVF"; set +a
-KEY=$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 28)
+KEY=$(head -c 24 /dev/urandom | base64 | tr -dc 'a-km-np-z2-9' | head -c 24)
 echo
 echo "Ключ для Vercel (переменная RELAY_KEY):"
 echo
