@@ -74,10 +74,8 @@ export const USER_COMMANDS = [
 export const ADMIN_COMMANDS = [
   { command: 'admin', description: 'Панель: лента, порядок, тексты' },
   { command: 'new', description: 'Новый пост' },
-  { command: 'texts', description: 'Тексты бота' },
   { command: 'posts', description: 'Все посты' },
   { command: 'stats', description: 'Статистика' },
-  { command: 'admins', description: 'Админы' },
   { command: 'check', description: 'Проверка бота' },
   { command: 'cancel', description: 'Отменить действие' },
   { command: 'help', description: 'Помощь для админа' },

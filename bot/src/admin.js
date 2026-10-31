@@ -51,7 +51,7 @@ const CONTENT_PROMPT =
   `• текст (можно с жирным, ссылками и премиум-эмодзи)\n` +
   `• картинки, видео или файлы — можно альбомом до 10 штук; подпись к альбому станет текстом поста\n\n` +
   `Когда всё отправишь — нажми «Готово».`;
-const contentKb = kb([[{ text: 'Готово ➜', callback_data: 'w:done' }], [{ text: 'Начать заново', callback_data: 'w:reset' }, { text: 'Отмена', callback_data: 'w:cancel' }]]);
+const contentKb = kb([[{ text: 'Готово ➜', callback_data: 'w:done' }], [{ text: 'Отмена', callback_data: 'w:cancel' }]]);
 
 // ---------- команды ----------
 export async function onAdminCommand(ctx, msg, cmd, arg) {
@@ -388,7 +388,6 @@ export async function showPost(ctx, id, pid, note) {
     [{ text: '✏️ Текст и картинки', callback_data: `p:${pid}:ec` }, { text: '🔘 Кнопки', callback_data: `p:${pid}:eb` }],
     [{ text: '🕒 Когда', callback_data: `p:${pid}:ew` }, { text: '👥 Кому', callback_data: `p:${pid}:ea` }],
   ];
-  if (p.kind === 'drip') rows.push([{ text: `↩️ Догонять: ${p.catchup ? 'да' : 'нет'}`, callback_data: `p:${pid}:cu` }]);
   if (p.kind === 'date') rows.push([{ text: '🚀 Отправить сейчас', callback_data: `p:${pid}:sn` }]);
   if ((p.buttons || '').includes('"go"')) rows.push([{ text: `☑️ Кнопки-выбор: ${p.once ? 'да' : 'нет'}`, callback_data: `p:${pid}:once` }]);
   rows.push([{ text: p.status === 'archived' ? '↩️ Из архива' : '🗄 В архив', callback_data: `p:${pid}:${p.status === 'archived' ? 'un' : 'ar'}` }, { text: '← Список', callback_data: 'pl' }]);

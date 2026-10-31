@@ -307,10 +307,8 @@ var USER_COMMANDS = [
 var ADMIN_COMMANDS = [
   { command: "admin", description: "Панель: лента, порядок, тексты" },
   { command: "new", description: "Новый пост" },
-  { command: "texts", description: "Тексты бота" },
   { command: "posts", description: "Все посты" },
   { command: "stats", description: "Статистика" },
-  { command: "admins", description: "Админы" },
   { command: "check", description: "Проверка бота" },
   { command: "cancel", description: "Отменить действие" },
   { command: "help", description: "Помощь для админа" },
@@ -933,7 +931,6 @@ var GUIDE = {
 • <b>⏸ Пауза / ▶️ Включить</b>
 • <b>✏️ Текст и картинки</b> — прислать новое содержимое
 • <b>🔘 Кнопки</b>, <b>🕒 Когда</b>, <b>👥 Кому</b>
-• <b>↩️ Догонять</b> (для постов по дням): «нет» — пост получат только новые люди; «да» — его получат и те, у кого этот день уже прошёл
 • <b>🚀 Отправить сейчас</b> (для постов в дату)
 • <b>🗄 В архив</b> — убрать из списка, ничего не удаляется
 
@@ -1091,7 +1088,7 @@ var CONTENT_PROMPT = `Пришли пост одним или нескольки
 • картинки, видео или файлы — можно альбомом до 10 штук; подпись к альбому станет текстом поста
 
 Когда всё отправишь — нажми «Готово».`;
-var contentKb = kb([[{ text: "Готово ➜", callback_data: "w:done" }], [{ text: "Начать заново", callback_data: "w:reset" }, { text: "Отмена", callback_data: "w:cancel" }]]);
+var contentKb = kb([[{ text: "Готово ➜", callback_data: "w:done" }], [{ text: "Отмена", callback_data: "w:cancel" }]]);
 async function onAdminCommand(ctx, msg2, cmd, arg) {
   const id = msg2.from.id;
   switch (cmd) {
@@ -1546,7 +1543,6 @@ async function showPost(ctx, id, pid, note) {
     [{ text: "✏️ Текст и картинки", callback_data: `p:${pid}:ec` }, { text: "🔘 Кнопки", callback_data: `p:${pid}:eb` }],
     [{ text: "🕒 Когда", callback_data: `p:${pid}:ew` }, { text: "👥 Кому", callback_data: `p:${pid}:ea` }]
   ];
-  if (p.kind === "drip") rows.push([{ text: `↩️ Догонять: ${p.catchup ? "да" : "нет"}`, callback_data: `p:${pid}:cu` }]);
   if (p.kind === "date") rows.push([{ text: "🚀 Отправить сейчас", callback_data: `p:${pid}:sn` }]);
   if ((p.buttons || "").includes('"go"')) rows.push([{ text: `☑️ Кнопки-выбор: ${p.once ? "да" : "нет"}`, callback_data: `p:${pid}:once` }]);
   rows.push([{ text: p.status === "archived" ? "↩️ Из архива" : "🗄 В архив", callback_data: `p:${pid}:${p.status === "archived" ? "un" : "ar"}` }, { text: "← Список", callback_data: "pl" }]);
