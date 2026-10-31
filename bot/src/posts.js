@@ -27,11 +27,12 @@ const stripCustom = (ents) => (ents || []).filter((e) => e.type !== 'custom_emoj
 const hasCustom = (ents) => (ents || []).some((e) => e.type === 'custom_emoji');
 
 // Отправить пост одному человеку. Возвращает { warn } если премиум-эмодзи пришлось убрать.
-export async function sendPost(tg, chatId, post, { uid, publicUrl, arrow, docs } = {}) {
+export async function sendPost(tg, chatId, post, { uid, publicUrl, arrow, docs, extraRows } = {}) {
   const text = post.text || '';
   const ents = j(post.entities, []);
   const media = j(post.media, []);
-  const kb = keyboard(post, uid, publicUrl, docs);
+  let kb = keyboard(post, uid, publicUrl, docs);
+  if (extraRows && extraRows.length) kb = { inline_keyboard: [...((kb && kb.inline_keyboard) || []), ...extraRows] };
   let warn = null;
 
   const attempt = async (entities) => {

@@ -327,7 +327,7 @@ export async function handlePanelApi(ctx, request, url) {
       else if (body.removeMedia) await setMsgMedia(ctx, m[1], null);
       else {
         // пауза перед сообщением и свои кнопки-ссылки
-        if (body.delay !== undefined || body.links !== undefined) await saveMsgExtra(ctx, m[1], { delay: body.delay, links: body.links });
+        if (body.delay !== undefined || body.links !== undefined || body.post !== undefined) await saveMsgExtra(ctx, m[1], { delay: body.delay, links: body.links, post: body.post });
         if (body.text === undefined) return json({ ok: true, msgs: await listMsgs(ctx) });
         const t = String(body.text || '');
         if (!t.trim()) return json({ error: 'Пустой текст' }, 400);

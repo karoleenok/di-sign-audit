@@ -468,6 +468,24 @@ step('когда отправлять: по таймеру после входа
   await assert.rejects(() => saveMsgExtra(C(), 'hello', { delay: 99 }), /до 30/);
 }
 step('путь ученика: пауза перед шагом и свои кнопки-ссылки');
+// ---------- шаг пути заменён своим постом ----------
+{
+  const { saveMsgExtra } = await import('../src/msgs.js');
+  const ins = await db.run(`INSERT INTO posts (kind, status, title, text, entities, buttons, created_at) VALUES ('drip', 'active', 'Мой привет', 'Мой пост для {имя}', '[]', ?, 1)`, [JSON.stringify([[{ text: 'Сайт', url: 'https://example.org' }]])]);
+  const pid = (await db.first(`SELECT id FROM posts WHERE title = 'Мой привет'`)).id;
+  await saveMsgExtra(C(), 'consentPd', { post: pid, delay: 0 });
+  const c0 = calls.length;
+  await handleUpdate(C(), { message: { message_id: 6101, from: { id: 1300, first_name: 'Аня' }, chat: { id: 1300, type: 'private' }, text: '/start' } });
+  const cp = calls.slice(c0).find((c) => c.body.chat_id === 1300 && /Мой пост для Аня/.test(c.body.text || ''));
+  assert.ok(cp, 'вместо шаблона согласия ушёл свой пост с подстановкой имени');
+  const rows = cp.body.reply_markup.inline_keyboard.map((r) => r.map((b) => b.text));
+  assert.equal(rows[0][0], 'Сайт', 'кнопки поста сверху');
+  assert.ok(rows.flat().includes('Даю согласие'), 'кнопка согласия шага осталась — путь не ломается');
+  await assert.rejects(() => saveMsgExtra(C(), 'consentPd', { post: 99999 }), /нет/);
+  await saveMsgExtra(C(), 'consentPd', { post: null });
+}
+step('шаг пути можно заменить своим постом: текст, кнопки поста + встроенные кнопки шага');
+
 
 // ---------- конструктор сценариев: пост-ответ, кнопки-выбор, документы, оплата ----------
 {

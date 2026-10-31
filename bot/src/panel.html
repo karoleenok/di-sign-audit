@@ -528,12 +528,13 @@ function entryBox() {
     '<b>' + i + '</b><span class="st-t">' + t + (sub ? '<i>' + sub + '</i>' : '') + '</span>' +
     (o.mv && !window.Sortable ? '<span class="mv"><button type="button" class="chip" data-up="' + k + '" aria-label="выше">▲</button><button type="button" class="chip" data-down="' + k + '" aria-label="ниже">▼</button></span>' : '') +
     (o.sw ? '<button type="button" class="chip sw' + (o.off ? '' : ' on') + '" data-sw="' + k + '">' + (o.off ? 'выкл' : 'вкл') + '</button>' : '') + '</div>';
+  const pt = (k) => { const m = S.msgs.find((x) => x.key === k); const p = m && m.post && S.posts.find((x) => x.id === m.post); return p ? ' · 🔁 твой пост «' + esc((p.title || p.text || '#' + p.id).slice(0, 30)) + '»' : ''; };
   let n = 1;
-  let h = row('hello', '👋 Приветствие', 'из аудита приходит выбор: мини-курс или материалы', n++, {});
-  fl.order.forEach((k) => { h += row(k, ENTRY[k][0], ENTRY[k][1](), n++, { mv: k !== 'consentPd', sw: opt.includes(k), off: fl.off.includes(k) }); });
-  h += row('schedCourse', '🗓 Пост-расписание по треку', 'последний шаг: отсюда считается лента', n++, {});
+  let h = row('hello', '👋 Приветствие', 'из аудита приходит выбор: мини-курс или материалы' + pt('hello'), n++, {});
+  fl.order.forEach((k) => { h += row(k, ENTRY[k][0], ENTRY[k][1]() + pt(k), n++, { mv: k !== 'consentPd', sw: opt.includes(k), off: fl.off.includes(k) }); });
+  h += row('schedCourse', '🗓 Пост-расписание по треку', 'последний шаг: отсюда считается лента' + pt('schedCourse'), n++, {});
   const miss = !d.policy || !d.consent;
-  return '<div class="box"><h3>Вход в бот</h3><p class="small muted" style="margin:0 0 10px">Так бот встречает нового человека. Тяни за ⋮⋮, чтобы поменять порядок; «вкл/выкл» — показывать шаг или пропускать. Нажми на шаг — поменять текст, паузу и кнопки-ссылки. Первым всегда стоит согласие на данные — по закону сначала оно.</p><div class="steps" id="flowList">' + h + '</div>' +
+  return '<div class="box"><h3>Вход в бот</h3><p class="small muted" style="margin:0 0 10px">Так бот встречает нового человека. Тяни за ⋮⋮, чтобы поменять порядок; «вкл/выкл» — показывать шаг или пропускать. Нажми на шаг — поменять текст, паузу и кнопки или подставить вместо него свой пост из ленты. Первым всегда стоит согласие на данные — по закону сначала оно.</p><div class="steps" id="flowList">' + h + '</div>' +
     '<div class="arr">↓</div><div class="stp last"><b>→</b><span class="st-t">дальше — лента по треку и посты ниже</span></div>' +
     '<div class="docs-row"><div><b>Люди и отзывы</b><div class="small muted">контакты, выбор из аудита, отзывы о кабинете: ' + (S.fbCount || 0) + '</div></div><button type="button" class="chip" id="peopleBtn">открыть</button></div>' +
     '<div class="docs-row"><div><b>Документы</b><div class="small muted">политика ' + ok('policy') + ' · согласие ' + ok('consent') + ' · оферта ' + ok('offer') + '</div></div><button type="button" class="chip" id="docsBtn">изменить</button></div>' +
@@ -839,6 +840,7 @@ function openMsg(key) {
         '<div class="btns two" style="margin-top:8px"><button class="btn ghost" id="mAdd" type="button">Заменить</button><button class="btn ghost" id="mDelImg" type="button">Убрать</button></div>'
       : '<button class="btn ghost" id="mAdd" type="button">＋ Добавить картинку, гифку или видео</button>') +
       '<input type="file" id="mFile" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4" hidden><p class="small muted" style="margin:6px 2px 0">Текст станет подписью под картинкой (до 1024 знаков — длиннее уйдёт следующим сообщением).</p>' : '') +
+    (m.canMedia ? '<label class="f">Подставить свой пост вместо этого шаблона</label><select id="mPost"><option value="">— нет, оставить шаблон —</option>' + (S.posts || []).map((p) => '<option value="' + p.id + '"' + (m.post === p.id ? ' selected' : '') + '>#' + p.id + ' · ' + esc((p.title || p.text || 'без названия').slice(0, 40)) + '</option>').join('') + '</select><p class="small muted" style="margin:6px 2px 0">Ученик получит выбранный пост (текст, картинки и все его кнопки: ссылки, другие посты, документы). Кнопки самого шага — «Даю согласие», «Всё верно» и т.п. — встанут под кнопками поста, чтобы путь не сломался. Пока выбран пост, текст шаблона выше не показывается.</p>' : '') +
     (m.canMedia ? '<label class="f">Пауза перед сообщением</label><div class="row"><input type="text" inputmode="decimal" id="mDelay" style="width:90px" value="' + String(m.delay).replace('.', ',') + '"><span class="muted">сек — столько бот «печатает» (• • •) перед ним' + (m.delay !== m.defDelay ? ' · было ' + String(m.defDelay).replace('.', ',') : '') + '</span></div>' +
       '<label class="f">Свои кнопки-ссылки под сообщением</label><div id="mLinks"></div><p class="small muted" style="margin:6px 2px 0">Например «Наш канал» или «Сайт школы». Встают под встроенными кнопками.</p>' : '') +
     (m.vars.length ? '<p class="small muted" style="margin:10px 2px 0">Нажми, чтобы вставить — бот подставит сам:</p><div class="vars" id="mVars">' + m.vars.map((v) => '<button type="button" data-v="{' + v + '}">{' + v + '}</button>').join('') + '</div>' : '') +
@@ -886,6 +888,7 @@ function openMsg(key) {
     const body = {};
     if (ta.value !== m.text) body.text = ta.value;
     if ($('mDelay')) { body.delay = parseFloat(String($('mDelay').value).replace(',', '.')) || 0; body.links = getLinks(); }
+    if ($('mPost')) { const pv = $('mPost').value; if ((pv ? +pv : null) !== (m.post || null)) body.post = pv ? +pv : null; }
     try { const r = await api('/msg/' + key, body); S.msgs = r.msgs; closeSheet(); haptic('medium'); toast('Сохранено ✓'); render(); } catch (e) { toast(e.message); }
   };
   if ($('mReset')) $('mReset').onclick = async () => { try { const r = await api('/msg/' + key, { reset: true }); S.msgs = r.msgs; closeSheet(); toast('Вернули как было ↩️'); render(); } catch (e) { toast(e.message); } };

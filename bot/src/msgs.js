@@ -3,6 +3,7 @@
 // (settings: 'msg:<ключ>' -> {text, entities}). Здесь — тексты «по умолчанию».
 // В тексте можно использовать подстановки в фигурных скобках, например {имя}.
 import { USER_COMMANDS, ADMIN_COMMANDS } from './texts.js';
+import { sendPost, loadDocs } from './posts.js';
 
 export const MSG_GROUPS = [
   ['hello', '👋 Приветствие'],
@@ -155,7 +156,7 @@ export function cleanRows(rows) {
   }
   return out;
 }
-export async function saveMsgExtra(ctx, key, { delay, links } = {}) {
+export async function saveMsgExtra(ctx, key, { delay, links, post } = {}) {
   const i = msgInfo(key);
   if (!i || i.button || i.plain) throw new Error('Для этого сообщения пауза и кнопки не настраиваются');
   const x = { ...(await extraOf(ctx, key)) };
@@ -165,6 +166,14 @@ export async function saveMsgExtra(ctx, key, { delay, links } = {}) {
     x.delay = Math.round(d * 10) / 10;
   }
   if (links !== undefined) x.links = cleanRows(links);
+  if (post !== undefined) {
+    if (post === null || post === '' || post === 0) delete x.post;
+    else {
+      const row = await ctx.db.first(`SELECT id FROM posts WHERE id = ? AND status != 'archived'`, [Number(post)]);
+      if (!row) throw new Error('Такого поста нет');
+      x.post = row.id;
+    }
+  }
   await ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, ['msgx:' + key, JSON.stringify(x)]);
   if (ctx._msgx) ctx._msgx[key] = x;
   return x;
@@ -222,6 +231,7 @@ export async function btn(ctx, key, vars) {
 }
 
 // Отправить сообщение по ключу. Если премиум-эмодзи не прошли — отправим без них.
+const j0 = (s) => { try { return s ? JSON.parse(s) : []; } catch { return []; } };
 const MEDIA_METHOD = { photo: 'sendPhoto', video: 'sendVideo', animation: 'sendAnimation' };
 const CAPTION_MAX = 1024;
 // повторить без премиум-эмодзи, если Telegram их не принял
@@ -232,6 +242,22 @@ async function withEmojiFallback(send, ents) {
   }
 }
 export async function say(ctx, chatId, key, vars, extra = {}) {
+  // вместо шаблона — свой пост из ленты; встроенные кнопки шага встают под кнопками поста
+  const pid = (await extraOf(ctx, key)).post;
+  if (pid) {
+    const p = await ctx.db.first(`SELECT * FROM posts WHERE id = ? AND status != 'archived'`, [pid]);
+    if (p) {
+      const f = fill(p.text || '', j0(p.entities), { имя: ctx.userName || 'друг', ...(vars || {}) });
+      const own = [...(((extra.reply_markup && extra.reply_markup.inline_keyboard) || [])), ...(await linksOf(ctx, key))];
+      const rm = extra.reply_markup;
+      if (rm && !rm.inline_keyboard) {
+        // обычная клавиатура (например «поделиться телефоном») — шлём отдельным коротким сообщением
+        await sendPost(ctx.tg, chatId, { ...p, text: f.text, entities: JSON.stringify(f.entities) }, { uid: chatId, publicUrl: ctx.publicUrl, docs: await loadDocs(ctx) });
+        return ctx.tg.call('sendMessage', { chat_id: chatId, text: '👇', reply_markup: rm });
+      }
+      return sendPost(ctx.tg, chatId, { ...p, text: f.text, entities: JSON.stringify(f.entities) }, { uid: chatId, publicUrl: ctx.publicUrl, docs: await loadDocs(ctx), extraRows: own });
+    }
+  }
   const m = await msg(ctx, key, vars);
   // свои кнопки-ссылки — под встроенными
   const links = await linksOf(ctx, key);
@@ -342,6 +368,6 @@ export async function listMsgs(ctx) {
     const i = msgInfo(k);
     const o = all[k];
     const x = (ctx._msgx && ctx._msgx[k]) || {};
-    return { ...i, delay: typeof x.delay === 'number' ? x.delay : (DEFAULT_DELAY[k] ?? 0.7), defDelay: DEFAULT_DELAY[k] ?? 0.7, links: x.links || [], text: o ? o.text : i.def, changed: !!o, media: o && o.media ? o.media.type : null, canMedia: !i.button && !i.plain, emoji: !!(o && (o.entities || []).some((e) => e.type === 'custom_emoji')) };
+    return { ...i, delay: typeof x.delay === 'number' ? x.delay : (DEFAULT_DELAY[k] ?? 0.7), defDelay: DEFAULT_DELAY[k] ?? 0.7, links: x.links || [], post: x.post || null, text: o ? o.text : i.def, changed: !!o, media: o && o.media ? o.media.type : null, canMedia: !i.button && !i.plain, emoji: !!(o && (o.entities || []).some((e) => e.type === 'custom_emoji')) };
   }).map(async (m) => (m.group === 'profile' && !m.changed && (m.key === 'botDesc' || m.key === 'botShort') ? { ...m, text: await liveProfile(ctx, m.key), def: '(как задано в BotFather)' } : m)));
 }
