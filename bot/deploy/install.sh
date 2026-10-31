@@ -65,6 +65,8 @@ else
   BOT_TOKEN=$(asks "Токен бота (из BotFather, не отображается при вводе):")
   [ -n "$BOT_TOKEN" ] || die "Токен нужен."
   ADMIN_IDS=$(ask "Твой Telegram id (и других админов через пробел):")
+  ADMIN_IDS=$(printf '%s' "$ADMIN_IDS" | grep -oE '[0-9]+' | tr '\n' ' ' | sed 's/ *$//')
+  [ -n "$ADMIN_IDS" ] || die "Нужен хотя бы один числовой id."
   SETUP_KEY=$(openssl rand -hex 16); WEBHOOK_SECRET=$(openssl rand -hex 16)
   IP=$(curl -4 -s -m 8 https://ifconfig.me || hostname -I | awk '{print $1}')
   DOM=$(ask "Свой домен (если нет — просто Enter, возьмём бесплатный адрес):")
@@ -98,6 +100,7 @@ else
   if [ -n "$OLD" ]; then
     OLDKEY=$(asks "Ключ старого бота (SETUP_KEY):")
     curl -fsS -m 60 "${OLD%/}/export?key=$OLDKEY" -o /tmp/bot-backup.json || die "Не получилось скачать выгрузку. Проверь адрес и ключ."
+    chmod 644 /tmp/bot-backup.json
     (cd "$APP/bot" && runuser -u bot -- env DB_FILE="$DATA/bot.db" node --no-warnings scripts/import.js /tmp/bot-backup.json)
     shred -u /tmp/bot-backup.json 2>/dev/null || rm -f /tmp/bot-backup.json
     ok "данные перенесены, временный файл удалён"
