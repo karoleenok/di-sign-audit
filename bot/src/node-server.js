@@ -20,7 +20,23 @@ const file = env.DB_FILE || './data/bot.db';
 fs.mkdirSync(path.dirname(file), { recursive: true });
 const db = await nodeSqliteAdapter(file);
 await migrate(db);
-const ctxFor = () => makeCtx({ db, env, publicUrl: env.PUBLIC_URL });
+// запросы к Telegram через мост иногда зависают — режем по времени и повторяем
+async function tgFetch(url, opts) {
+  const isPoll = String(url).endsWith('/getUpdates');
+  let last;
+  for (let i = 0; i < 3; i++) {
+    try { return await fetch(url, { ...opts, signal: AbortSignal.timeout(isPoll ? 40_000 : 25_000) }); }
+    catch (e) {
+      last = e;
+      const code = e && e.cause && e.cause.code;
+      const beforeSend = code === 'UND_ERR_CONNECT_TIMEOUT' || code === 'ECONNREFUSED' || code === 'ENETUNREACH';
+      if (!(beforeSend || isPoll)) break; // отправка могла дойти — повторять нельзя
+      await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
+    }
+  }
+  throw last;
+}
+const ctxFor = () => makeCtx({ db, env, publicUrl: env.PUBLIC_URL, fetchFn: tgFetch });
 const polling = (env.MODE || 'webhook') === 'polling';
 
 const server = http.createServer(async (req, res) => {
@@ -86,7 +102,7 @@ if (polling) {
           try { await handleUpdate(ctxFor(), u); } catch (e) { console.error(e); }
           await db.run(`INSERT INTO settings (key, value) VALUES ('poll_offset', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(offset)]);
         }
-      } catch (e) { console.error('poll', e.message); await new Promise((r) => setTimeout(r, 5000)); }
+      } catch (e) { console.error('poll', e.message); await new Promise((r) => setTimeout(r, 2000)); }
     }
   })();
 }
