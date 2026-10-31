@@ -6,6 +6,12 @@
 //   PUBLIC_URL — внешний адрес сервера (для кнопок и вебхука)
 //   MODE      — webhook (по умолчанию) или polling (если Telegram не достучится до сервера)
 import http from 'node:http';
+import net from 'node:net';
+import dns from 'node:dns';
+// На этом сервере node 22 при «автоподборе IPv4/IPv6» зависал на 10 секунд при подключении к Cloudflare-мосту
+// (curl и node без автоподбора отвечают за 0,3 с). Выключаем автоподбор и берём IPv4 первым — бот отвечает быстро.
+net.setDefaultAutoSelectFamily(false);
+dns.setDefaultResultOrder('ipv4first');
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
