@@ -460,7 +460,8 @@ step('когда отправлять: по таймеру после входа
   const seq = calls.slice(c0).filter((c) => c.body.chat_id === 1200 && c.method.startsWith('send'));
   assert.match(seq[0].body.text, /^Привет, Оля/, 'пауза 0 — приветствие сразу, без «печатает»');
   const cp = seq.find((c) => /Чтобы присылать/.test(c.body.text || ''));
-  assert.deepEqual(cp.body.reply_markup.inline_keyboard.map((r) => r.map((b) => b.text)), [['Даю согласие'], ['Наш канал']], 'своя кнопка-ссылка под встроенной');
+  assert.deepEqual(cp.body.reply_markup.inline_keyboard.map((r) => r.map((b) => b.text)), [['📄 Политика обработки данных'], ['Даю согласие'], ['Наш канал']], 'документы кнопками, потом согласие, своя кнопка-ссылка под встроенной');
+  assert.ok(!/disign\.ru\/policy/.test(cp.body.text), 'голой ссылки на политику в тексте нет — она в кнопке');
   await saveMsgExtra(C(), 'hello', { delay: 0.6 });
   await saveMsgExtra(C(), 'consentPd', { links: [] });
   await assert.rejects(() => saveMsgExtra(C(), 'consentPdBtn', { delay: 1 }), /не настраиваются/);

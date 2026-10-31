@@ -188,6 +188,22 @@ export function fill(text, entities, vars) {
       return e;
     });
   }
+  // строка вида «Политика: {политика}», где ссылку убрали (она ушла в кнопку), — удаляем целиком
+  if (hits.some((h) => h[2] === '')) {
+    let pos = 0;
+    for (const line of t.split('\n')) {
+      const end = pos + line.length + 1; // вместе с переносом
+      if (line.trim() && /^[^{}]*:\s*$/.test(line) && hits.some((h) => h[2] === '')) {
+        const len = Math.min(end, t.length) - pos;
+        t = t.slice(0, pos) + t.slice(pos + len);
+        ents = ents.filter((e) => !(e.offset >= pos && e.offset < pos + len)).map((e) => (e.offset >= pos + len ? { ...e, offset: e.offset - len } : e));
+        continue;
+      }
+      pos = end;
+    }
+    const cut = t.length - t.trimEnd().length;
+    if (cut) { t = t.trimEnd(); ents = ents.map((e) => ({ ...e, length: Math.min(e.length, t.length - e.offset) })); }
+  }
   return { text: t, entities: ents.filter((e) => e.length > 0) };
 }
 

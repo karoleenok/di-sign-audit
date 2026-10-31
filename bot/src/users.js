@@ -159,9 +159,16 @@ const STEP_RUN = {
   async consentPd(ctx, u) {
     if (u.consent_pd_at) return false;
     await pauseFor(ctx, u.tg_id, 'consentPd');
-    await tech(ctx, u.tg_id, say(ctx, u.tg_id, 'consentPd', await docVars(ctx), {
+    // документы — красивыми кнопками (открываются прямо в Telegram), под ними «Даю согласие»
+    const d = await loadDocs(ctx);
+    const rows = [];
+    if (d.policy) rows.push([{ text: '📄 Политика обработки данных', url: d.policy }]);
+    if (d.consent) rows.push([{ text: '📄 Текст согласия', url: d.consent }]);
+    rows.push([{ text: await btn(ctx, 'consentPdBtn'), callback_data: 'c:pd' }]);
+    const vars = { ...(await docVars(ctx)), ...(d.policy ? { политика: '' } : {}), ...(d.consent ? { согласие: '' } : {}) };
+    await tech(ctx, u.tg_id, say(ctx, u.tg_id, 'consentPd', vars, {
       link_preview_options: { is_disabled: true },
-      reply_markup: kb([[{ text: await btn(ctx, 'consentPdBtn'), callback_data: 'c:pd' }]]),
+      reply_markup: kb(rows),
     }));
     return true;
   },
