@@ -504,8 +504,10 @@ async function check(ctx, id) {
   try { const me = await ctx.tg.call('getMe'); lines.push(`✅ Связь с Telegram есть: @${me.username}`); } catch (e) { lines.push('❌ Нет связи с Telegram: ' + e.message); }
   try {
     const w = await ctx.tg.call('getWebhookInfo');
-    lines.push(w.url ? `✅ Вебхук: ${w.url}` : '❌ Вебхук не установлен — открой адрес /setup');
-    if (w.pending_update_count) lines.push(`⏳ В очереди сообщений: ${w.pending_update_count}`);
+    const polling = String(ctx.env.MODE || '') === 'polling';
+    if (polling) lines.push(w.url ? `⚠️ Стоит вебхук ${w.url}, а сервер работает без вебхука — открой адрес /setup` : '✅ Режим без вебхука: сервер сам забирает сообщения');
+    else lines.push(w.url ? `✅ Вебхук: ${w.url}` : '❌ Вебхук не установлен — открой адрес /setup');
+    if (w.pending_update_count && !polling) lines.push(`⏳ В очереди сообщений: ${w.pending_update_count}`);
     if (w.last_error_message) lines.push(`⚠️ Последняя ошибка Telegram: ${w.last_error_message}`);
   } catch {}
   const u = await ctx.db.first(`SELECT COUNT(*) AS n FROM users`);
