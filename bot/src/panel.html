@@ -26,6 +26,7 @@ h1 i{font-style:italic}
 .lead{color:var(--soft);margin:0 0 14px}
 .tabs{position:sticky;top:0;z-index:20;background:var(--bg);padding:8px 0 10px;margin:0 -16px;padding-left:16px;padding-right:16px;border-bottom:1px solid var(--line)}
 .stp.drop{outline:2px dashed var(--accent,#c4572a);background:rgba(196,87,42,.08)}.poolList{min-height:46px;border-radius:12px;border:1.5px dashed var(--line);padding:0 6px 6px}.pool-card{display:flex;align-items:center;gap:8px;padding:8px 10px;margin-top:6px;border:1px solid var(--line);border-radius:12px;background:var(--card)}.pool-card .handle{touch-action:none;cursor:grab}.pool-card .pt{flex:1;min-width:0;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pool-card .small{white-space:nowrap}.dragfloat{position:fixed;z-index:99;pointer-events:none;padding:8px 12px;border-radius:12px;background:var(--card);box-shadow:var(--shadow);font-weight:500;max-width:70vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.strip{display:flex;gap:4px;margin-top:8px;flex-wrap:wrap}.strip img,.strip .ph{width:56px;height:56px;object-fit:cover;border-radius:8px;background:rgba(44,13,2,.07);display:flex;align-items:center;justify-content:center;font-size:20px}.strip .more{width:56px;height:56px;border-radius:8px;background:rgba(44,13,2,.07);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:var(--soft)}.pool-card .strip{margin:0;flex-wrap:nowrap}.pool-card .strip img,.pool-card .strip .ph,.pool-card .strip .more{width:36px;height:36px;font-size:14px}
 .seg{display:flex;gap:4px;background:rgba(44,13,2,.06);border-radius:14px;padding:4px}
 .seg button{flex:1;border:0;background:transparent;border-radius:10px;padding:9px 6px;font-weight:500;cursor:pointer;white-space:nowrap}
 .seg button.on{background:var(--card);box-shadow:var(--shadow)}
@@ -229,6 +230,31 @@ function tags(p) {
   if (view.level !== 'all' && !gets(p)) h += '<span class="tag no">не получит</span>';
   return h;
 }
+
+// превью картинок поста: до 4 штук, остальное «+N»; видео, гифки и файлы — значком
+const THUMBS = new Map();
+function mediaStrip(p, max) {
+  const fs = p.files || [];
+  if (!fs.length) return '';
+  max = max || 4;
+  const ic = { video: '🎬', animation: '🎞', document: '📄' };
+  const shown = fs.slice(0, max);
+  return '<div class="strip">' + shown.map((f) => f.type === 'photo' ? '<img alt="" data-fid="' + esc(f.file_id) + '">' : '<span class="ph" title="' + esc(f.name || f.type) + '">' + (ic[f.type] || '📎') + '</span>').join('') +
+    (fs.length > max ? '<span class="more">+' + (fs.length - max) + '</span>' : '') + '</div>';
+}
+function loadThumbs(root) {
+  const imgs = (root || document).querySelectorAll('img[data-fid]:not([src])');
+  const go = (img) => {
+    const fid = img.dataset.fid;
+    if (THUMBS.has(fid)) { const u = THUMBS.get(fid); if (u) img.src = u; return; }
+    fetch('/api/panel/file?id=' + encodeURIComponent(fid), { headers: { 'x-init-data': INIT } }).then((r) => r.ok ? r.blob() : null)
+      .then((b) => { const u = b ? URL.createObjectURL(b) : ''; THUMBS.set(fid, u); document.querySelectorAll('img[data-fid="' + fid + '"]').forEach((x) => { if (u) x.src = u; }); }).catch(() => {});
+  };
+  if (!('IntersectionObserver' in window)) { imgs.forEach(go); return; }
+  const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { io.unobserve(e.target); go(e.target); } }), { rootMargin: '200px' });
+  imgs.forEach((i) => io.observe(i));
+}
+
 function cardHtml(p, opts) {
   opts = opts || {};
   const off = view.level !== 'all' && !gets(p);
@@ -237,7 +263,7 @@ function cardHtml(p, opts) {
     (opts.drag ? '<div class="handle" aria-label="перетащить">⋮⋮</div>' : '<div style="width:6px"></div>') +
     '<div class="cbody"><div class="ctop">' + (time ? '<span class="time">' + esc(time) + '</span>' : '') +
     '<span class="stat">' + (p.sent ? 'отправлено ' + p.sent : 'ещё не отправлялся') + (p.clicks ? ' · нажатий ' + p.clicks : '') + '</span></div>' +
-    '<div class="ttl">' + esc(postName(p)) + '</div><div class="meta">' + tags(p) + '</div></div></div>';
+    '<div class="ttl">' + esc(postName(p)) + '</div><div class="meta">' + tags(p) + '</div>' + mediaStrip(p) + '</div></div>';
 }
 
 // ---------- отрисовка ----------
@@ -255,6 +281,7 @@ function render() {
     '</div></div><div id="body"></div>';
   $('tabs').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; tab = b.dataset.t; haptic(); render(); window.scrollTo(0, 0); };
   ({ flow: renderFlow, feed: renderFlow, dates: renderDates, gifts: renderGifts, reviews: renderReviews, texts: renderTexts })[tab]();
+  setTimeout(() => loadThumbs($('body')), 0);
 }
 
 function viewBox() {
@@ -622,7 +649,7 @@ function renderFlow() {
     const np = path.concat(p.id);
     let h = '<div class="fn' + (p.status !== 'active' ? ' dim' : '') + '" data-id="' + p.id + '"><div class="fn-top"><span class="time">' + esc(whenOf(p)) + '</span>' + stTag(p) + emptyTag(p) +
       '<span class="stat">' + (p.sent ? '↗ ' + p.sent : '') + (p.clicks ? ' · 👆 ' + p.clicks : '') + '</span></div>' +
-      '<div class="ttl">' + esc(postName(p)) + '</div>' + (p.track && p.track !== 'all' ? '<div class="meta"><span class="tag zone">' + (p.track === 'course' ? '🎓 мини-курс' : '📚 материалы') + '</span></div>' : '') + (p.media.length ? '<div class="meta"><span class="tag">🖼 ' + (p.media.length > 1 ? '×' + p.media.length : '') + '</span>' + (p.audience !== 'all' && p.kind !== 'node' ? '<span class="tag">' + esc(S.audiences[p.audience]) + '</span>' : '') + '</div>' : (p.audience !== 'all' && p.kind !== 'node' ? '<div class="meta"><span class="tag">' + esc(S.audiences[p.audience]) + '</span></div>' : '')) + '</div>';
+      '<div class="ttl">' + esc(postName(p)) + '</div>' + mediaStrip(p, 3) + (p.track && p.track !== 'all' ? '<div class="meta"><span class="tag zone">' + (p.track === 'course' ? '🎓 мини-курс' : '📚 материалы') + '</span></div>' : '') + (p.media.length ? '<div class="meta"><span class="tag">🖼 ' + (p.media.length > 1 ? '×' + p.media.length : '') + '</span>' + (p.audience !== 'all' && p.kind !== 'node' ? '<span class="tag">' + esc(S.audiences[p.audience]) + '</span>' : '') + '</div>' : (p.audience !== 'all' && p.kind !== 'node' ? '<div class="meta"><span class="tag">' + esc(S.audiences[p.audience]) + '</span></div>' : '')) + '</div>';
     let kids = '';
     (p.rows || []).forEach((row) => row.forEach((b) => {
       if (b.go) { const t = ids[+b.go]; kids += '<div class="fb"><span class="fb-l">🔘 ' + esc(b.text) + (p.once ? ' <i class="muted small">выбор</i>' : '') + '</span>' + (t ? node(t, depth + 1, np) : '<span class="tag no">пост в архиве</span>') + '</div>'; }
@@ -670,7 +697,7 @@ function poolBox() {
   const nodes = S.posts.filter((p) => p.kind === 'node' && p.status !== 'archived');
   const usedBy = (id) => (S.msgs || []).filter((m) => m.post === id).map((m) => (ENTRY[m.key] ? ENTRY[m.key][0] : m.key));
   return '<div class="box"><h3>Свои посты для шагов</h3><p class="small muted" style="margin:0 0 6px">Посты без дня. Перетащи за ⋮⋮ на шаг входа — он заменит шаблонное сообщение. Перетащи в день ленты ниже — пост станет обычным постом ленты, а пост из ленты можно перетащить сюда.</p>' +
-    '<div class="list poolList" data-pool="1">' + nodes.map((p) => { const u = usedBy(p.id); return '<div class="pool-card" data-id="' + p.id + '"><div class="handle" aria-label="перетащить">⋮⋮</div><span class="pt">' + esc(postName(p)) + '</span>' + (u.length ? '<span class="small muted">на шаге: ' + esc(u.join(', ').slice(0, 40)) + '</span>' : '') + '</div>'; }).join('') + '</div>' + (nodes.length ? '' : '<p class="small muted" style="margin:6px 2px 0">Пока пусто. Создай пост кнопкой ниже или перетащи сюда пост из ленты по дням.</p>') +
+    '<div class="list poolList" data-pool="1">' + nodes.map((p) => { const u = usedBy(p.id); return '<div class="pool-card" data-id="' + p.id + '"><div class="handle" aria-label="перетащить">⋮⋮</div>' + mediaStrip(p, 2) + '<span class="pt">' + esc(postName(p)) + '</span>' + (u.length ? '<span class="small muted">на шаге: ' + esc(u.join(', ').slice(0, 40)) + '</span>' : '') + '</div>'; }).join('') + '</div>' + (nodes.length ? '' : '<p class="small muted" style="margin:6px 2px 0">Пока пусто. Создай пост кнопкой ниже или перетащи сюда пост из ленты по дням.</p>') +
     '<div class="btns" style="margin:8px 0 0"><button type="button" class="btn ghost" id="poolNew">＋ Новый пост для шага</button></div></div>';
 }
 function bindPool() {
