@@ -27,7 +27,7 @@ step('вход только по подписи Telegram и только для 
 // 2. лента
 await page.goto('http://localhost:8788/admin');
 await page.waitForSelector('#newPost');
-await page.click('#tabs button[data-t="feed"]');
+await page.click('#tabs button[data-t="flow"]');
 await page.waitForSelector('.card');
 await page.screenshot({ path: OUT + '/panel-1-feed.png', fullPage: true });
 const days = await page.$$eval('.list', (ls) => ls.map((l) => [l.dataset.day, l.children.length]));
@@ -129,7 +129,7 @@ step('когда отправлять в панели: «после поста»
 // 5г. проверить на себе
 const s0 = sent.length;
 await page.click('#runPrev'); await page.waitForTimeout(700);
-assert.ok(sent.slice(s0).some((c) => /Предпросмотр ленты/.test(c.body.text || '')), 'предпросмотр ушёл в бот');
+assert.ok(sent.slice(s0).some((c) => /Полный путь/.test(c.body.text || '')), 'предпросмотр ушёл в бот');
 await page.click('#runFast'); await page.waitForTimeout(600);
 assert.match(await page.textContent('.box:has(#runStop)'), /Идёт ускоренный тест/);
 await page.screenshot({ path: OUT + '/panel-12-run.png' });
