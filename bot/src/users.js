@@ -154,22 +154,23 @@ export async function loadFlow(ctx) {
   return normFlow(j(m['flow:order']), j(m['flow:off']));
 }
 
+// как выглядит просьба о согласии: документы — красивыми кнопками (открываются прямо в Telegram), под ними «Даю согласие»
+export async function consentView(ctx) {
+  const d = await loadDocs(ctx);
+  const rows = [];
+  if (d.policy) rows.push([{ text: '📄 Политика обработки данных', url: d.policy }]);
+  if (d.consent) rows.push([{ text: '📄 Текст согласия', url: d.consent }]);
+  rows.push([{ text: await btn(ctx, 'consentPdBtn'), callback_data: 'c:pd' }]);
+  const vars = { ...(await docVars(ctx)), ...(d.policy ? { политика: '' } : {}), ...(d.consent ? { согласие: '' } : {}) };
+  return { vars, extra: { link_preview_options: { is_disabled: true }, reply_markup: kb(rows) } };
+}
 // каждый шаг: если он ещё не пройден и включён — отправляет сообщение и возвращает true (ждём ответ)
 const STEP_RUN = {
   async consentPd(ctx, u) {
     if (u.consent_pd_at) return false;
     await pauseFor(ctx, u.tg_id, 'consentPd');
-    // документы — красивыми кнопками (открываются прямо в Telegram), под ними «Даю согласие»
-    const d = await loadDocs(ctx);
-    const rows = [];
-    if (d.policy) rows.push([{ text: '📄 Политика обработки данных', url: d.policy }]);
-    if (d.consent) rows.push([{ text: '📄 Текст согласия', url: d.consent }]);
-    rows.push([{ text: await btn(ctx, 'consentPdBtn'), callback_data: 'c:pd' }]);
-    const vars = { ...(await docVars(ctx)), ...(d.policy ? { политика: '' } : {}), ...(d.consent ? { согласие: '' } : {}) };
-    await tech(ctx, u.tg_id, say(ctx, u.tg_id, 'consentPd', vars, {
-      link_preview_options: { is_disabled: true },
-      reply_markup: kb(rows),
-    }));
+    const { vars, extra } = await consentView(ctx);
+    await tech(ctx, u.tg_id, say(ctx, u.tg_id, 'consentPd', vars, extra));
     return true;
   },
   async consentAds(ctx, u) {

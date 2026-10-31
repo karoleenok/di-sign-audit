@@ -6,7 +6,7 @@ import { AUD, LEVELS } from './texts.js';
 import { sendPost, audienceCount, loadDocs, DOCS, TRACKS } from './posts.js';
 import { mdToEntities, entitiesToMd } from './fmt.js';
 import { runPreview, startFastRun, stopRuns, stepRuns, activeRun } from './testrun.js';
-import { onStart, docVars, loadFlow, normFlow, FLOW_OPTIONAL } from './users.js';
+import { onStart, docVars, consentView, loadFlow, normFlow, FLOW_OPTIONAL } from './users.js';
 import { saveMsgExtra } from './msgs.js';
 import { listMsgs, saveMsg, resetMsg, btn, say, setMsgMedia, canMedia, msgInfo, loadMsgs } from './msgs.js';
 
@@ -341,7 +341,8 @@ export async function handlePanelApi(ctx, request, url) {
 
   m = /^\/msg\/([A-Za-z_]+)\/preview$/.exec(path);
   if (m && request.method === 'POST') {
-    await say(ctx, user.id, m[1], { уровень: LEVELS.start, ...(await docVars(ctx)) });
+    if (m[1] === 'consentPd') { const v = await consentView(ctx); await say(ctx, user.id, 'consentPd', v.vars, v.extra); }
+    else await say(ctx, user.id, m[1], { уровень: LEVELS.start, ...(await docVars(ctx)) });
     return json({ ok: true });
   }
 
