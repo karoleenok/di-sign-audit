@@ -464,7 +464,7 @@ function pickBtnFile(done) {
   const inp = document.createElement('input'); inp.type = 'file';
   inp.onchange = async () => {
     const f = inp.files[0]; if (!f) return;
-    const big = f.size > 45 * 1048576; // Telegram принимает от бота до 50 МБ — большие кладём на наш сервер и даём ссылку
+    const big = true; // файл всегда кладём на наш сервер: по кнопке откроется страница предпросмотра со «Скачать»
     if (f.size > 1024 * 1048576) return toast('Файл больше 1 ГБ — на сервере столько не держим');
     try {
       let d;
@@ -484,7 +484,7 @@ function stepBtnEditor(el, rowsIn) {
     const a = 'data-r="' + r + '" data-i="' + i + '"';
     if (b.t === 'go') return '<select ' + a + ' data-f="go">' + optPosts(b.go) + '</select>';
     if (b.t === 'doc') return '<select ' + a + ' data-f="doc">' + Object.keys(S.docNames).map((k) => '<option value="' + k + '"' + (b.doc === k ? ' selected' : '') + '>' + esc(S.docNames[k]) + (S.docs[k] ? '' : ' — ссылка не задана') + '</option>').join('') + '</select>';
-    if (b.t === 'file') return '<div class="small" style="margin:4px 2px">' + (b.file ? '📎 ' + esc(b.file.name || b.file.type) : 'файл не выбран') + '</div><button type="button" class="chip" data-pick="' + r + ':' + i + '">' + (b.file ? 'заменить файл' : '＋ выбрать файл') + '</button><p class="small muted" style="margin:4px 2px 0">По нажатию бот пришлёт файл в чат (до 45 МБ). Файлы больше — до 1 ГБ — лежат на нашем сервере, кнопка откроет ссылку на скачивание.</p>';
+    if (b.t === 'file') return '<div class="small" style="margin:4px 2px">' + (b.file ? '📎 ' + esc(b.file.name || b.file.type) : 'файл не выбран') + '</div><button type="button" class="chip" data-pick="' + r + ':' + i + '">' + (b.file ? 'заменить файл' : '＋ выбрать файл') + '</button><p class="small muted" style="margin:4px 2px 0">По нажатию откроется страница с предпросмотром (картинка, видео, pdf, аудио) и кнопкой «Скачать». Файл до 1 ГБ.</p>';
     if (b.t === 'pay') return '<select ' + a + ' data-f="pay">' + Object.keys(TARIFF).map((k) => '<option value="' + k + '"' + (b.pay === k ? ' selected' : '') + '>' + TARIFF[k] + '</option>').join('') + '</select>';
     return '<input type="text" placeholder="https://ссылка" inputmode="url" ' + a + ' data-f="url" value="' + esc(b.url || '') + '">';
   };

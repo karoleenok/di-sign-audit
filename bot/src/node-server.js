@@ -16,6 +16,7 @@ import { makeCtx, handleUpdate, tick, setup, clickRedirect, exportAll } from './
 import { handlePanelApi, panelAdmin } from './panel-api.js';
 import { stepRuns } from './testrun.js';
 import PANEL from './panel-html.js';
+import { filePage, mimeOf, kindOf } from './filepage.js';
 
 const env = process.env;
 const file = env.DB_FILE || './data/bot.db';
@@ -78,14 +79,29 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': 'application/json' });
       return res.end(JSON.stringify({ ok: true, file: { type: 'link', url: `${base}/f/${token}/${encodeURIComponent(name)}`, name, size } }));
     }
-    // открытая ссылка на такой файл
+    // открытая ссылка на такой файл: страница предпросмотра с кнопкой «Скачать»; ?raw=1 — сам файл, ?dl=1 — скачать
     { const fm = /^\/f\/([a-z0-9]{24})\//.exec(url.pathname);
       if (fm) {
         const target = path.join(path.dirname(file), 'files', fm[1]);
         let meta; try { meta = JSON.parse(fs.readFileSync(target + '.json', 'utf8')); } catch { res.writeHead(404); return res.end('not found'); }
-        res.writeHead(200, { 'content-type': meta.type || 'application/octet-stream', 'content-length': meta.size, 'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(meta.name)}`, 'cache-control': 'public, max-age=3600' });
+        const dl = url.searchParams.get('dl') === '1', rawQ = url.searchParams.get('raw') === '1';
+        const wantsHtml = /text\/html/.test(req.headers.accept || '');
+        const mime = mimeOf(meta), safe = kindOf(mime) !== 'other';
+        if (!dl && !rawQ && wantsHtml) return send(200, filePage(meta, url.origin + url.pathname), 'text/html; charset=utf-8', { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+        const inline = rawQ && safe;
+        const hd = { 'content-type': inline ? mime : 'application/octet-stream', 'accept-ranges': 'bytes', 'x-content-type-options': 'nosniff', 'content-security-policy': 'sandbox', 'cache-control': 'public, max-age=3600',
+          'content-disposition': `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(meta.name)}` };
+        let start = 0, end = meta.size - 1, code = 200;
+        const rg = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+        if (rg && (rg[1] || rg[2])) {
+          if (rg[1]) { start = +rg[1]; if (rg[2]) end = Math.min(end, +rg[2]); } else { start = Math.max(0, meta.size - +rg[2]); }
+          if (start > end || start >= meta.size) { res.writeHead(416, { 'content-range': `bytes */${meta.size}` }); return res.end(); }
+          code = 206; hd['content-range'] = `bytes ${start}-${end}/${meta.size}`;
+        }
+        hd['content-length'] = end - start + 1;
+        res.writeHead(code, hd);
         if (req.method === 'HEAD') return res.end();
-        return fs.createReadStream(target).pipe(res);
+        return fs.createReadStream(target, { start, end }).pipe(res);
       } }
     if (url.pathname.startsWith('/api/panel/')) {
       const chunks = []; for await (const ch of req) chunks.push(ch);
