@@ -6,7 +6,8 @@ import { AUD, LEVELS } from './texts.js';
 import { sendPost, audienceCount, loadDocs, DOCS, TRACKS, cleanFile } from './posts.js';
 import { mdToEntities, entitiesToMd } from './fmt.js';
 import { runPreview, startFastRun, stopRuns, stepRuns, activeRun } from './testrun.js';
-import { onStart, docVars, consentView, loadFlow, normFlow, FLOW_OPTIONAL } from './users.js';
+import { onStart, docVars, consentView, backfillFb, loadFlow, normFlow, FLOW_OPTIONAL } from './users.js';
+import { MSK, DAY } from './time.js';
 import { saveMsgExtra } from './msgs.js';
 import { listMsgs, saveMsg, resetMsg, btn, say, setMsgMedia, canMedia, msgInfo, loadMsgs } from './msgs.js';
 
@@ -203,6 +204,13 @@ export async function handlePanelApi(ctx, request, url) {
       return json({ error: 'Пустой пост нельзя включить — добавь текст или картинку. Остальное сохранено, пост в черновиках.' }, 400);
     }
     return json({ ok: true, post: postOut(np), reach: await audienceCount(ctx.db, np) });
+  }
+
+  // бонус за отзыв — тем, кто оставил отзыв раньше (сегодня или все прежние)
+  if (path === '/fb/backfill' && request.method === 'POST') {
+    const since = body.since === 'all' ? 0 : Math.floor((ctx.now + MSK) / DAY) * DAY - MSK;
+    const r = await backfillFb(ctx, since, !!body.dry);
+    return json({ ok: true, ...r });
   }
 
   // копия существующего поста в другой раздел (текст, оформление, премиум-эмодзи, файлы и кнопки сохраняются; оригинал не трогаем)

@@ -340,6 +340,34 @@ async function sendFbBonus(ctx, u) {
   }
 }
 
+// догнать бонус тем, кто оставил отзыв раньше (с момента since). dry — только посчитать
+export async function backfillFb(ctx, since, dry) {
+  const users = await ctx.db.all(`SELECT * FROM users WHERE fb_at IS NOT NULL AND fb_at >= ? AND status = 'active'`, [since]);
+  const posts = await ctx.db.all(`SELECT * FROM posts WHERE kind = 'fb' AND status = 'active' ORDER BY pos, id`);
+  const docs = await loadDocs(ctx);
+  const arrow = await btn(ctx, 'buttonsArrow');
+  let people = 0, sent = 0, failed = 0;
+  for (const u of users) {
+    const todo = [];
+    for (const p of posts) if (!(await ctx.db.first(`SELECT 1 FROM deliveries WHERE post_id = ? AND tg_id = ?`, [p.id, u.tg_id]))) todo.push(p);
+    if (!todo.length) continue;
+    people++;
+    if (dry) { sent += todo.length; continue; }
+    for (const p of todo) {
+      try {
+        await sendPost(ctx.tg, u.tg_id, p, { uid: u.tg_id, publicUrl: ctx.publicUrl, arrow, docs });
+        await recordDeliveries(ctx.db, p.id, [{ tg_id: u.tg_id, ok: true }], ctx.now);
+        sent++;
+      } catch (e) {
+        failed++;
+        if (e.code === 403) await ctx.db.run(`UPDATE users SET status = 'blocked' WHERE tg_id = ?`, [u.tg_id]);
+        break;
+      }
+    }
+  }
+  return { people, sent, failed, posts: posts.length };
+}
+
 // новый отзыв о кабинете — админам в бот
 async function notifyAdmins(ctx, u) {
   const ids = new Set([...String(ctx.env.ADMIN_IDS || '').split(/[\s,;]+/).filter(Boolean).map(Number), ...(await ctx.db.all(`SELECT tg_id FROM admins`)).map((r) => r.tg_id)]);

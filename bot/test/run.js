@@ -675,6 +675,16 @@ step('кнопка «файл»: у шага и у поста по нажати�
     const b = await db.first(`SELECT text, entities, buttons FROM posts WHERE id = ?`, [r.post.id]);
     assert.deepEqual({ ...b }, { ...a }, 'копия повторяет текст, оформление и кнопки');
     assert.equal((await api(`/post/${pid}/copy`, { kind: 'zzz' })).status, 400);
+    // бонус за отзыв — тем, кто оставил отзыв раньше
+    await db.run(`UPDATE posts SET status = 'active' WHERE id = ?`, [r.post.id]);
+    await db.run(`UPDATE users SET fb_at = ?, status = 'active' WHERE tg_id = 1500`, [NOW]);
+    const dry = await api('/fb/backfill', { since: 'today', dry: true });
+    assert.equal(dry.people >= 1, true, 'нашла того, кто оставил отзыв сегодня');
+    const c0 = calls.length;
+    const go = await api('/fb/backfill', { since: 'today' });
+    assert.ok(go.sent >= 1 && calls.slice(c0).some((c) => c.body.chat_id === 1500), 'бонус ушёл');
+    const again = await api('/fb/backfill', { since: 'today' });
+    assert.equal(again.sent, 0, 'второй раз никому не уходит');
   }
 }
 step('конструктор сценариев: порядок и выключатели шагов входа, посты-ответы, кнопки-выбор, цепочка после ответа, документы из панели, оплата-заглушка, #номер в чате');
