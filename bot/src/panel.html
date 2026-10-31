@@ -888,6 +888,13 @@ function openPost(id, opt) {
     '<label class="f">Трек из аудита</label>' + segHtml('fTrack', [['all', 'Всем'], ['course', '🎓 Мини-курс'], ['mat', '📚 Материалы']], st.track) +
     '<p class="small muted" style="margin:6px 2px 0">Мини-курс или материалы — что человек выбрал в аудите или в боте.</p>';
   h += '<label class="f">Статус</label>' + segHtml('fSt', [['active', '✅ Включён'], ['paused', '⏸ Пауза'], ['draft', '📝 Черновик']], st.status);
+  if (!isNew && p.kind === 'drip') h += '<div class="box" style="margin-top:14px"><h3>Пост для шага входа</h3><p class="small muted" style="margin:0 0 8px">Уберёт пост из ленты по дням и положит в блок «Свои посты для шагов»: его можно будет поставить вместо шаблонного сообщения на любом шаге входа.</p><button class="btn ghost" id="bToStep" type="button">↔ Перевести в пост для шага</button></div>';
+  if (!isNew && p.kind === 'node') {
+    const steps = (S.msgs || []).filter((m) => m.canMedia);
+    h += '<div class="box" style="margin-top:14px"><h3>Куда поставить этот пост</h3><p class="small muted" style="margin:0 0 8px">Выбери шаг входа: пост заменит шаблонное сообщение (или другой свой пост, если он там уже стоял).</p>' +
+      '<select id="bStepSel"><option value="">— выбери шаг —</option>' + steps.map((m) => '<option value="' + m.key + '">' + esc(m.title) + (m.post && m.post !== p.id ? ' (там уже пост #' + m.post + ')' : '') + (m.post === p.id ? ' (уже стоит)' : '') + '</option>').join('') + '</select>' +
+      '<div class="btns two" style="margin-top:8px"><button class="btn ghost" id="bToSlot" type="button">🔁 Поставить на шаг</button><button class="btn ghost" id="bToFeed" type="button">↔ В ленту по дням</button></div></div>';
+  }
   h += '<div class="btns"><button class="btn" id="bSave">' + (isNew ? 'Создать пост' : 'Сохранить') + '</button>' +
     (isNew ? '<button class="btn ghost" id="bClose">Отмена</button>' : '<div class="btns two" style="margin:0"><button class="btn ghost" id="bPrev">👁 Прислать мне</button><button class="btn ghost" id="bClose">Закрыть</button></div><button class="btn danger" id="bArch">🗄 Убрать в архив</button>') + '</div>';
   sheet(h);
@@ -1004,6 +1011,9 @@ function openPost(id, opt) {
   const close = () => closeSheet();
   $('bX').onclick = close; $('bClose').onclick = close;
   if ($('bPrev')) $('bPrev').onclick = async () => { try { const r = await api('/post/' + p.id + '/preview', {}); toast(r.warn ? '⚠️ ' + r.warn : 'Отправила тебе в бот 👀'); } catch (e) { toast(e.message); } };
+  if ($('bToStep')) $('bToStep').onclick = async () => { try { await api('/post/' + p.id + '/move', { to: 'node' }); closeSheet(); haptic('medium'); toast('Теперь это пост для шага: он в блоке «Свои посты для шагов»'); await reload(); } catch (e) { toast(e.message); } };
+  if ($('bToFeed')) $('bToFeed').onclick = async () => { try { await api('/post/' + p.id + '/move', { to: 'drip', day: 1 }); closeSheet(); haptic('medium'); toast('Пост в ленте: день 1, 11:00. Нажми на него — поменяй день и время'); await reload(); } catch (e) { toast(e.message); } };
+  if ($('bToSlot')) $('bToSlot').onclick = async () => { const k = $('bStepSel').value; if (!k) { toast('Выбери шаг'); return; } try { const r = await api('/msg/' + k, { post: p.id }); S.msgs = r.msgs; closeSheet(); haptic('medium'); toast('Готово: на этом шаге теперь твой пост'); render(); } catch (e) { toast(e.message); } };
   if ($('bArch')) $('bArch').onclick = async () => { try { await api('/post/' + p.id, { status: 'archived' }); closeSheet(); toast('В архиве. Вернуть можно в боте: /posts → 🗄 Архив'); await reload(); } catch (e) { toast(e.message); } };
   $('bSave').onclick = async () => {
     sync();
