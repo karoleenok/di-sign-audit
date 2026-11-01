@@ -424,12 +424,14 @@ step('«печатает…» в чате: пузырёк • → • • → �
   const labels = pv.filter((t) => t.startsWith('🧪 ') && !/Конец/.test(t));
   assert.ok(labels.some((t) => /⏱ через 2 ч после входа/.test(t)) && labels.some((t) => /↳ через 1 ч после «Таймер 2ч»/.test(t)), 'подписи «когда»: ' + labels.join(' | '));
   assert.ok(labels.findIndex((t) => /Таймер 2ч/.test(t)) < labels.findIndex((t) => /После таймера/.test(t)), 'порядок по времени');
+  assert.ok(labels.some((t) => /^🧪 «Таймер 2ч»\n📍 Путь → ③ Лента по дням → ⏱ через 2 ч после входа$/.test(t)), 'подпись: название и где пост лежит в панели: ' + labels.join(' | '));
+  assert.ok(!labels.some((t) => /шаг \d|#\d/.test(t)), 'технических пометок нет');
   // ускоренный: 1 день = 1 минута
   const f0 = calls.length;
   await startFastRun(C(), 100, 'start'); const st0 = NOW;
   await stepRuns(C(), 30);
   const after0 = calls.slice(f0).filter((c) => c.body.chat_id === 100 && /^🧪 /.test(c.body.text || '')).map((c) => c.body.text);
-  assert.ok(after0.some((t) => /подарок/.test(t)) && !after0.some((t) => /день 1/.test(t)), 'сначала подарок, день 1 ещё не пришёл: ' + after0.join(' | '));
+  assert.ok(after0.some((t) => /подарок/i.test(t)) && !after0.some((t) => /день 1/.test(t)), 'сначала подарок, день 1 ещё не пришёл: ' + after0.join(' | '));
   NOW = st0 + 10; await stepRuns(C(), 30);
   const after10 = calls.slice(f0).filter((c) => c.body.chat_id === 100 && /^🧪 /.test(c.body.text || '')).map((c) => c.body.text);
   assert.ok(after10.some((t) => /через 2 ч/.test(t)), 'через 10 секунд (= 4 часа ленты) пришёл пост «через 2 ч»');
