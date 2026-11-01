@@ -175,6 +175,39 @@ textarea{min-height:120px;resize:vertical;line-height:1.45}
 .lnk{border:0;background:none;padding:0;color:inherit;text-decoration:underline;text-underline-offset:3px;font-size:12.5px;cursor:pointer}
 .lnk2{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:11px 14px;margin:8px 0}
 .stp .chip{padding:4px 9px;font-size:12.5px}.stp .mv .chip{padding:4px 8px}.stp .st-t{font-size:14.5px}
+/* новая система: пузыри как в телеграме, линия времени, режим «как ученик» */
+.railw{position:relative;padding-left:26px}
+.railw::before{content:"";position:absolute;left:8px;top:14px;bottom:8px;width:2px;background:var(--line);border-radius:2px}
+.railw>.grp{position:relative}
+.railw>.grp::before{content:"";position:absolute;left:-24px;top:8px;width:12px;height:12px;border-radius:50%;background:var(--lilac);border:2px solid var(--bg);box-shadow:0 0 0 2px var(--line)}
+.railw .day .dayh{position:relative}
+.railw .day .dayh::before{content:"";position:absolute;left:-22px;top:9px;width:8px;height:8px;border-radius:50%;background:var(--lilac);border:2px solid var(--bg);box-shadow:0 0 0 2px var(--line)}
+.railw .stp{background:rgba(44,13,2,.05);border:0}
+.card,.fn{border-radius:18px 18px 18px 6px}
+.cap{font-size:12px;color:var(--soft);font-weight:400}
+.tx{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;margin-top:6px;word-break:break-word}
+.chips2{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chips2 span{padding:4px 10px;border-radius:99px;font-size:12.5px;background:var(--pill)}
+.foot2{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;margin-top:8px;font-size:12px;color:var(--soft)}
+.foot2 .sumln{margin:0}
+.strip img,.strip .ph{width:92px;height:68px;border-radius:10px}
+.attn{background:var(--warn-bg);color:var(--warn);border-radius:16px;padding:12px 16px;margin:12px 0}
+.attn summary{cursor:pointer;font-weight:500;list-style:none;display:flex;justify-content:space-between;gap:8px}
+.attn summary::-webkit-details-marker{display:none}
+.attn ul{margin:8px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;font-size:14px}
+.attn li button{border:0;background:none;padding:0;color:inherit;text-decoration:underline;text-underline-offset:3px;text-align:left;cursor:pointer}
+.ctl{display:flex;flex-direction:column;gap:6px;margin:8px 0}
+.ctl .lab{font-size:12px;color:var(--soft)}
+.phone{background:#f3ece6;border-radius:28px;padding:16px;display:flex;flex-direction:column;gap:8px;min-height:360px;border:1px solid var(--line);margin:10px 0}
+.phone .hd{text-align:center;font-size:12px;color:var(--soft);padding-bottom:6px}
+.m{max-width:90%;background:var(--card);border-radius:16px 16px 16px 4px;padding:10px 12px;box-shadow:var(--shadow);word-break:break-word}
+.m.new{animation:stIn .25s ease}
+.m .strip{margin:0 0 6px}
+.kbd{display:flex;flex-direction:column;gap:4px;max-width:90%}
+.kbd span{background:rgba(120,90,130,.18);border-radius:10px;padding:8px;text-align:center;font-size:13.5px}
+.stdiv{text-align:center;font-size:12px;color:var(--soft);padding:6px 0}
+@keyframes stIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.m.new{animation:none}}
 </style>
 </head>
 <body>
@@ -242,8 +275,6 @@ function tags(p) {
   let h = '';
   if (p.status === 'paused') h += '<span class="tag paused">⏸ пауза</span>';
   if (p.status === 'draft') h += '<span class="tag draft">📝 черновик</span>';
-  if (p.media.length) h += '<span class="tag">🖼 ' + (p.media.length > 1 ? '×' + p.media.length : '') + '</span>';
-  if (p.buttons.length) h += '<span class="tag">🔘 ' + p.buttons.length + '</span>';
   if (p.emoji) h += '<span class="tag">✨ премиум</span>';
   if (view.level !== 'all' && !gets(p)) h += '<span class="tag no">не получит</span>';
   return h;
@@ -275,6 +306,8 @@ function loadThumbs(root) {
   imgs.forEach((i) => io.observe(i));
 }
 
+const snip = (p) => p.text && p.title ? '<div class="tx">' + esc(p.text) + '</div>' : '';
+const chipsOf = (p) => (p.buttons && p.buttons.length) ? '<div class="chips2">' + p.buttons.slice(0, 6).map((t) => '<span>' + esc(t) + '</span>').join('') + '</div>' : '';
 const whoOf = (p) => p.track === 'course' ? 'тем, кто выбрал мини-курс' : p.track === 'mat' ? 'тем, кто выбрал материалы' : 'всем';
 function comesWhen(p) {
   if (p.kind === 'gift') return 'после теста';
@@ -292,9 +325,8 @@ function cardHtml(p, opts) {
   const time = opts.time != null ? opts.time : (p.kind === 'drip' ? whenShort(p, byIdMap()) : '');
   return '<div class="card' + (off ? ' off' : '') + '" data-id="' + p.id + '">' +
     (opts.drag ? '<div class="handle" aria-label="перетащить">⋮⋮</div>' : '<div style="width:6px"></div>') +
-    '<div class="cbody"><div class="ctop">' + (time ? '<span class="time">' + esc(time) + '</span>' : '') +
-    '<span class="stat">' + (p.sent ? 'отправлено ' + p.sent : 'ещё не отправлялся') + (p.clicks ? ' · нажатий ' + p.clicks : '') + '</span></div>' +
-    '<div class="ttl">' + esc(postName(p)) + '</div>' + sumLine(p) + '<div class="meta">' + tags(p) + '</div>' + mediaStrip(p) + '</div></div>';
+    '<div class="cbody">' + '<div class="ttl' + (p.title ? ' cap' : '') + '">' + esc(postName(p)) + '</div>' + mediaStrip(p) + snip(p) + chipsOf(p) +
+    '<div class="foot2">' + sumLine(p) + '<span class="stat">' + (p.sent ? '↗ ' + p.sent : '') + (p.clicks ? ' · 👆 ' + p.clicks : '') + '</span></div>' + (tags(p) ? '<div class="meta">' + tags(p) + '</div>' : '') + '</div></div>';
 }
 
 // ---------- отрисовка ----------
@@ -413,11 +445,9 @@ async function onDrop(ev) {
 // ---------- проверить ленту на себе ----------
 function runBox() {
   const r = S.run;
-  const src = S.runSrc || 'audit';
-  return '<div class="box" style="margin-top:14px"><div class="seg" style="margin-bottom:10px"><button type="button" class="' + (src === 'audit' ? 'on' : '') + '" data-rsrc="audit">из аудита</button><button type="button" class="' + (src === 'site' ? 'on' : '') + '" data-rsrc="site">не из аудита (сайт, инста)</button></div>' +
-    '<div class="btns" style="margin-top:0"><button class="btn" id="runPrev" type="button">▶️ Проверить на себе</button>' +
-    (r ? '<div class="note" style="margin:0">⏩ Идёт ускоренный тест, пришло: ' + r.sent + '</div><button class="btn danger" id="runStop" type="button">⏹ Остановить тест</button>'
-       : '<button class="btn ghost" id="runFast" type="button">⏩ Ускоренно: 1 день = 1 минута</button>') + '</div></div>';
+  return '<div class="btns two" style="margin:8px 0 12px"><button class="btn" id="runPrev" type="button">▶️ Проверить на себе</button>' +
+    (r ? '<button class="btn danger" id="runStop" type="button">⏹ Остановить тест</button>' : '<button class="btn ghost" id="runFast" type="button">⏩ Ускоренно</button>') + '</div>' +
+    (r ? '<div class="note" style="margin:0 0 10px">⏩ Идёт ускоренный тест (1 день = 1 минута), пришло: ' + r.sent + '</div>' : '');
 }
 function bindRun() {
   const lvl = view.level;
@@ -696,7 +726,7 @@ function makeNode(shown) {
     const np = path.concat(p.id);
     let h = '<div class="fn' + (p.status !== 'active' ? ' dim' : '') + '" data-id="' + p.id + '"><div class="fn-top"><span class="time">' + esc(whenOf(p)) + '</span>' + stTag(p) + emptyTag(p) +
       '<span class="stat">' + (p.sent ? '↗ ' + p.sent : '') + (p.clicks ? ' · 👆 ' + p.clicks : '') + '</span></div>' +
-      '<div class="ttl">' + esc(postName(p)) + '</div>' + mediaStrip(p, 3) + (p.track && p.track !== 'all' ? '<div class="meta"><span class="tag zone">' + (p.track === 'course' ? '🎓 мини-курс' : '📚 материалы') + '</span></div>' : '') + (p.media.length ? '<div class="meta"><span class="tag">🖼 ' + (p.media.length > 1 ? '×' + p.media.length : '') + '</span>' + (p.audience !== 'all' && p.kind !== 'node' ? '<span class="tag">' + esc(S.audiences[p.audience]) + '</span>' : '') + '</div>' : (p.audience !== 'all' && p.kind !== 'node' ? '<div class="meta"><span class="tag">' + esc(S.audiences[p.audience]) + '</span></div>' : '')) + '</div>';
+      '<div class="ttl">' + esc(postName(p)) + '</div>' + mediaStrip(p, 3) + (p.text && p.title ? '<div class="tx">' + esc(p.text) + '</div>' : '') + (p.track && p.track !== 'all' ? '<div class="meta"><span class="tag zone">' + (p.track === 'course' ? '🎓 мини-курс' : '📚 материалы') + '</span></div>' : '') + (p.media.length ? '<div class="meta"><span class="tag">🖼 ' + (p.media.length > 1 ? '×' + p.media.length : '') + '</span>' + (p.audience !== 'all' && p.kind !== 'node' ? '<span class="tag">' + esc(S.audiences[p.audience]) + '</span>' : '') + '</div>' : (p.audience !== 'all' && p.kind !== 'node' ? '<div class="meta"><span class="tag">' + esc(S.audiences[p.audience]) + '</span></div>' : '')) + '</div>';
     let kids = '';
     (p.rows || []).forEach((row) => row.forEach((b) => {
       if (b.go) { const t = ids[+b.go]; kids += '<div class="fb"><span class="fb-l">🔘 ' + esc(b.text) + (p.once ? ' <i class="muted small">выбор</i>' : '') + '</span>' + (t ? node(t, depth + 1, np) : '<span class="tag no">пост в архиве</span>') + '</div>'; }
@@ -711,7 +741,69 @@ function makeNode(shown) {
   };
   return node;
 }
+const STUDENT = 'Анна';
+const plainT = (t) => esc(String(t || '').replace(/\{имя\}/g, STUDENT)).replace(/\n/g, '<br>');
+function studentSeq() {
+  const fromAudit = (S.runSrc || 'audit') === 'audit';
+  const t = view.track === 'mat' ? 'mat' : 'course';
+  const fl = S.flow || { order: Object.keys(ENTRY), off: [] };
+  const seq = [];
+  const addMsg = (key) => { const m = mOf(key); if (!m) return; const st = FLOW.find((x) => x.key === key); seq.push({ text: m.text, btns: ((st && st.btns) || []).map(mOf).filter(Boolean).map((b) => b.text).concat((m.links || []).flat().map((l) => l.text)) }); };
+  addMsg(fromAudit ? 'helloTest' : 'hello');
+  fl.order.forEach((k) => {
+    if (fl.off.includes(k)) return;
+    if (/^post:\d+$/.test(k)) { const p = S.posts.find((x) => x.id === +k.slice(5)); if (p && p.status === 'active') seq.push({ post: p }); return; }
+    if (fromAudit && (k === 'askTrack' || k === 'testOffer')) return;
+    addMsg(k);
+  });
+  if (fromAudit) S.posts.filter((p) => p.kind === 'gift' && p.status === 'active' && (p.track || 'all') !== (t === 'mat' ? 'course' : 'mat') ).forEach((p) => seq.push({ post: p, note: 'подарок после теста' }));
+  addMsg(t === 'mat' ? 'schedMat' : 'schedCourse');
+  const ids = byIdMap();
+  S.posts.filter((p) => p.kind === 'drip' && p.status === 'active' && ((p.track || 'all') === 'all' || p.track === t)).sort((a, b) => offMin(a, ids) - offMin(b, ids) || a.pos - b.pos || a.id - b.id).forEach((p) => seq.push({ post: p, day: bucketDay(p, ids) }));
+  return seq;
+}
+function studentHtml() {
+  const seq = studentSeq(), n = Math.min(view.step || 0, seq.length);
+  let h = '<div class="phone"><div class="hd">бот глазами ученика</div>', last = -1;
+  for (let i = 0; i < n; i++) {
+    const x = seq[i], cls = 'm' + (i === n - 1 ? ' new' : '');
+    if (x.day != null && x.day !== last) { last = x.day; h += '<div class="stdiv">' + (x.day ? 'прошло дней: ' + x.day : 'сразу') + '</div>'; }
+    if (x.note) h += '<div class="stdiv">' + x.note + '</div>';
+    if (x.post) { const p = x.post; h += '<div class="' + cls + '">' + mediaStrip(p, 3) + plainT(p.text) + '</div>' + (p.buttons.length ? '<div class="kbd">' + p.buttons.map((b) => '<span>' + esc(b) + '</span>').join('') + '</div>' : ''); }
+    else h += '<div class="' + cls + '">' + plainT(x.text) + '</div>' + (x.btns.length ? '<div class="kbd">' + x.btns.map((b) => '<span>' + esc(b) + '</span>').join('') + '</div>' : '');
+  }
+  if (!n) h += '<div class="stdiv">нажми «Дальше», чтобы увидеть первое сообщение</div>';
+  return h + '</div><div class="btns two"><button class="btn ghost" type="button" data-strest="1">Сначала</button><button class="btn" type="button" data-stnext="1">' + (n >= seq.length ? 'Конец пути' : 'Дальше ▸ ' + n + '/' + seq.length) + '</button></div>';
+}
+function pathTop() {
+  const src = S.runSrc || 'audit', m = view.mode || 'build', t = view.track || 'all';
+  const seg = (attr, opts, cur) => '<div class="seg">' + opts.map(([k, n]) => '<button type="button" ' + attr + '="' + k + '" class="' + (cur === k ? 'on' : '') + '">' + n + '</button>').join('') + '</div>';
+  return '<div style="margin:12px 0">' + seg('data-pmode', [['build', 'Собрать'], ['stud', 'Как ученик']], m) + '</div>' +
+    '<div class="ctl"><span class="lab">Человек пришёл</span>' + seg('data-rsrc', [['audit', 'из аудита'], ['site', 'не из аудита (сайт, инста)']], src) +
+    '<span class="lab">' + (m === 'stud' ? 'Выбрал' : 'Лента для') + '</span>' + seg('data-ftrk', m === 'stud' ? [['course', 'мини-курс'], ['mat', 'материалы']] : [['all', 'всех'], ['course', 'мини-курс'], ['mat', 'материалы']], m === 'stud' && t === 'all' ? 'course' : t) + '</div>';
+}
+function attentionHtml(lost) {
+  const d = S.docs || {}, items = [];
+  const miss = [['policy', 'политику'], ['consent', 'согласие'], ['offer', 'оферту']].filter(([k]) => !d[k]).map(([, n]) => n);
+  if (miss.length) items.push('<button type="button" data-attn="docs">нет ссылки на ' + miss.join(', ') + '. Добавь в «Прочее»</button>');
+  S.posts.filter((p) => ['drip', 'date', 'gift', 'fb'].includes(p.kind) && (p.status === 'draft' || p.status === 'paused')).slice(0, 5)
+    .forEach((p) => items.push('<button type="button" data-attn-post="' + p.id + '">«' + esc(postName(p).slice(0, 36)) + '» ' + (p.status === 'draft' ? 'в черновике' : 'на паузе') + ', не уйдёт</button>'));
+  if (lost) items.push('<span>постов-ответов без кнопки: ' + lost + '. Они ниже, привяжи их кнопкой</span>');
+  if (!items.length) return '';
+  return '<details class="attn"><summary><span>Требует внимания: ' + items.length + '</span><span>▾</span></summary><ul>' + items.map((x) => '<li>' + x + '</li>').join('') + '</ul></details>';
+}
 function renderFlow() {
+  if ((view.mode || 'build') === 'stud') {
+    $('body').innerHTML = pathTop() + studentHtml();
+    bindRun();
+    document.querySelectorAll('[data-pmode]').forEach((b) => b.onclick = () => { view.mode = b.dataset.pmode; view.step = 0; haptic(); renderFeed(); });
+    document.querySelectorAll('[data-ftrk]').forEach((b) => b.onclick = () => { view.track = b.dataset.ftrk; view.step = 0; haptic(); renderFeed(); });
+    document.querySelectorAll('[data-rsrc]').forEach((b) => b.addEventListener('click', () => { view.step = 0; }));
+    document.querySelectorAll('[data-stnext]').forEach((b) => b.onclick = () => { view.step = (view.step || 0) + 1; renderFeed(); });
+    document.querySelectorAll('[data-strest]').forEach((b) => b.onclick = () => { view.step = 0; renderFeed(); });
+    setTimeout(() => loadThumbs($('body')), 0);
+    return;
+  }
   const ids = byIdMap();
   const shown = new Set();
   const node = makeNode(shown);
@@ -719,22 +811,26 @@ function renderFlow() {
   const gifts = S.posts.filter((p) => p.kind === 'gift' && isRoot(p)).sort((a, b) => a.id - b.id);
   const drip = S.posts.filter((p) => p.kind === 'drip' && isRoot(p)).sort((a, b) => offMin(a, ids) - offMin(b, ids) || a.pos - b.pos || a.id - b.id);
   const dates = S.posts.filter((p) => p.kind === 'date').sort((a, b) => (a.run_at || 9e12) - (b.run_at || 9e12));
-  let h = runBox();
+  let h = pathTop() + '@@ATTN@@' + runBox();
   h += '<div class="btns two" style="margin:0 0 4px"><button class="btn" type="button" id="newPost">＋ Пост</button><button class="btn ghost" type="button" data-newk="date">＋ Анонс на дату</button></div>';
-  h += '<div class="grp">Вход</div><p class="small muted" style="margin:-2px 2px 8px">Нажми на шаг, чтобы править текст. ⋮⋮ меняет порядок.</p>' + entryBox();
+  h += '<div class="railw"><div class="grp">Вход</div><p class="small muted" style="margin:-2px 2px 8px">Нажми на шаг, чтобы править текст. ⋮⋮ меняет порядок.</p>' + entryBox();
   h += poolBox();
   const sec = (title, note, list, kind) => '<div class="grp">' + title + '</div>' + (note ? '<p class="small muted" style="margin:-2px 2px 10px">' + note + '</p>' : '') +
     (list.length ? list.map((p) => '<div class="tree">' + node(p, 0, []) + '</div>').join('') : '<p class="small muted dash">Пока пусто.</p>') +
     (kind ? '<div class="btns two" style="margin:8px 0 4px"><button type="button" class="btn ghost" data-newk="' + kind + '">＋ Новый пост</button><button type="button" class="btn ghost" data-pickk="' + kind + '">📋 Из существующих</button></div>' + (kind === 'fb' ? '<button type="button" class="btn ghost" data-fbback="1" style="margin:0 0 4px">📤 Отправить тем, кто уже оставил отзыв</button>' : '') : '');
   [...gifts, ...dates, ...S.posts.filter((p) => p.kind === 'fb')].forEach((p) => node(p, 0, [])); // цепочки подарков, дат и бонусов не считаем потерянными
   drip.forEach((p) => node(p, 0, [])); // обходим цепочки, чтобы не считать посты-ответы потерянными
-  h += '<div class="grp">Лента по дням</div><p class="small muted" style="margin:-2px 2px 8px">Тяни пост за ⋮⋮ на другой день.</p>' + feedTabs() + daysHtml() +
-    '<div class="btns two" style="margin:8px 0 4px"><button type="button" class="btn ghost" data-newk="drip">＋ Новый пост</button><button type="button" class="btn ghost" data-pickk="drip">📋 Из существующих</button></div>';
+  h += '<div class="grp">Лента по дням</div><p class="small muted" style="margin:-2px 2px 8px">Тяни пост за ⋮⋮ на другой день.</p>' + daysHtml() +
+    '<div class="btns two" style="margin:8px 0 4px"><button type="button" class="btn ghost" data-newk="drip">＋ Новый пост</button><button type="button" class="btn ghost" data-pickk="drip">📋 Из существующих</button></div></div>';
   const stepPosts = new Set((S.msgs || []).map((m) => m.post).filter(Boolean));
   const lost = S.posts.filter((p) => p.kind === 'node' && !shown.has(p.id) && !stepPosts.has(p.id));
   if (lost.length) h += sec('🔘 Посты-ответы без кнопки', 'На них пока не ведёт ни одна кнопка и они не стоят на шаге входа — человек их не получит. Привяжи кнопкой («＋ кнопка» → «Пост») или перетащи на шаг входа выше.', lost);
-  $('body').innerHTML = h;
+  $('body').innerHTML = h.replace('@@ATTN@@', attentionHtml(lost.length));
   $('newPost').onclick = () => openNew();
+  document.querySelectorAll('[data-pmode]').forEach((b) => b.onclick = () => { view.mode = b.dataset.pmode; view.step = 0; haptic(); renderFeed(); });
+  document.querySelectorAll('[data-attn-post]').forEach((b) => b.onclick = () => openPost(+b.dataset.attnPost));
+  document.querySelectorAll('[data-attn="docs"]').forEach((b) => b.onclick = () => { tab = 'texts'; render(); window.scrollTo(0, 0); setTimeout(openDocs, 50); });
+  setTimeout(() => loadThumbs($('body')), 0);
   document.querySelectorAll('[data-newk]').forEach((el) => el.onclick = () => { haptic(); openNew({ kind: el.dataset.newk }); });
   document.querySelectorAll('[data-fbback]').forEach((el) => el.onclick = () => { haptic(); fbBackfill(); });
   document.querySelectorAll('[data-pickk]').forEach((el) => el.onclick = () => { haptic(); pickExisting(el.dataset.pickk); });
@@ -812,7 +908,7 @@ function entryExtra(k, o) {
   const n = btns.length + alts.length, open = (view.open || []).includes(k);
   h = h.replace('</div>', ' · <button type="button" class="lnk" data-kt="' + k + '">' + (open ? 'скрыть' : 'кнопки и сообщения: ' + n) + '</button></div>');
   if (!open) return h;
-  h += '<div class="flowkids">';
+  h += '<div class="flowkids">' + (k !== 'schedCourse' ? '<div class="meta"><button type="button" class="chip" data-next="' + k + '">＋ пост после этого шага</button></div>' : '');
   if (btns.length) h += '<div class="fbl">кнопки</div><div class="meta">' + btns.map((m) => '<button type="button" class="chip" data-svc="' + m.key + '">🔘 ' + esc(m.text) + '</button>').join('') + '</div>';
   if (alts.length) h += '<div class="fbl">служебные сообщения</div>' + alts.map((m) => '<button type="button" class="svc" data-svc="' + m.key + '"><span class="hd" aria-hidden="true">⋮⋮</span><span>' + esc(m.title) + (m.changed ? ' ✎' : '') + '</span></button>').join('');
   return h + '</div>';
@@ -825,7 +921,7 @@ function entryBox() {
   const row = (k, t, sub, i, o) => '<div class="stp' + (o.off ? ' off' : '') + '" role="button" tabindex="0" data-k="' + k + '"' + (o.mv ? ' data-mv="1"' : '') + '>' +
     (o.mv ? '<div class="handle" aria-label="перетащить">⋮⋮</div>' : '<div class="lock" title="это место менять нельзя">🔒</div>') +
     '<b>' + i + '</b><span class="st-t">' + t + (sub ? '<i>' + sub + '</i>' : '') + '</span>' +
-    (k !== 'schedCourse' ? '<button type="button" class="chip" data-next="' + k + '" aria-label="что дальше" title="добавить пост после этого шага" style="padding:4px 10px;font-weight:700">＋</button>' : '') +
+    
     (o.mv && !window.Sortable ? '<span class="mv"><button type="button" class="chip" data-up="' + k + '" aria-label="выше">▲</button><button type="button" class="chip" data-down="' + k + '" aria-label="ниже">▼</button></span>' : '') +
     (o.nx2 ? '' : '') + (o.rm ? '<button type="button" class="chip" data-rm="' + k + '" aria-label="убрать из сценария">✕</button>' : '') + (o.sw ? '<button type="button" class="chip sw' + (o.off ? '' : ' on') + '" data-sw="' + k + '">' + (o.off ? 'выкл' : 'вкл') + '</button>' : '') + '</div>' + entryExtra(k, o);
   const pt = (k) => { const m = S.msgs.find((x) => x.key === k); const p = m && m.post && S.posts.find((x) => x.id === m.post); return p ? ' · 🔁 твой пост «' + esc((p.title || p.text || '#' + p.id).slice(0, 30)) + '»' : ''; };

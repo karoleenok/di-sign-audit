@@ -32,7 +32,7 @@ await page.waitForSelector('.card');
 await page.screenshot({ path: OUT + '/panel-1-feed.png', fullPage: true });
 const days = await page.$$eval('.list[data-day]', (ls) => ls.map((l) => [l.dataset.day, l.children.length]));
 assert.deepEqual(days.slice(0, 5), [['0', 2], ['1', 2], ['2', 2], ['3', 1], ['4', 1]]);
-assert.match(await page.textContent('.list[data-day="0"]'), /⏱ через 2 ч после входа/, 'пост по таймеру — в дне 0 с подписью');
+assert.match(await page.textContent('.list[data-day="0"]'), /через 2 ч после входа/, 'пост по таймеру — в дне 0 с подписью');
 step('лента по дням: ' + JSON.stringify(days.slice(0, 5)));
 
 // 3. деления на начинающих и продолжающих в панели больше нет
@@ -108,7 +108,7 @@ await page.click('#bSave'); await page.waitForTimeout(500);
 let mrow = await db.first(`SELECT mode, delay_min, after_id FROM posts WHERE text LIKE 'Контент-план%'`);
 const parentId = (await db.first(`SELECT id FROM posts WHERE title = 'Через 2 часа'`)).id;
 assert.deepEqual({ ...mrow }, { mode: 'after', delay_min: 180, after_id: parentId });
-assert.match(await page.textContent('.list[data-day="0"]'), /↳ через 3 ч после «Через 2 часа»/, 'в ленте встал сразу за родителем');
+assert.match(await page.textContent('.list[data-day="0"]'), /через 3 ч после «Через 2 часа»/, 'в ленте встал сразу за родителем');
 // таймер
 await page.locator('.card .ttl', { hasText: /^Через 2 часа$/ }).click(); await page.waitForSelector('.sheet.on'); await page.waitForTimeout(300);
 await page.click('#fMode button[data-v="after"]');
@@ -126,8 +126,8 @@ step('когда отправлять в панели: «после поста»
 const s0 = sent.length;
 await page.click('#runPrev'); await page.waitForTimeout(700);
 assert.ok(sent.slice(s0).some((c) => /Полный путь/.test(c.body.text || '')), 'предпросмотр ушёл в бот');
-await page.click('#runFast'); await page.waitForTimeout(600);
-assert.match(await page.textContent('.box:has(#runStop)'), /Идёт ускоренный тест/);
+await page.click('#runFast'); await page.waitForTimeout(800);
+assert.match(await page.textContent('#body'), /Идёт ускоренный тест/);
 await page.screenshot({ path: OUT + '/panel-12-run.png' });
 await page.click('#runStop'); await page.waitForTimeout(400);
 assert.ok(await page.$('#runFast'), 'после остановки снова можно запустить');
@@ -163,6 +163,16 @@ await page.click('.msg[data-k="askName"] .p'); await page.waitForSelector('#mRes
 m = await db.first(`SELECT value FROM settings WHERE key = 'msg:askName'`);
 assert.equal(m, null);
 step('тексты: правка с подстановкой {имя} и возврат по умолчанию');
+
+// режим «как ученик»: сообщения идут по шагам
+await page.click('#tabs button[data-t="flow"]'); await page.waitForSelector('[data-pmode]');
+await page.click('[data-pmode="stud"]');
+for (let i = 0; i < 5; i++) await page.click('[data-stnext]');
+assert.ok((await page.$$('.phone .m')).length >= 4, 'в режиме ученика появились сообщения');
+await page.screenshot({ path: OUT + '/panel-15-student.png', fullPage: true });
+await page.click('[data-pmode="build"]'); await page.waitForSelector('#newPost');
+step('режим «как ученик»: сообщения по шагам');
+await page.click('#tabs button[data-t="texts"]'); await page.waitForTimeout(200);
 
 // 8а. путь ученика: пауза, кнопки-ссылки, пройти заново
 assert.match(await page.textContent('#body'), /Путь ученика/);
