@@ -554,7 +554,7 @@ function renderTexts() {
     h += '<div class="day"><div class="dayh"><b>' + (i + 1) + '</b><span>' + esc(st.title) + '</span></div>' +
       '<div class="msg" data-k="' + m.key + '" style="margin-bottom:0"><div class="t"><span class="time">⏱ ' + String(m.delay).replace('.', ',') + ' с</span>' + (m.changed ? '<span class="tag">✎ изменено</span>' : '') + mediaTag(m) + '</div><div class="p" style="-webkit-line-clamp:3">' + esc(m.text) + '</div>' +
       (((st.btns || []).length || m.links.length) ? '<div class="meta" style="margin-top:8px">' + (st.btns || []).map((b) => { const bm = mOf(b); return bm ? '<button type="button" class="chip" data-open="' + b + '">🔘 ' + esc(bm.text) + '</button>' : ''; }).join('') + m.links.flat().map((l) => '<span class="chip" style="cursor:default">' + (l.go ? '➡️ ' : l.doc ? '📄 ' : l.pay ? '💳 ' : '🔗 ') + esc(l.text) + '</span>').join('') + '</div>' : '') +
-      '</div>' + (st.alt || []).map((a) => { const am = mOf(a); return am ? '<div class="msg" data-k="' + a + '" style="margin:6px 0 0 18px;padding:10px 12px"><div class="t small">↳ ' + esc(am.title) + (am.changed ? ' ✎' : '') + mediaTag(am) + '</div><div class="p">' + esc(am.text) + '</div></div>' : ''; }).join('') +
+      '</div>' + (st.alt || []).map((a) => { const am = mOf(a); return am ? '<div class="msg" data-k="' + a + '" style="margin:6px 0 0 18px;padding:10px 12px"><div class="t small" style="display:flex;align-items:center;gap:6px"><span style="flex:1">↳ ' + esc(am.title) + (am.changed ? ' ✎' : '') + mediaTag(am) + '</span>' + (am.canOff ? '<button type="button" class="chip sw' + (am.off ? '' : ' on') + '" data-moff="' + am.key + '">' + (am.off ? 'выкл' : 'вкл') + '</button>' : '') + '</div><div class="p">' + esc(am.text) + '</div></div>' : ''; }).join('') +
       (st.note ? '<p class="small muted" style="margin:6px 2px 0">' + esc(st.note) + '</p>' : '') + '</div>';
   });
   const groups = {};
@@ -910,7 +910,7 @@ function entryExtra(k, o) {
   if (!open) return h;
   h += '<div class="flowkids">' + (k !== 'schedCourse' ? '<div class="meta"><button type="button" class="chip" data-next="' + k + '">＋ пост после этого шага</button></div>' : '');
   if (btns.length) h += '<div class="fbl">кнопки</div><div class="meta">' + btns.map((m) => '<button type="button" class="chip" data-svc="' + m.key + '">🔘 ' + esc(m.text) + '</button>').join('') + '</div>';
-  if (alts.length) h += '<div class="fbl">служебные сообщения</div>' + alts.map((m) => '<button type="button" class="svc" data-svc="' + m.key + '"><span class="hd" aria-hidden="true">⋮⋮</span><span>' + esc(m.title) + (m.changed ? ' ✎' : '') + '</span></button>').join('');
+  if (alts.length) h += '<div class="fbl">служебные сообщения</div>' + alts.map((m) => '<div style="display:flex;gap:6px;align-items:stretch' + (m.off ? ';opacity:.55' : '') + '"><button type="button" class="svc" style="flex:1" data-svc="' + m.key + '"><span class="hd" aria-hidden="true">⋮⋮</span><span>' + esc(m.title) + (m.changed ? ' ✎' : '') + '</span></button>' + (m.canOff ? '<button type="button" class="chip sw' + (m.off ? '' : ' on') + '" data-moff="' + m.key + '">' + (m.off ? 'выкл' : 'вкл') + '</button>' : '') + '</div>').join('');
   return h + '</div>';
 }
 function entryBox() {
@@ -998,6 +998,7 @@ function bindEntry() {
   });
   list.querySelectorAll('[data-kt]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); const o = view.open = view.open || []; const i = o.indexOf(b.dataset.kt); if (i < 0) o.push(b.dataset.kt); else o.splice(i, 1); renderFeed(); });
   list.querySelectorAll('[data-svc]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); openMsg(b.dataset.svc); });
+  list.querySelectorAll('[data-moff]').forEach((b) => b.onclick = async (e) => { e.stopPropagation(); const mm = S.msgs.find((x) => x.key === b.dataset.moff); try { const r = await api('/msg/' + b.dataset.moff, { off: !(mm && mm.off) }); S.msgs = r.msgs; haptic('light'); render(); } catch (er) { toast(er.message); } });
 }
 async function openPeople() {
   sheet('<div class="shd"><span class="pill">Люди и отзывы</span><button type="button" class="sx" id="pX" aria-label="закрыть">✕</button></div><h2>Кто пришёл в бот</h2><p class="muted small">Загружаю…</p>');

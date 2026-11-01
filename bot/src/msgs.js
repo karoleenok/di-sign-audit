@@ -210,7 +210,8 @@ export const CB_BTN = { 'c:pd': 'consentPdBtn', 'c:ads:1': 'consentAdsYes', 'c:a
 const NO_HIDE = ['consentPdBtn', 'consentAdsYes', 'consentAdsNo']; // без них нет согласия — прятать нельзя
 const BTN_GROUPS = [['contactTg', 'contactPhone', 'contactEmail'], ['fbYes', 'fbNo'], ['trackCourse', 'trackMat']];
 // служебные ответы, которые можно выключить (остальные нужны для закона и работы бота)
-export const OFFABLE = ['adsYes', 'unknown', 'leadThanks', 'leadAgain'];
+export const OFFABLE = ['adsYes', 'unknown', 'leadThanks', 'leadAgain', 'adsNo', 'fbThanks', 'fbNoBonus', 'noGift'];
+export async function isOff(ctx, key) { return OFFABLE.includes(key) && !!(await extraOf(ctx, key)).off; }
 export async function setMsgOff(ctx, key, off) {
   if (!OFFABLE.includes(key)) throw new Error('Это сообщение выключить нельзя: оно нужно для работы бота');
   const x = { ...(await extraOf(ctx, key)) };

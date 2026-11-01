@@ -294,6 +294,14 @@ await page.click('.stp[data-k="askContact"] .st-t'); await page.waitForSelector(
 assert.equal(await page.isChecked('[data-bh="contactPhone"]'), false, 'спрятанная кнопка осталась спрятанной');
 await page.click('[data-bh="contactPhone"]'); await page.click('#mSave'); await page.waitForTimeout(500);
 step('кнопки шага в панели: спрятать и вернуть');
+// служебные ответы шага: выключатель
+await page.click('.stp[data-k="consentAds"] ~ .sumln [data-kt], [data-kt="consentAds"]'); await page.waitForTimeout(300);
+assert.ok(await page.$('[data-moff="adsNo"]'), 'у служебного ответа есть выключатель');
+await page.click('[data-moff="adsNo"]'); await page.waitForTimeout(500);
+assert.match(await page.textContent('[data-moff="adsNo"]'), /выкл/);
+await page.click('[data-moff="adsNo"]'); await page.waitForTimeout(500);
+assert.match(await page.textContent('[data-moff="adsNo"]'), /вкл/);
+step('служебные ответы шага: вкл/выкл в панели');
 
 // 8б. свои посты без дня: пул показан, он же — список для перетаскивания из ленты и обратно
 assert.ok(await page.$('.poolList[data-pool="1"] .pool-card'), 'пул свободных постов показан');

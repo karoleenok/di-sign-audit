@@ -1,5 +1,5 @@
 import { ZONES, LEVELS } from './texts.js';
-import { say, btn, msg as msgText, delayOf, linksOf, CB_BTN, btnExtra } from './msgs.js';
+import { say, btn, msg as msgText, delayOf, linksOf, CB_BTN, btnExtra, isOff } from './msgs.js';
 import { sendPost, recordDeliveries, loadDocs, sendButtonFile } from './posts.js';
 import { isAdmin } from './admin.js';
 
@@ -46,7 +46,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // «Печатает…» и в шапке, и прямо в чате: пузырёк «•» → «• •» → «• • •», который исчезает перед сообщением.
 // Вызывать только когда следом точно будет сообщение.
 // пауза перед служебным сообщением — сколько задано в панели для этого сообщения
-async function pauseFor(ctx, id, key) { return pause(ctx, id, (await delayOf(ctx, key)) * 1000); }
+async function pauseFor(ctx, id, key) { if (await isOff(ctx, key)) return; return pause(ctx, id, (await delayOf(ctx, key)) * 1000); }
 async function pause(ctx, id, ms) {
   const k = ctx.env.DELAY_FACTOR === undefined ? 1 : Number(ctx.env.DELAY_FACTOR);
   if (!(k > 0) || !(ms > 0)) return;
