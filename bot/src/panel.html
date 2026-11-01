@@ -172,6 +172,9 @@ textarea{min-height:120px;resize:vertical;line-height:1.45}
 .ftabs{margin:6px 0 10px}
 .stp.skipd{opacity:.55}
 .btns.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.lnk{border:0;background:none;padding:0;color:inherit;text-decoration:underline;text-underline-offset:3px;font-size:12.5px;cursor:pointer}
+.lnk2{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:11px 14px;margin:8px 0}
+.stp .chip{padding:4px 9px;font-size:12.5px}.stp .mv .chip{padding:4px 8px}.stp .st-t{font-size:14.5px}
 </style>
 </head>
 <body>
@@ -298,7 +301,7 @@ function render() {
   const counts = { feed: S.posts.filter((p) => p.kind === 'drip').length, dates: S.posts.filter((p) => p.kind === 'date').length, gifts: S.posts.filter((p) => p.kind === 'gift').length, fb: S.fbCount || 0 };
   app.innerHTML =
     '<div class="top"><span class="pill">Di Sign University · панель</span><span class="small muted">людей: ' + S.people.all + ' · в рассылке: ' + S.people.active + '</span></div>' +
-    (tab === 'flow' ? '<h1>Весь путь <i>ученика</i></h1><p class="lead">Вход, подарок, лента по дням, даты и бонус за отзыв — в одном месте. Тяни за ⋮⋮, нажми на пост или шаг — откроется редактор.</p>'
+    (tab === 'flow' ? '<h1>Путь <i>ученика</i></h1><p class="lead" hidden>Вход, подарок, лента по дням, даты и бонус за отзыв — в одном месте. Тяни за ⋮⋮, нажми на пост или шаг — откроется редактор.</p>'
       : tab === 'reviews' ? '<h1>Отзывы <i>о кабинете</i></h1><p class="lead">Кто что написал, как с ним связаться и ушёл ли ему бонус.</p>'
       : tab === 'texts' ? '<h1>Тексты <i>бота</i></h1><p class="lead">Служебные сообщения: приветствие, согласия, вопросы, команды.</p>'
       : '<h1>Весь путь <i>ученика</i></h1><p class="lead">Вход, лента, даты и бонус — в одном месте.</p>') +
@@ -409,11 +412,10 @@ async function onDrop(ev) {
 function runBox() {
   const r = S.run;
   const src = S.runSrc || 'audit';
-  return '<div class="box"><h3>Проверить на себе</h3><p class="small muted" style="margin:0 0 10px">Весь путь придёт тебе в бот: вход, подарок, расписание, посты ленты и бонус за отзыв — с подписью «что и когда». </p>' +
-    '<div class="seg" style="margin-bottom:10px"><button type="button" class="' + (src === 'audit' ? 'on' : '') + '" data-rsrc="audit">из аудита</button><button type="button" class="' + (src === 'site' ? 'on' : '') + '" data-rsrc="site">не из аудита (сайт, инста)</button></div>' +
-    '<div class="btns" style="margin-top:0"><button class="btn" id="runPrev" type="button">▶️ Посмотреть весь путь сейчас</button>' +
-    (r ? '<div class="note" style="margin:0">⏩ Идёт ускоренный тест (1 день = 1 минута) · уже пришло: ' + r.sent + '</div><button class="btn danger" id="runStop" type="button">⏹ Остановить тест</button>'
-       : '<button class="btn ghost" id="runFast" type="button">⏩ Ускоренный тест: 1 день = 1 минута</button>') + '</div></div>';
+  return '<div class="box" style="margin-top:14px"><div class="seg" style="margin-bottom:10px"><button type="button" class="' + (src === 'audit' ? 'on' : '') + '" data-rsrc="audit">из аудита</button><button type="button" class="' + (src === 'site' ? 'on' : '') + '" data-rsrc="site">не из аудита (сайт, инста)</button></div>' +
+    '<div class="btns" style="margin-top:0"><button class="btn" id="runPrev" type="button">▶️ Проверить на себе</button>' +
+    (r ? '<div class="note" style="margin:0">⏩ Идёт ускоренный тест, пришло: ' + r.sent + '</div><button class="btn danger" id="runStop" type="button">⏹ Остановить тест</button>'
+       : '<button class="btn ghost" id="runFast" type="button">⏩ Ускоренно: 1 день = 1 минута</button>') + '</div></div>';
 }
 function bindRun() {
   const lvl = view.level;
@@ -507,7 +509,10 @@ const FLOW = [
 const mOf = (k) => S.msgs.find((x) => x.key === k);
 const mediaTag = (m) => m && m.media ? '<span class="tag">' + ({ photo: '🖼 картинка', video: '🎬 видео', animation: '🎞 гифка' }[m.media] || '🖼') + '</span>' : '';
 function renderTexts() {
-  let h = '<div class="box" style="margin-top:16px"><h3>Путь ученика</h3><p class="small muted" style="margin:0 0 10px">Так бот встречает нового человека — шаг за шагом. Нажми на шаг или на кнопку, чтобы поменять текст, картинку, паузу и кнопки-ссылки.</p>' +
+  const dd = S.docs || {}, okk = (k) => dd[k] ? '✓' : 'не задана';
+  let h = '<div class="lnk2"><div><b>Документы</b><div class="small muted">политика ' + okk('policy') + ' · согласие ' + okk('consent') + ' · оферта ' + okk('offer') + '</div></div><button type="button" class="chip" id="docsBtn">изменить</button></div>' +
+    '<div class="lnk2"><div><b>Люди и отзывы</b><div class="small muted">контакты, выбор из аудита, отзывы: ' + (S.fbCount || 0) + '</div></div><button type="button" class="chip" id="peopleBtn">открыть</button></div>';
+  h += '<div class="box" style="margin-top:16px"><h3>Путь ученика</h3><p class="small muted" style="margin:0 0 10px">Так бот встречает нового человека — шаг за шагом. Нажми на шаг или на кнопку, чтобы поменять текст, картинку, паузу и кнопки-ссылки.</p>' +
     '<div class="btns" style="margin-top:0"><button class="btn" type="button" id="obNo">▶️ Пройти путь заново — без теста</button><button class="btn ghost" type="button" id="obTest">▶️ Пройти путь заново — как из теста</button></div>' +
     '<p class="small muted" style="margin:8px 2px 0">Твоя анкета в боте сбросится, и бот проведёт тебя по всем шагам с настоящими кнопками.</p></div>';
   const used = new Set();
@@ -535,6 +540,7 @@ function renderTexts() {
   document.querySelectorAll('.msg').forEach((el) => el.onclick = (e) => { const b = e.target.closest('[data-open]'); openMsg(b ? b.dataset.open : el.dataset.k); });
   const ob = async (fromTest) => { try { await api('/run/onboarding', { fromTest, level: view.level }); haptic('medium'); toast('Открой бот — путь начался 👀'); try { tg && tg.close && setTimeout(() => {}, 0); } catch (e) {} } catch (e) { toast(e.message); } };
   $('obNo').onclick = () => ob(false); $('obTest').onclick = () => ob(true);
+  $('docsBtn').onclick = openDocs; $('peopleBtn').onclick = openPeople;
 }
 
 // редактор кнопок-ссылок (общий)
@@ -713,14 +719,14 @@ function renderFlow() {
   const dates = S.posts.filter((p) => p.kind === 'date').sort((a, b) => (a.run_at || 9e12) - (b.run_at || 9e12));
   let h = runBox();
   h += '<div class="btns two" style="margin:0 0 4px"><button class="btn" type="button" id="newPost">＋ Пост</button><button class="btn ghost" type="button" data-newk="date">＋ Анонс на дату</button></div>';
-  h += '<div class="grp">Вход</div>' + entryBox();
+  h += '<div class="grp">Вход</div><p class="small muted" style="margin:-2px 2px 8px">Нажми на шаг, чтобы править текст. ⋮⋮ меняет порядок.</p>' + entryBox();
   h += poolBox();
   const sec = (title, note, list, kind) => '<div class="grp">' + title + '</div>' + (note ? '<p class="small muted" style="margin:-2px 2px 10px">' + note + '</p>' : '') +
     (list.length ? list.map((p) => '<div class="tree">' + node(p, 0, []) + '</div>').join('') : '<p class="small muted dash">Пока пусто.</p>') +
     (kind ? '<div class="btns two" style="margin:8px 0 4px"><button type="button" class="btn ghost" data-newk="' + kind + '">＋ Новый пост</button><button type="button" class="btn ghost" data-pickk="' + kind + '">📋 Из существующих</button></div>' + (kind === 'fb' ? '<button type="button" class="btn ghost" data-fbback="1" style="margin:0 0 4px">📤 Отправить тем, кто уже оставил отзыв</button>' : '') : '');
   [...gifts, ...dates, ...S.posts.filter((p) => p.kind === 'fb')].forEach((p) => node(p, 0, [])); // цепочки подарков, дат и бонусов не считаем потерянными
   drip.forEach((p) => node(p, 0, [])); // обходим цепочки, чтобы не считать посты-ответы потерянными
-  h += '<div class="grp">📅 Лента по дням</div><p class="small muted" style="margin:-2px 2px 10px">Тяни пост за ⋮⋮ на другой день — время подстроится. Нажми на пост, чтобы поменять день, время, кнопки и кому он уходит.</p>' + feedTabs() + daysHtml() +
+  h += '<div class="grp">Лента по дням</div><p class="small muted" style="margin:-2px 2px 8px">Тяни пост за ⋮⋮ на другой день.</p>' + feedTabs() + daysHtml() +
     '<div class="btns two" style="margin:8px 0 4px"><button type="button" class="btn ghost" data-newk="drip">＋ Новый пост</button><button type="button" class="btn ghost" data-pickk="drip">📋 Из существующих</button></div>';
   const stepPosts = new Set((S.msgs || []).map((m) => m.post).filter(Boolean));
   const lost = S.posts.filter((p) => p.kind === 'node' && !shown.has(p.id) && !stepPosts.has(p.id));
@@ -801,6 +807,9 @@ function entryExtra(k, o) {
   const btns = (st.btns || []).map(mOf).filter(Boolean);
   const alts = (st.alt || []).map(mOf).filter(Boolean);
   if (!btns.length && !alts.length) return h;
+  const n = btns.length + alts.length, open = (view.open || []).includes(k);
+  h = h.replace('</div>', ' · <button type="button" class="lnk" data-kt="' + k + '">' + (open ? 'скрыть' : 'кнопки и сообщения: ' + n) + '</button></div>');
+  if (!open) return h;
   h += '<div class="flowkids">';
   if (btns.length) h += '<div class="fbl">кнопки</div><div class="meta">' + btns.map((m) => '<button type="button" class="chip" data-svc="' + m.key + '">🔘 ' + esc(m.text) + '</button>').join('') + '</div>';
   if (alts.length) h += '<div class="fbl">служебные сообщения</div>' + alts.map((m) => '<button type="button" class="svc" data-svc="' + m.key + '"><span class="hd" aria-hidden="true">⋮⋮</span><span>' + esc(m.title) + (m.changed ? ' ✎' : '') + '</span></button>').join('');
@@ -819,21 +828,18 @@ function entryBox() {
     (o.nx2 ? '' : '') + (o.rm ? '<button type="button" class="chip" data-rm="' + k + '" aria-label="убрать из сценария">✕</button>' : '') + (o.sw ? '<button type="button" class="chip sw' + (o.off ? '' : ' on') + '" data-sw="' + k + '">' + (o.off ? 'выкл' : 'вкл') + '</button>' : '') + '</div>' + entryExtra(k, o);
   const pt = (k) => { const m = S.msgs.find((x) => x.key === k); const p = m && m.post && S.posts.find((x) => x.id === m.post); return p ? ' · 🔁 твой пост «' + esc((p.title || p.text || '#' + p.id).slice(0, 30)) + '»' : ''; };
   let n = 1;
-  let h = row('hello', '👋 Приветствие', 'из аудита приходит выбор: мини-курс или материалы' + pt('hello'), n++, {});
+  let h = row('hello', '👋 Приветствие', pt('hello').replace(/^ · /, ''), n++, {});
   fl.order.forEach((k) => {
     if (/^post:\d+$/.test(k)) {
       const p = S.posts.find((x) => x.id === +k.slice(5));
       if (!p) return;
       h += row(k, '↳ 🔁 Свой пост «' + esc(postName(p).slice(0, 34)) + '»', p.status === 'active' ? 'отдельный шаг: уходит один раз, вход идёт дальше' : '<b class="warn-t">' + (p.status === 'draft' ? 'черновик' : 'не включён') + ' — не уйдёт, пока не включишь пост</b>', n++, { mv: true, sw: true, off: fl.off.includes(k), rm: true, nx: true });
-    } else h += row(k, ENTRY[k][0], ENTRY[k][1]() + pt(k), n++, { mv: k !== 'consentPd', sw: opt.includes(k), off: fl.off.includes(k) });
+    } else h += row(k, ENTRY[k][0], pt(k).replace(/^ · /, ''), n++, { mv: k !== 'consentPd', sw: opt.includes(k), off: fl.off.includes(k) });
   });
-  h += row('schedCourse', '🗓 Пост-расписание по треку', 'последний шаг: отсюда считается лента' + pt('schedCourse'), n++, {});
+  h += row('schedCourse', '🗓 Расписание по треку', pt('schedCourse').replace(/^ · /, ''), n++, {});
   const miss = !d.policy || !d.consent;
-  return '<div class="box"><h3>Вход в бот</h3><p class="small muted" style="margin:0 0 10px">Так бот встречает нового человека. Тяни за ⋮⋮, чтобы поменять порядок; «＋» у шага — добавить свой пост сразу после него; «вкл/выкл» — показывать шаг или пропускать. Нажми на шаг — поменять текст, паузу и кнопки или подставить вместо него свой пост из ленты. Первым всегда стоит согласие на данные — по закону сначала оно.</p><div class="steps" id="flowList">' + h + '</div>' +
-    '<div class="arr">↓</div><div class="stp last"><b>→</b><span class="st-t">дальше — лента по треку и посты ниже</span></div>' +
-    '<div class="docs-row"><div><b>Люди и отзывы</b><div class="small muted">контакты, выбор из аудита, отзывы о кабинете: ' + (S.fbCount || 0) + '</div></div><button type="button" class="chip" id="peopleBtn">открыть</button></div>' +
-    '<div class="docs-row"><div><b>Документы</b><div class="small muted">политика ' + ok('policy') + ' · согласие ' + ok('consent') + ' · оферта ' + ok('offer') + '</div></div><button type="button" class="chip" id="docsBtn">изменить</button></div>' +
-    (miss ? '<div class="note warn">Без ссылок на политику и согласие бот нельзя открывать для всех (152-ФЗ). Пока бот только для своих.</div>' : '') + '</div>';
+  return '<div class="steps" id="flowList">' + h + '</div>' +
+    (miss ? '<div class="note warn">Нет ссылок на политику и согласие: бот пока только для своих (152-ФЗ). Добавь их в «Прочее».</div>' : '');
 }
 // «＋ дальше»: выбрать (или создать) пост, который пойдёт сразу после этого шага
 function pickNext(afterKey) {
@@ -892,9 +898,8 @@ function bindEntry() {
       saveFlow(o, cur().off);
     },
   });
+  list.querySelectorAll('[data-kt]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); const o = view.open = view.open || []; const i = o.indexOf(b.dataset.kt); if (i < 0) o.push(b.dataset.kt); else o.splice(i, 1); renderFeed(); });
   list.querySelectorAll('[data-svc]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); openMsg(b.dataset.svc); });
-  $('docsBtn').onclick = openDocs;
-  $('peopleBtn').onclick = openPeople;
 }
 async function openPeople() {
   sheet('<div class="shd"><span class="pill">Люди и отзывы</span><button type="button" class="sx" id="pX" aria-label="закрыть">✕</button></div><h2>Кто пришёл в бот</h2><p class="muted small">Загружаю…</p>');

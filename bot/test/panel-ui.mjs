@@ -212,11 +212,12 @@ step('картинка в приветствии: загрузка из пане
 
 // 8б. конструктор: пост с развилкой с нуля, пост-ответ из кнопки, документы
 await page.click('#tabs button[data-t="flow"]'); await page.waitForSelector('#newPost');
-await page.click('#docsBtn'); await page.waitForSelector('#d_policy');
+await page.click('#tabs button[data-t="texts"]'); await page.click('#docsBtn'); await page.waitForSelector('#d_policy');
 await page.fill('#d_policy', 'https://disign.ru/policy'); await page.fill('#d_consent', 'https://disign.ru/consent');
 await page.click('#dSave'); await page.waitForTimeout(400);
 assert.equal((await db.first(`SELECT value FROM settings WHERE key = 'doc:policy'`)).value, 'https://disign.ru/policy');
-assert.ok(!(await page.$('.box .note.warn')), 'предупреждение о документах ушло');
+await page.click('#tabs button[data-t="flow"]'); await page.waitForSelector('#newPost');
+assert.ok(!(await page.$('.note.warn')), 'предупреждение о документах ушло');
 await page.click('#newPost'); await page.waitForSelector('.kind');
 await page.screenshot({ path: OUT + '/panel-10-kinds.png' });
 await page.click('.kind[data-k="date"]'); await page.waitForSelector('#fMd');
