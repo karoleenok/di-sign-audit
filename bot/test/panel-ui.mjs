@@ -311,11 +311,23 @@ await page.screenshot({ path: OUT + '/panel-16-crm.png', fullPage: true });
 await page.click('#tabs button[data-t="flow"]'); await page.waitForTimeout(200);
 step('вкладка «Заявки и отзывы»');
 
-// 8б. свои посты без дня: пул показан, он же — список для перетаскивания из ленты и обратно
-assert.ok(await page.$('.poolList[data-pool="1"] .pool-card'), 'пул свободных постов показан');
+// 8б. карта пути: шаги входа, посты-ответы, развилка по треку, привязка кнопки через шторку
+assert.ok(await page.$('#mapw .mc-entry'), 'на карте есть шаги входа');
 assert.ok(await page.$('.list[data-day="1"]'), 'дни ленты на той же вкладке');
-// перетаскивание в headless-браузере ненадёжно (см. шаг 4), поэтому сам перенос проверен в API-тестах (/post/:id/move и /msg/:key)
-step('свои посты без дня: пул виден рядом с лентой по дням');
+{
+  // новый пост-ответ из карты: кнопка шага «Тест» ведёт на него
+  const before = await page.$$eval('#mapw .mc-post', (e) => e.length);
+  await page.click('#mapNewFork'); await page.waitForSelector('#mapw .mc-fork');
+  assert.ok(await page.$('#mapw .mc-fork [data-mb^="f|"]'), 'у развилки две ветки');
+  await page.click('#mapw .mc-fork [data-mb$="|course"]'); await page.waitForSelector('#sheet.on [data-pk="new:post"]');
+  assert.equal(await page.$('#sheet [data-pk="new:fork"]'), null, 'внутри развилки вложенной развилки нет');
+  await page.click('#sheet [data-pk="new:post"]'); await page.waitForTimeout(600);
+  assert.ok(await page.$('#mapw .mc-fork .mb .mt:has-text("→")'), 'ветка «мини-курс» привязана к новому посту');
+  await page.keyboard.press('Escape'); await page.evaluate(() => { try { closeSheet(); } catch (e) {} });
+  assert.ok((await page.$$eval('#mapw .mc-post', (e) => e.length)) > before, 'новый пост-ответ появился на карте');
+  await page.evaluate(() => document.getElementById('sheetBg').click()); await page.locator('#mapw').screenshot({ path: OUT + '/panel-17-map.png' });
+}
+step('карта пути: развилка по треку и привязка ветки');
 
 // 9. открыть не из Telegram
 INIT = '';

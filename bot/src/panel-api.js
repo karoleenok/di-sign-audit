@@ -46,7 +46,7 @@ function postOut(p, sent, clicks) {
   const media = j(p.media, []);
   const f = entitiesToMd(p.text || '', j(p.entities, []));
   return {
-    id: p.id, kind: p.kind, status: p.status, title: p.title || '', text: (p.text || '').slice(0, 400),
+    id: p.id, kind: p.kind, fork: p.fork || null, status: p.status, title: p.title || '', text: (p.text || '').slice(0, 400),
     md: f.md, rich: f.rich, once: !!p.once, files: media, track: p.track || 'all',
     day: p.day, time: p.send_time, mode: p.mode || 'day', delay: p.delay_min || 0, after: p.after_id || null, run_at: p.run_at, audience: p.audience, catchup: !!p.catchup, pos: p.pos || 0,
     media: media.map((m) => m.type), buttons: j(p.buttons, []).flat().map((b) => b.text), rows: j(p.buttons, []),
@@ -202,7 +202,7 @@ export async function handlePanelApi(ctx, request, url) {
     if (body.run_at !== undefined && p.kind === 'date') { const t = Number(body.run_at); if (!(t > 0)) return json({ error: 'Неверная дата' }, 400); put('run_at', t); }
     if (set.length) await ctx.db.run(`UPDATE posts SET ${set.join(', ')} WHERE id = ?`, [...val, id]);
     let np = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [id]);
-    if (np.status === 'active' && !(np.text || '').trim() && !j(np.media, []).length) {
+    if (np.status === 'active' && !np.fork && !(np.text || '').trim() && !j(np.media, []).length) {
       await ctx.db.run(`UPDATE posts SET status = 'draft' WHERE id = ?`, [id]);
       return json({ error: 'Пустой пост нельзя включить — добавь текст или картинку. Остальное сохранено, пост в черновиках.' }, 400);
     }
@@ -302,7 +302,8 @@ export async function handlePanelApi(ctx, request, url) {
   // копия существующего поста в другой раздел (текст, оформление, премиум-эмодзи, файлы и кнопки сохраняются; оригинал не трогаем)
   m = /^\/post\/(\d+)\/copy$/.exec(path);
   if (m && request.method === 'POST') {
-    const kind = body.kind;
+    const fork = body.fork === 'track';
+    const kind = fork ? 'node' : body.kind;
     if (!['drip', 'date', 'gift', 'node', 'fb'].includes(kind)) return json({ error: 'Выбери раздел' }, 400);
     const src = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [+m[1]]);
     if (!src) return json({ error: 'Поста нет' }, 404);
@@ -316,7 +317,8 @@ export async function handlePanelApi(ctx, request, url) {
 
   // новый пост прямо из панели
   if (path === '/post/new' && request.method === 'POST') {
-    const kind = body.kind;
+    const fork = body.fork === 'track';
+    const kind = fork ? 'node' : body.kind;
     if (!['drip', 'date', 'gift', 'node', 'fb'].includes(kind)) return json({ error: 'Выбери, когда уходит пост' }, 400);
     const f = mdToEntities(body.md || '');
     const files = cleanFiles(body.files || []);
@@ -324,7 +326,7 @@ export async function handlePanelApi(ctx, request, url) {
     if (f.text.length > 4096) return json({ error: 'Текст длиннее 4096 знаков — Telegram не примет' }, 400);
     const status = ['active', 'draft', 'paused'].includes(body.status) ? body.status : 'draft';
     // пустой можно сохранить только черновиком (например, пост-ответ, созданный из кнопки)
-    if (!f.text.trim() && !files.files.length && status !== 'draft') return json({ error: 'Добавь текст или картинку' }, 400);
+    if (!fork && !f.text.trim() && !files.files.length && status !== 'draft') return json({ error: 'Добавь текст или картинку' }, 400);
     if (status === 'active' && kind === 'date' && !(Number(body.run_at) > 0)) return json({ error: 'Сначала задай дату' }, 400);
     const audience = AUD[body.audience] ? body.audience : 'all';
     const day = Math.max(0, Math.min(365, parseInt(body.day, 10) || 0));
@@ -337,6 +339,7 @@ export async function handlePanelApi(ctx, request, url) {
         kind === 'date' ? (Number(body.run_at) || null) : null, body.catchup ? 1 : 0, status, f.text, JSON.stringify(f.entities), JSON.stringify(files.files),
         user.id, ctx.now, kind === 'drip' ? mode : 'day', Math.max(0, parseInt(body.delay_min, 10) || 0), parseInt(body.after_id, 10) || null, body.once ? 1 : 0]);
     const row = await ctx.db.first(`SELECT * FROM posts WHERE created_by = ? ORDER BY id DESC LIMIT 1`, [user.id]);
+    if (fork) await ctx.db.run(`UPDATE posts SET fork = 'track', status = 'active' WHERE id = ?`, [row.id]);
     if (TRACKS[body.track] && body.track !== 'all') await ctx.db.run(`UPDATE posts SET track = ? WHERE id = ?`, [body.track, row.id]);
     if (body.rows) {
       const r = await cleanButtons(ctx, body.rows, row.id);
@@ -487,7 +490,7 @@ export async function cleanButtons(ctx, rowsIn, selfId) {
         if (go === selfId) return { error: `Кнопка «${text}» ведёт на этот же пост` };
         const t = await ctx.db.first(`SELECT id FROM posts WHERE id = ? AND status != 'archived'`, [go]);
         if (!t) return { error: `Пост для кнопки «${text}» не найден` };
-        r.push({ text, go }); continue;
+        r.push(b.branch === 'course' || b.branch === 'mat' ? { text, go, branch: b.branch } : { text, go }); continue;
       }
       if (b.file) { const f = cleanFile(b.file); if (!f) return { error: `У кнопки «${text}» не выбран файл` }; r.push(f.type === 'link' ? { text, url: f.url, file: f } : { text, file: f }); continue; }
       if (b.doc) { if (!DOCS[b.doc]) return { error: 'Неизвестный документ' }; r.push({ text, doc: b.doc }); continue; }

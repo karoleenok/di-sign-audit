@@ -890,4 +890,36 @@ step('финальное сообщение входа можно выключи
 }
 step('служебные ответы: вкл/выкл');
 
+// развилка по треку: мини-курс и материалы получают каждый свой пост
+{
+  const { handlePanelApi } = await import('../src/panel-api.js');
+  const crypto = await import('node:crypto');
+  const initFor = (uid) => {
+    const p = new URLSearchParams({ auth_date: String(NOW), user: JSON.stringify({ id: uid, first_name: 'Админ' }) });
+    const dcs = [...p.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, v]) => `${k}=${v}`).join('\n');
+    const secret = crypto.createHmac('sha256', 'WebAppData').update(env.BOT_TOKEN).digest();
+    p.set('hash', crypto.createHmac('sha256', secret).update(dcs).digest('hex'));
+    return p.toString();
+  };
+  const api = async (path, body) => {
+    const req = new Request('https://bot.test/api/panel' + path, { method: body ? 'POST' : 'GET', headers: { 'x-init-data': initFor(100), 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+    const r = await handlePanelApi(C(), req, new URL(req.url));
+    return { status: r.status, ...(await r.json()) };
+  };
+  const bc = (await api('/post/new', { kind: 'node', md: 'ВЕТКА-КУРС', status: 'active' })).post;
+  const bm = (await api('/post/new', { kind: 'node', md: 'ВЕТКА-МАТЕРИАЛЫ', status: 'active' })).post;
+  const fk = (await api('/post/new', { fork: 'track', title: 'Развилка', rows: [[{ text: 'Мини-курс', go: bc.id, branch: 'course' }], [{ text: 'Материалы', go: bm.id, branch: 'mat' }]] })).post;
+  assert.equal(fk.fork, 'track', 'развилка создана без текста');
+  const hub = (await api('/post/new', { kind: 'node', md: 'Выбирай', status: 'active', rows: [[{ text: 'Дальше', go: fk.id }]] })).post;
+  for (const [uid, track, want] of [[1801, 'course', 'ВЕТКА-КУРС'], [1802, 'mat', 'ВЕТКА-МАТЕРИАЛЫ']]) {
+    await msg(uid, '/start'); await cb(uid, 'c:pd'); await cb(uid, 'c:ads:1');
+    await C().db.run(`UPDATE users SET track = ? WHERE tg_id = ?`, [track, uid]);
+    const k0 = calls.length;
+    await handleUpdate(C(), { callback_query: { id: 'fk' + uid, from: { id: uid }, data: `go:${hub.id}:0-0`, message: { message_id: 9, chat: { id: uid } } } });
+    const sent = calls.slice(k0).filter((c) => c.body.chat_id === uid && c.method === 'sendMessage').map((c) => c.body.text);
+    assert.deepEqual(sent, [want], 'по развилке ' + track + ' получает свой пост');
+  }
+}
+step('развилка по треку');
+
 console.log('\nВсе сценарии прошли. Запросов к фейковому Telegram:', calls.length);

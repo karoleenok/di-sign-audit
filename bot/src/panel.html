@@ -211,6 +211,16 @@ textarea{min-height:120px;resize:vertical;line-height:1.45}
 .funnel{display:flex;align-items:center;gap:8px;margin:14px 0 4px}.funnel>div{flex:1;background:#fff;border:1px solid var(--line,rgba(44,13,2,.12));border-radius:16px;padding:10px 12px;text-align:center}.funnel b{display:block;font-size:22px;font-family:inherit}.funnel span{font-size:12px;color:var(--muted,#7a6a62)}.funnel i{color:var(--muted,#7a6a62);font-style:normal}
 .chip.on{background:var(--ink,#2c0d02);color:#fff}.msg.crm .nm{font-weight:600}.cts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.cp{border:0;background:rgba(44,13,2,.06);border-radius:10px;padding:5px 9px;font:inherit;font-size:13px;color:inherit;cursor:pointer}
 .msg.crm a.chip{color:inherit;text-decoration:none}#crmQ{width:100%;box-sizing:border-box;padding:12px 14px;border:1px solid rgba(44,13,2,.15);border-radius:14px;background:#fff;font:inherit;font-size:15px}
+.mapw{overflow-x:auto;margin:0 -16px;padding:4px 16px 14px;-webkit-overflow-scrolling:touch}.mapin{position:relative}.mapsv{position:absolute;left:0;top:0;pointer-events:none}
+.mc{position:absolute;background:var(--card);border-radius:14px;box-shadow:0 1px 0 var(--line),0 6px 16px rgba(44,13,2,.08);overflow:hidden}.mc.off{opacity:.5}
+.mh{display:flex;flex-direction:column;justify-content:center;padding:4px 12px;background:#efe3d9;cursor:pointer;min-width:0}.mh small{font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--soft)}.mh b{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mc-fork .mh,.mc-term .mh{background:#2c0d02;color:#fbf4ec}.mc-term .mh{background:#1f6f68}.mc-fork .mh small,.mc-term .mh small{color:rgba(251,244,236,.7)}.mc-entry .mh{background:#f3ece4}
+.mx{padding:6px 12px 0;font-size:12px;color:var(--soft);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}.mx.w{color:var(--warn)}
+.mb{position:relative;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;width:calc(100% - 16px);margin:2px 8px;padding:0 20px 0 10px;border:0;border-radius:10px;background:rgba(44,13,2,.05);text-align:left;cursor:pointer;min-width:0}
+.mb .ml{font-size:13px;font-weight:600;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mb .mt{font-size:11px;font-weight:600;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mb.hid{opacity:.5}
+.mb i{position:absolute;right:-4px;top:50%;margin-top:-5px;width:10px;height:10px;border-radius:50%;box-shadow:0 0 0 2px var(--card)}
+.madd{display:block;width:calc(100% - 16px);margin:4px 8px 0;border:1.5px dashed var(--line);border-radius:10px;background:transparent;color:var(--soft);cursor:pointer}
+.kind.on{outline:2px solid var(--ink)}
 </style>
 </head>
 <body>
@@ -818,7 +828,7 @@ function attentionHtml(lost) {
   if (miss.length) items.push('<button type="button" data-attn="docs">нет ссылки на ' + miss.join(', ') + '. Добавь в «Прочее»</button>');
   S.posts.filter((p) => ['drip', 'date', 'gift', 'fb'].includes(p.kind) && (p.status === 'draft' || p.status === 'paused')).slice(0, 5)
     .forEach((p) => items.push('<button type="button" data-attn-post="' + p.id + '">«' + esc(postName(p).slice(0, 36)) + '» ' + (p.status === 'draft' ? 'в черновике' : 'на паузе') + ', не уйдёт</button>'));
-  if (lost) items.push('<span>постов-ответов без кнопки: ' + lost + '. Они ниже, привяжи их кнопкой</span>');
+  if (lost) items.push('<span>постов-ответов без кнопки: ' + lost + '. На карте они справа, привяжи их кнопкой</span>');
   if (!items.length) return '';
   return '<details class="attn"><summary><span>Требует внимания: ' + items.length + '</span><span>▾</span></summary><ul>' + items.map((x) => '<li>' + x + '</li>').join('') + '</ul></details>';
 }
@@ -843,8 +853,9 @@ function renderFlow() {
   const dates = S.posts.filter((p) => p.kind === 'date').sort((a, b) => (a.run_at || 9e12) - (b.run_at || 9e12));
   let h = pathTop() + '@@ATTN@@' + runBox();
   h += '<div class="btns two" style="margin:0 0 4px"><button class="btn" type="button" id="newPost">＋ Пост</button><button class="btn ghost" type="button" data-newk="date">＋ Анонс на дату</button></div>';
-  h += '<div class="railw"><div class="grp">Вход</div><p class="small muted" style="margin:-2px 2px 8px">Нажми на шаг, чтобы править текст. ⋮⋮ меняет порядок.</p>' + entryBox();
-  h += poolBox();
+  h += '<div class="grp">Карта пути</div><p class="small muted" style="margin:-2px 2px 8px">Слева — шаги входа, правее — посты и развилки. Нажми на кнопку, чтобы выбрать, куда она ведёт. Нажми на заголовок — править текст.</p>' + mapHtml() +
+    '<div class="btns two" style="margin:2px 0 4px"><button class="btn ghost" type="button" id="mapNewPost">＋ Пост-ответ</button><button class="btn ghost" type="button" id="mapNewFork">＋ Развилка по треку</button></div>';
+  h += '<details class="box" id="flowDet" style="margin-top:12px"' + (view.flowClosed ? '' : ' open') + '><summary><b>Порядок и включение шагов входа</b></summary><p class="small muted" style="margin:8px 2px">Нажми на шаг, чтобы править текст. ⋮⋮ меняет порядок.</p>' + entryBox() + '</details>';
   const sec = (title, note, list, kind) => '<div class="grp">' + title + '</div>' + (note ? '<p class="small muted" style="margin:-2px 2px 10px">' + note + '</p>' : '') +
     (list.length ? list.map((p) => '<div class="tree">' + node(p, 0, []) + '</div>').join('') : '<p class="small muted dash">Пока пусто.</p>') +
     (kind ? '<div class="btns two" style="margin:8px 0 4px"><button type="button" class="btn ghost" data-newk="' + kind + '">＋ Новый пост</button><button type="button" class="btn ghost" data-pickk="' + kind + '">📋 Из существующих</button></div>' + (kind === 'fb' ? '<button type="button" class="btn ghost" data-fbback="1" style="margin:0 0 4px">📤 Отправить тем, кто уже оставил отзыв</button>' : '') : '');
@@ -854,7 +865,7 @@ function renderFlow() {
     '<div class="btns two" style="margin:8px 0 4px"><button type="button" class="btn ghost" data-newk="drip">＋ Новый пост</button><button type="button" class="btn ghost" data-pickk="drip">📋 Из существующих</button></div></div>';
   const stepPosts = new Set((S.msgs || []).map((m) => m.post).filter(Boolean));
   const lost = S.posts.filter((p) => p.kind === 'node' && !shown.has(p.id) && !stepPosts.has(p.id));
-  if (lost.length) h += sec('🔘 Посты-ответы без кнопки', 'На них пока не ведёт ни одна кнопка и они не стоят на шаге входа — человек их не получит. Привяжи кнопкой («＋ кнопка» → «Пост») или перетащи на шаг входа выше.', lost);
+  if (false) h += sec('🔘 Посты-ответы без кнопки', 'На них пока не ведёт ни одна кнопка и они не стоят на шаге входа — человек их не получит. Привяжи кнопкой («＋ кнопка» → «Пост») или перетащи на шаг входа выше.', lost);
   $('body').innerHTML = h.replace('@@ATTN@@', attentionHtml(lost.length));
   $('newPost').onclick = () => openNew();
   document.querySelectorAll('[data-pmode]').forEach((b) => b.onclick = () => { view.mode = b.dataset.pmode; view.step = 0; haptic(); renderFeed(); });
@@ -864,12 +875,197 @@ function renderFlow() {
   document.querySelectorAll('[data-newk]').forEach((el) => el.onclick = () => { haptic(); openNew({ kind: el.dataset.newk }); });
   document.querySelectorAll('[data-fbback]').forEach((el) => el.onclick = () => { haptic(); fbBackfill(); });
   document.querySelectorAll('[data-pickk]').forEach((el) => el.onclick = () => { haptic(); pickExisting(el.dataset.pickk); });
-  bindEntry(); bindPool(); bindView(); bindRun(); bindDays();
+  if ($('flowDet')) $('flowDet').ontoggle = () => { view.flowClosed = !$('flowDet').open; };
+  bindEntry(); bindMap(); bindView(); bindRun(); bindDays();
   document.querySelectorAll('[data-ftrk]').forEach((b) => b.onclick = () => { view.track = b.dataset.ftrk; haptic(); renderFeed(); });
   document.querySelectorAll('.fn,.ref').forEach((el) => el.onclick = () => openPost(+el.dataset.id));
   document.querySelectorAll('[data-add]').forEach((el) => el.onclick = () => openPost(+el.dataset.add, { focus: 'buttons' }));
 }
 
+
+// ---------- карта пути: шаги входа слева, посты и развилки правее, связи — линиями ----------
+const MP = { CW: 178, TH: 46, XH: 40, BH: 44, GX: 58, GY: 14, X0: 4, Y0: 4 };
+const MC = { post: '#7B3F6E', course: '#1F6F68', mat: '#9A5B12' };
+function mapModel() {
+  const fl = S.flow || { order: Object.keys(ENTRY), off: [] };
+  const posts = S.posts.filter((p) => p.kind === 'node' && p.status !== 'archived');
+  const pById = Object.fromEntries(posts.map((p) => ['p' + p.id, p]));
+  const nodes = [], edges = [];
+  const add = (n) => { nodes.push(n); return n; };
+  const stepTitle = (k) => k === 'hello' ? '👋 Приветствие' : k === 'schedCourse' ? '🗓 Финальное сообщение' : (ENTRY[k] ? ENTRY[k][0] : k);
+  ['hello', ...fl.order, 'schedCourse'].forEach((k) => {
+    const off = k === 'schedCourse' ? fl.off.includes('sched') : fl.off.includes(k);
+    if (/^post:\d+$/.test(k)) {
+      const p = S.posts.find((x) => x.id === +k.slice(5)); if (!p) return;
+      add({ id: 'e:' + k, kind: 'entry', title: '↳ ' + postName(p), tag: 'Шаг-пост', off, open: { post: p.id }, buttons: [], head: 'p' + p.id });
+      return;
+    }
+    const m = mOf(k); if (!m) return;
+    const st = FLOW.find((x) => x.key === k);
+    const n = add({ id: 'e:' + k, kind: 'entry', title: stepTitle(k), tag: 'Вход', off, open: { msg: k }, head: m.post ? 'p' + m.post : null,
+      buttons: ((st && st.btns) || []).map(mOf).filter(Boolean).map((b) => ({ label: b.text, ek: b.key, to: b.post ? 'p' + b.post : '', hide: b.hide })) });
+    if (m.post && pById['p' + m.post]) edges.push({ from: n.id, i: -1, to: 'p' + m.post, c: MC.post });
+  });
+  const fromFeed = new Set();
+  S.posts.filter((p) => p.kind !== 'node').forEach((p) => (p.rows || []).flat().forEach((b) => { if (b.go) fromFeed.add('p' + b.go); }));
+  let needLead = false;
+  posts.forEach((p) => {
+    const id = 'p' + p.id;
+    if (p.fork) {
+      const rows = (p.rows || []).flat();
+      add({ id, kind: 'fork', title: postName(p), tag: 'Развилка по треку', pid: p.id, buttons: ['course', 'mat'].map((br) => { const b = rows.find((x) => x.branch === br); return { label: br === 'course' ? 'Мини-курс' : 'Материалы', br, to: b && b.go ? 'p' + b.go : '', lane: br }; }) });
+      return;
+    }
+    const flat = [];
+    (p.rows || []).forEach((row, r) => row.forEach((b, c) => flat.push({ r, c, b })));
+    add({ id, kind: 'post', title: postName(p), tag: p.status === 'active' ? 'Пост' : p.status === 'draft' ? 'Черновик' : 'На паузе', pid: p.id, text: p.text || (p.media && p.media.length ? '🖼 картинка' : 'нет текста'), warn: p.status !== 'active' || (!p.text && !(p.media && p.media.length)),
+      buttons: flat.map(({ r, c, b }) => {
+        let to = '', note = '';
+        if (b.go) to = 'p' + b.go; else if (b.lead) { to = 'lead'; needLead = true; }
+        else if (b.doc) note = '📄 ' + (S.docNames[b.doc] || 'документ'); else if (b.pay) note = '💳 оплата'; else if (b.file) note = '📎 файл'; else note = '🔗 ' + domainOf(b.url);
+        return { label: b.text, r, c, to, note };
+      }) });
+  });
+  if (needLead) add({ id: 'lead', kind: 'term', title: 'Заявка на предзапись', tag: 'Результат', buttons: [] });
+  const ids = new Set(nodes.map((n) => n.id));
+  nodes.forEach((n) => {
+    n.buttons.forEach((b, i) => { if (b.to && ids.has(b.to)) edges.push({ from: n.id, i, to: b.to, c: n.kind === 'fork' ? MC[b.lane] : MC.post }); });
+    if (n.head && ids.has(n.head) && !edges.some((e) => e.from === n.id && e.i === -1)) edges.push({ from: n.id, i: -1, to: n.head, c: MC.post });
+  });
+  const depth = {};
+  nodes.filter((n) => n.kind === 'entry').forEach((n) => { depth[n.id] = 0; });
+  for (let it = 0; it < 10; it++) edges.forEach((e) => { if (depth[e.from] !== undefined) depth[e.to] = Math.min(8, Math.max(depth[e.to] || 0, depth[e.from] + 1)); });
+  let maxD = 0; Object.values(depth).forEach((d) => { maxD = Math.max(maxD, d); });
+  nodes.forEach((n) => { if (depth[n.id] === undefined) { if (fromFeed.has(n.id)) depth[n.id] = 1; else { depth[n.id] = maxD + 1; n.free = true; } } });
+  for (let it = 0; it < 10; it++) edges.forEach((e) => { const a = nodes.find((n) => n.id === e.from); if (a && a.free) { const b = nodes.find((n) => n.id === e.to); if (b && depth[e.to] <= depth[e.from]) { depth[e.to] = Math.min(9, depth[e.from] + 1); b.free = true; } } });
+  return { nodes, edges, depth, fl };
+}
+function mapHtml() {
+  const { nodes, edges, depth } = mapModel();
+  const { CW, TH, XH, BH, GX, GY, X0, Y0 } = MP;
+  const cols = {};
+  nodes.forEach((n) => { (cols[depth[n.id]] = cols[depth[n.id]] || []).push(n); });
+  const geo = {}; let H = 0, W = 0;
+  Object.keys(cols).forEach((d) => {
+    let y = Y0;
+    cols[d].forEach((n) => {
+      const nb = n.buttons.length;
+      const h = n.kind === 'post' ? TH + XH + BH * nb + 4 + 40 + 6 : n.kind === 'fork' ? TH + BH * 2 + 10 : n.kind === 'term' ? TH + 4 : TH + BH * nb + (nb ? 8 : 4);
+      geo[n.id] = { x: X0 + (+d) * (CW + GX), y, h, top: n.kind === 'post' ? TH + XH : TH };
+      y += h + GY;
+    });
+    H = Math.max(H, y); W = Math.max(W, X0 + (+d) * (CW + GX) + CW + 12);
+  });
+  let svg = '<svg class="mapsv" width="' + W + '" height="' + H + '" aria-hidden="true">';
+  edges.forEach((e) => {
+    const a = geo[e.from], b = geo[e.to]; if (!a || !b) return;
+    const x1 = a.x + CW, y1 = a.y + (e.i < 0 ? TH / 2 : a.top + e.i * BH + BH / 2 + 2), x2 = b.x, y2 = b.y + TH / 2;
+    if (x2 <= x1 + 16) return;
+    const xm = x2 - 20;
+    svg += '<path d="M' + x1 + ' ' + y1 + ' H' + xm + ' V' + y2 + ' H' + (x2 - 5) + '" stroke="' + e.c + '" fill="none" stroke-width="2" stroke-linejoin="round"/><path d="M' + (x2 - 1) + ' ' + y2 + ' l-7 -4.5 v9z" fill="' + e.c + '"/>';
+  });
+  svg += '</svg>';
+  const tgt = (to) => to === 'lead' ? 'заявка' : (nodes.find((n) => n.id === to) || {}).title || '—';
+  let cards = '';
+  nodes.forEach((n) => {
+    const g = geo[n.id];
+    let inner = '<div class="mh" data-mopen="' + n.id + '" style="height:' + TH + 'px"><small>' + esc(n.tag) + (n.free ? ' · свободный' : '') + '</small><b>' + esc(n.title) + '</b></div>';
+    if (n.kind === 'post') inner += '<div class="mx' + (n.warn ? ' w' : '') + '" style="height:' + XH + 'px">' + esc(n.text) + '</div>';
+    n.buttons.forEach((b, i) => {
+      const col = n.kind === 'fork' ? MC[b.lane] : MC.post;
+      const key = n.kind === 'entry' ? 'e|' + b.ek : n.kind === 'fork' ? 'f|' + n.pid + '|' + b.br : 'r|' + n.pid + '|' + b.r + '|' + b.c;
+      inner += '<button type="button" class="mb' + (b.hide ? ' hid' : '') + '" data-mb="' + esc(key) + '" style="height:' + (BH - 4) + 'px"><span class="ml">' + esc(b.label) + (b.hide ? ' · скрыта' : '') + '</span>' +
+        '<span class="mt" style="color:' + (b.to ? col : 'var(--faint)') + '">' + (b.to ? '→ ' + esc(tgt(b.to)) : b.note ? esc(b.note) : n.kind === 'entry' ? 'дальше по пути' : n.kind === 'fork' ? 'не выбрано' : '—') + '</span>' +
+        '<i style="background:' + (b.to ? col : 'var(--line)') + '"></i></button>';
+    });
+    if (n.kind === 'post') inner += '<button type="button" class="madd" data-madd="' + n.pid + '" style="height:36px">＋ кнопка</button>';
+    cards += '<div class="mc mc-' + n.kind + (n.off ? ' off' : '') + '" data-n="' + n.id + '" style="left:' + g.x + 'px;top:' + g.y + 'px;width:' + CW + 'px;height:' + g.h + 'px">' + inner + '</div>';
+  });
+  return '<div class="mapw" id="mapw"><div class="mapin" style="width:' + W + 'px;height:' + H + 'px">' + svg + cards + '</div></div>';
+}
+// куда ведёт кнопка: выбор из списка
+let mapNew = null;
+function mapPick(ref) {
+  const [kind, a, b, c] = ref.split('|');
+  const posts = S.posts.filter((p) => p.kind === 'node' && p.status !== 'archived');
+  let cur = '', label = '', canText = false, canDel = false, selfId = 0;
+  if (kind === 'e') { const m = mOf(a); label = m ? m.text : ''; cur = m && m.post ? 'p' + m.post : ''; }
+  else if (kind === 'f') { selfId = +a; const p = S.posts.find((x) => x.id === +a); const bb = ((p && p.rows) || []).flat().find((x) => x.branch === b); cur = bb && bb.go ? 'p' + bb.go : ''; label = b === 'course' ? 'Мини-курс' : 'Материалы'; }
+  else if (kind === 'r') { selfId = +a; const p = S.posts.find((x) => x.id === +a); const bb = p && p.rows[+b] && p.rows[+b][+c]; label = bb ? bb.text : ''; cur = bb ? (bb.go ? 'p' + bb.go : bb.lead ? 'lead' : '') : ''; canText = true; canDel = true; }
+  else if (kind === 'n') { selfId = +a; label = ''; canText = true; }
+  const opt = (id, t, sub, on) => '<button type="button" class="kind' + (on ? ' on' : '') + '" data-pk="' + esc(id) + '"><b>' + esc(t) + '</b><span>' + esc(sub) + '</span></button>';
+  let h = '<span class="pill">Кнопка</span><h2>' + (kind === 'n' ? 'Новая кнопка' : kind === 'f' ? esc(label) : '«' + esc(label) + '»') + '</h2>';
+  if (canText) h += '<label class="f">Текст на кнопке</label><input id="mpText" value="' + esc(label) + '" maxlength="60" placeholder="Например: Хочу в мини-курс">';
+  h += '<div class="grp" style="margin-top:14px">Куда ведёт</div><div class="kinds">';
+  if (kind === 'e') h += opt('', 'Дальше по пути', 'ничего не добавляю', !cur);
+  h += posts.filter((p) => p.id !== selfId && !(kind === 'f' && p.fork)).sort((x, y) => y.id - x.id).map((p) => opt('p' + p.id, postName(p).slice(0, 50), p.fork ? 'развилка по треку' : 'пост' + (p.status !== 'active' ? ' · ' + (p.status === 'draft' ? 'черновик' : 'пауза') : ''), cur === 'p' + p.id)).join('');
+  h += opt('new:post', '＋ Новый пост-ответ', 'создам и привяжу, потом напишешь текст', false);
+  if (kind !== 'f') h += opt('new:fork', '＋ Развилка по треку', 'мини-курс и материалы получат каждый свой пост', false);
+  if (kind === 'r' || kind === 'n') {
+    h += opt('lead', 'Заявка на предзапись', 'имя и телефон, админам уходит карточка', cur === 'lead');
+    h += opt('url', 'Ссылка', 'открыть сайт', false);
+    ['policy', 'consent', 'offer'].forEach((d) => { h += opt('doc:' + d, 'Документ: ' + (S.docNames[d] || d), S.docs[d] ? 'ссылка задана' : 'ссылка не задана', false); });
+  }
+  h += '</div>' + (canDel ? '<div class="btns" style="margin-top:10px"><button type="button" class="btn ghost" id="mpDel">Убрать кнопку</button></div>' : '') + '<div class="btns"><button type="button" class="btn ghost" id="mpX">Закрыть</button></div>';
+  sheet(h);
+  $('mpX').onclick = closeSheet;
+  const save = async (fn, okMsg) => { try { await fn(); closeSheet(); await reload(); if (okMsg) toast(okMsg); } catch (e) { toast(e.message); } };
+  const rowsOf = (pid) => JSON.parse(JSON.stringify((S.posts.find((x) => x.id === pid) || {}).rows || []));
+  const txt = () => ($('mpText') ? $('mpText').value.trim() : '');
+  const needText = () => { if (!canText) return true; if (txt()) return true; toast('Напиши текст кнопки'); return false; };
+  const setRow = (btn) => kind === 'r'
+    ? (() => { const rows = rowsOf(selfId); rows[+b][+c] = btn; return api('/post/' + selfId, { rows }); })()
+    : (() => { const rows = rowsOf(selfId); rows.push([btn]); return api('/post/' + selfId, { rows }); })();
+  const mkPost = async (pk) => {
+    if (pk === 'new:fork') return (await api('/post/new', { fork: 'track', title: 'Развилка по треку' })).post;
+    return (await api('/post/new', { kind: 'node', title: 'Новый ответ', md: '', status: 'draft' })).post;
+  };
+  const link = async (to) => {
+    if (kind === 'e') return api('/msg/' + a, { post: to ? +to : null });
+    if (kind === 'f') {
+      const rows = rowsOf(selfId).flat().filter((x) => x.branch !== b);
+      if (to) rows.push({ text: b === 'course' ? 'Мини-курс' : 'Материалы', go: +to, branch: b });
+      const out = ['course', 'mat'].map((br) => rows.filter((x) => x.branch === br)).filter((r) => r.length);
+      return api('/post/' + selfId, { rows: out });
+    }
+    return setRow({ text: txt(), go: +to });
+  };
+  document.querySelectorAll('[data-pk]').forEach((el) => el.onclick = () => {
+    haptic();
+    const pk = el.dataset.pk;
+    if (pk === '' || /^p\d+$/.test(pk)) { if (!needText()) return; return save(() => link(pk.slice(1)), 'Связь сохранена'); }
+    if (!needText()) return;
+    if (pk.startsWith('new:')) return save(async () => { const np = await mkPost(pk); await link(np.id); mapNew = np; }, '').then(() => { const np = mapNew; mapNew = null; if (np && !np.fork) { openPost(np.id); toast('Напиши текст ответа и включи пост'); } else if (np) toast('Теперь выбери, куда ведёт каждая ветка'); });
+    if (pk === 'lead') return save(() => setRow({ text: txt(), lead: true }), 'Кнопка ведёт на заявку');
+    if (pk.startsWith('doc:')) return save(() => setRow({ text: txt(), doc: pk.slice(4) }), 'Сохранено');
+    if (pk === 'url') {
+      sheet('<span class="pill">Ссылка</span><h2>Куда открыть?</h2><input id="mpUrl" placeholder="https://..." inputmode="url"><div class="btns"><button class="btn" id="mpUrlOk" type="button">Сохранить</button><button class="btn ghost" id="mpUrlX" type="button">Назад</button></div>');
+      $('mpUrlX').onclick = () => mapPick(ref);
+      $('mpUrlOk').onclick = () => save(() => setRow({ text: txt() || label || 'Открыть', url: $('mpUrl').value.trim() }), 'Сохранено');
+    }
+  });
+  if (canDel && $('mpDel')) $('mpDel').onclick = () => save(() => { const rows = rowsOf(selfId); rows[+b].splice(+c, 1); return api('/post/' + selfId, { rows: rows.filter((r) => r.length) }); }, 'Кнопка убрана');
+  if (canText && kind === 'r' && $('mpText')) { const t0 = label; $('mpText').addEventListener('keydown', (e) => { if (e.key === 'Enter' && txt() && txt() !== t0) { e.preventDefault(); save(() => { const rows = rowsOf(selfId); rows[+b][+c].text = txt(); return api('/post/' + selfId, { rows }); }, 'Текст сохранён'); } }); }
+}
+function bindMap() {
+  document.querySelectorAll('[data-mopen]').forEach((el) => el.onclick = () => {
+    const id = el.dataset.mopen, n = mapModel().nodes.find((x) => x.id === id); if (!n) return;
+    if (n.kind === 'entry') { if (n.open.post) openPost(n.open.post); else openMsg(n.open.msg); }
+    else if (n.kind === 'post') openPost(n.pid);
+    else if (n.kind === 'fork') mapFork(n.pid);
+  });
+  document.querySelectorAll('[data-mb]').forEach((el) => el.onclick = () => { haptic(); mapPick(el.dataset.mb); });
+  document.querySelectorAll('[data-madd]').forEach((el) => el.onclick = () => { haptic(); mapPick('n|' + el.dataset.madd); });
+  if ($('mapNewPost')) $('mapNewPost').onclick = () => { haptic(); openNew({ kind: 'node' }); };
+  if ($('mapNewFork')) $('mapNewFork').onclick = async () => { haptic(); try { await api('/post/new', { fork: 'track', title: 'Развилка по треку' }); await reload(); toast('Развилка создана — выбери, куда ведёт каждая ветка'); } catch (e) { toast(e.message); } };
+}
+function mapFork(pid) {
+  const p = S.posts.find((x) => x.id === pid); if (!p) return;
+  sheet('<span class="pill">Развилка по треку</span><h2>' + esc(postName(p)) + '</h2><p class="small muted" style="margin:0 0 8px">Человек, который выбрал мини-курс, получит верхнюю ветку, выбравший материалы — нижнюю. Куда ведёт каждая — нажми на ветку на карте.</p>' +
+    '<label class="f">Название (видишь только ты)</label><input id="mfT" value="' + esc(p.title || '') + '" maxlength="80"><div class="btns"><button class="btn" id="mfS" type="button">Сохранить</button><button class="btn ghost" id="mfD" type="button">Убрать развилку</button></div>');
+  $('mfS').onclick = async () => { try { await api('/post/' + pid, { title: $('mfT').value }); closeSheet(); await reload(); } catch (e) { toast(e.message); } };
+  $('mfD').onclick = async () => { try { await api('/post/' + pid, { status: 'archived' }); closeSheet(); await reload(); toast('Развилка убрана'); } catch (e) { toast(e.message); } };
+}
 
 // «свои посты для шагов»: посты без дня (kind = node). Тащи за ⋮⋮ на шаг входа — пост встанет вместо шаблонного сообщения
 function poolBox() {

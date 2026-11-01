@@ -220,3 +220,16 @@ export function cleanFile(f) {
 export async function sendButtonFile(tg, chatId, f) {
   return tg.call(FILE_METHOD[f.type] || 'sendDocument', { chat_id: chatId, [FILE_METHOD[f.type] ? f.type : 'document']: f.file_id });
 }
+
+// развилка по треку: вместо себя бот присылает пост ветки (мини-курс или материалы)
+export async function resolveFork(ctx, id, p) {
+  let n = 0;
+  while (p && p.fork === 'track' && n++ < 6) {
+    const u = await ctx.db.first(`SELECT track FROM users WHERE tg_id = ?`, [id]);
+    const rows = (() => { try { return JSON.parse(p.buttons || '[]'); } catch { return []; } })();
+    const want = u && u.track === 'mat' ? 'mat' : 'course';
+    const b = rows.flat().find(x => x.branch === want);
+    p = b && b.go ? await ctx.db.first(`SELECT * FROM posts WHERE id = ? AND status != 'archived'`, [+b.go]) : null;
+  }
+  return p && p.fork ? null : p;
+}

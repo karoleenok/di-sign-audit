@@ -1,6 +1,6 @@
 import { ZONES, LEVELS } from './texts.js';
 import { say, btn, msg as msgText, delayOf, linksOf, CB_BTN, btnExtra, isOff } from './msgs.js';
-import { sendPost, recordDeliveries, loadDocs, sendButtonFile } from './posts.js';
+import { sendPost, recordDeliveries, loadDocs, sendButtonFile, resolveFork } from './posts.js';
 import { isAdmin } from './admin.js';
 
 const CONSENT_VERSION = 'v1';
@@ -259,7 +259,8 @@ export async function previewStep(ctx, id, k, u = {}) {
   if (isPostStep(k)) {
     const p = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [+k.slice(5)]);
     if (!p) throw new Error('поста нет');
-    return sendPost(ctx.tg, id, p, { uid: id, publicUrl: ctx.publicUrl, docs: await loadDocs(ctx) });
+    const rp = await resolveFork(ctx, id, p);
+    return rp ? sendPost(ctx.tg, id, rp, { uid: id, publicUrl: ctx.publicUrl, docs: await loadDocs(ctx) }) : null;
   }
   throw new Error('нет такого шага: ' + k);
 }
@@ -270,7 +271,8 @@ async function runPostStep(ctx, u, pid) {
   if (!p) return;
   if (await ctx.db.first(`SELECT 1 AS x FROM deliveries WHERE post_id = ? AND tg_id = ?`, [pid, u.tg_id])) return;
   let ok = true;
-  try { await sendPost(ctx.tg, u.tg_id, p, { uid: u.tg_id, publicUrl: ctx.publicUrl, docs: await loadDocs(ctx) }); } catch { ok = false; }
+  const rp = await resolveFork(ctx, u.tg_id, p);
+  if (rp) { try { await sendPost(ctx.tg, u.tg_id, rp, { uid: u.tg_id, publicUrl: ctx.publicUrl, docs: await loadDocs(ctx) }); } catch { ok = false; } }
   await recordDeliveries(ctx.db, pid, [{ tg_id: u.tg_id, ok }], ctx.now);
 }
 export async function nextStep(ctx, u) {
@@ -498,8 +500,9 @@ export async function onUserCallback(ctx, cq) {
   if (bk) {
     const bx = await btnExtra(ctx, bk);
     if (bx.post) {
-      const target = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [bx.post]);
-      if (target && target.status !== 'archived') {
+      const target0 = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [bx.post]);
+      const target = target0 && target0.status !== 'archived' ? await resolveFork(ctx, id, target0) : null;
+      if (target) {
         try { await sendPost(ctx.tg, id, target, { uid: id, publicUrl: ctx.publicUrl, arrow: await btn(ctx, 'buttonsArrow'), docs: await loadDocs(ctx) }); }
         catch (e) { if (e.code === 403) await ctx.db.run(`UPDATE users SET status = 'blocked' WHERE tg_id = ?`, [id]); }
       }
@@ -565,9 +568,11 @@ export async function onUserCallback(ctx, cq) {
     const m = /^gm:([A-Za-z_]+):(\d+)-(\d+)$/.exec(d);
     const b = m && ((await linksOf(ctx, m[1]))[+m[2]] || [])[+m[3]];
     if (!b || !b.go) return;
-    const target = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [+b.go]);
+    let target = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [+b.go]);
     const admin = await isAdmin(ctx, id);
     if (!target || target.status === 'archived' || (target.status !== 'active' && !admin)) return;
+    target = await resolveFork(ctx, id, target);
+    if (!target) return;
     try { await sendPost(ctx.tg, id, target, { uid: id, publicUrl: ctx.publicUrl, arrow: await btn(ctx, 'buttonsArrow'), docs: await loadDocs(ctx) }); }
     catch (e) { if (e.code === 403) await ctx.db.run(`UPDATE users SET status = 'blocked' WHERE tg_id = ?`, [id]); }
     return;
@@ -679,9 +684,11 @@ async function onGo(ctx, cq, u, answer) {
     const kb = { inline_keyboard: [[{ text: '✓ ' + b.text, callback_data: 'go:done' }]] };
     await ctx.tg.call('editMessageReplyMarkup', { chat_id: id, message_id: mid, reply_markup: kb }).catch(() => {});
   }
-  const target = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [+b.go]);
+  let target = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [+b.go]);
   const admin = await isAdmin(ctx, id);
   if (!target || target.status === 'archived' || (target.status !== 'active' && !admin)) return;
+  target = await resolveFork(ctx, id, target);
+  if (!target) return;
   try {
     await sendPost(ctx.tg, id, target, { uid: id, publicUrl: ctx.publicUrl, arrow: await btn(ctx, 'buttonsArrow'), docs: await loadDocs(ctx) });
     // отметка «получил»: от неё считаются посты «после этого поста»

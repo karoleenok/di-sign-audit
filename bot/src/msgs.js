@@ -3,7 +3,7 @@
 // (settings: 'msg:<ключ>' -> {text, entities}). Здесь — тексты «по умолчанию».
 // В тексте можно использовать подстановки в фигурных скобках, например {имя}.
 import { USER_COMMANDS, ADMIN_COMMANDS } from './texts.js';
-import { sendPost, loadDocs, cleanFile } from './posts.js';
+import { sendPost, loadDocs, cleanFile, resolveFork } from './posts.js';
 
 export const MSG_GROUPS = [
   ['hello', '👋 Приветствие'],
@@ -316,7 +316,8 @@ export async function say(ctx, chatId, key, vars, extra = {}) {
   // вместо шаблона — свой пост из ленты; встроенные кнопки шага встают под кнопками поста
   const pid = (await extraOf(ctx, key)).post;
   if (pid) {
-    const p = await ctx.db.first(`SELECT * FROM posts WHERE id = ? AND status != 'archived'`, [pid]);
+    const p0 = await ctx.db.first(`SELECT * FROM posts WHERE id = ? AND status != 'archived'`, [pid]);
+    const p = p0 && p0.fork ? await resolveFork(ctx, chatId, p0) : p0;
     if (p) {
       const f = fill(p.text || '', j0(p.entities), { имя: ctx.userName || 'друг', ...(vars || {}) });
       const own = [...(((extra.reply_markup && extra.reply_markup.inline_keyboard) || [])), ...(await linkRows(ctx, key))];

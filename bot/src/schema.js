@@ -119,6 +119,8 @@ export const MIGRATIONS = [
   [
     `ALTER TABLE leads ADD COLUMN done INTEGER NOT NULL DEFAULT 1`,
   ],
+  // v: развилка по треку (мини-курс / материалы)
+  [`ALTER TABLE posts ADD COLUMN fork TEXT`],
 ];
 
 // Обновить базу при первом запуске после выкладки новой версии (один раз на процесс)
