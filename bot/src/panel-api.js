@@ -8,7 +8,7 @@ import { mdToEntities, entitiesToMd } from './fmt.js';
 import { runPreview, runFullPath, startFastRun, stopRuns, stepRuns, activeRun } from './testrun.js';
 import { onStart, docVars, consentView, backfillFb, loadFlow, normFlow, FLOW_OPTIONAL } from './users.js';
 import { MSK, DAY } from './time.js';
-import { saveMsgExtra, saveBtnExtra } from './msgs.js';
+import { saveMsgExtra, saveBtnExtra, setMsgOff } from './msgs.js';
 import { listMsgs, saveMsg, resetMsg, btn, say, setMsgMedia, canMedia, msgInfo, loadMsgs } from './msgs.js';
 
 const enc = new TextEncoder();
@@ -410,6 +410,7 @@ export async function handlePanelApi(ctx, request, url) {
     try {
       if (body.reset) await resetMsg(ctx, m[1]);
       else if (body.removeMedia) await setMsgMedia(ctx, m[1], null);
+      else if (body.off !== undefined) await setMsgOff(ctx, m[1], !!body.off);
       else if (body.hide !== undefined || (body.post !== undefined && msgInfo(m[1]) && msgInfo(m[1]).button)) {
         await saveBtnExtra(ctx, m[1], { hide: body.hide, post: body.post });
         if (body.text !== undefined) { const t = String(body.text || ''); if (!t.trim()) return json({ error: 'Пустой текст' }, 400); await saveMsg(ctx, m[1], t, []); }

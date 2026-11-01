@@ -4,7 +4,7 @@ import { nodeSqliteAdapter } from '../src/db-node.js';
 import { migrate } from '../src/schema.js';
 import { makeCtx, handleUpdate, tick, clickRedirect } from '../src/core.js';
 import { parseWhen, fmtWhen } from '../src/time.js';
-import { saveBtnExtra } from '../src/msgs.js';
+import { saveBtnExtra, setMsgOff } from '../src/msgs.js';
 
 const calls = [];
 let failEmoji = false, fail403 = new Set(), fail429 = false, msgId = 1000;
@@ -873,5 +873,18 @@ step('кнопки шага: спрятать и прислать пост по�
   await C1.db.run(`DELETE FROM settings WHERE key = 'flow:off'`);
 }
 step('финальное сообщение входа можно выключить');
+// служебные ответы можно выключить, обязательные — нет
+{
+  const C2 = C();
+  await setMsgOff(C2, 'unknown', true);
+  await assert.rejects(() => setMsgOff(C2, 'policy', true), /нельзя/);
+  await msg(1701, '/start'); await cb(1701, 'c:pd'); await cb(1701, 'c:ads:1');
+  const q0 = calls.length; await msg(1701, '/blabla');
+  assert.equal(calls.slice(q0).filter((c) => c.body.chat_id === 1701 && c.method === 'sendMessage').length, 0, 'выключенный ответ не уходит');
+  await setMsgOff(C2, 'unknown', false);
+  const q1 = calls.length; await msg(1701, '/blabla');
+  assert.ok(calls.slice(q1).some((c) => c.body.chat_id === 1701 && c.method === 'sendMessage'), 'включённый уходит');
+}
+step('служебные ответы: вкл/выкл');
 
 console.log('\nВсе сценарии прошли. Запросов к фейковому Telegram:', calls.length);

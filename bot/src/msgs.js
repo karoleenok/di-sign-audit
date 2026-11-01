@@ -209,6 +209,15 @@ export async function saveMsgExtra(ctx, key, { delay, links, post } = {}) {
 export const CB_BTN = { 'c:pd': 'consentPdBtn', 'c:ads:1': 'consentAdsYes', 'c:ads:0': 'consentAdsNo', 'ct:tg': 'contactTg', 'ct:phone': 'contactPhone', 'ct:email': 'contactEmail', 'fb:yes': 'fbYes', 'fb:no': 'fbNo', 'n:ok': 'nameOk', 'tr:course': 'trackCourse', 'tr:mat': 'trackMat' };
 const NO_HIDE = ['consentPdBtn', 'consentAdsYes', 'consentAdsNo']; // без них нет согласия — прятать нельзя
 const BTN_GROUPS = [['contactTg', 'contactPhone', 'contactEmail'], ['fbYes', 'fbNo'], ['trackCourse', 'trackMat']];
+// служебные ответы, которые можно выключить (остальные нужны для закона и работы бота)
+export const OFFABLE = ['adsYes', 'unknown', 'leadThanks', 'leadAgain'];
+export async function setMsgOff(ctx, key, off) {
+  if (!OFFABLE.includes(key)) throw new Error('Это сообщение выключить нельзя: оно нужно для работы бота');
+  const x = { ...(await extraOf(ctx, key)) };
+  if (off) x.off = true; else delete x.off;
+  await ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, ['msgx:' + key, JSON.stringify(x)]);
+  if (ctx._msgx) ctx._msgx[key] = x;
+}
 export const canHideBtn = (k) => !NO_HIDE.includes(k);
 export async function btnExtra(ctx, key) { const x = await extraOf(ctx, key); return { hide: !!x.hide, post: x.post || null }; }
 export async function saveBtnExtra(ctx, key, { hide, post } = {}) {
@@ -301,6 +310,7 @@ async function withEmojiFallback(send, ents) {
   }
 }
 export async function say(ctx, chatId, key, vars, extra = {}) {
+  if (OFFABLE.includes(key) && (await extraOf(ctx, key)).off) return null;
   extra = await withoutHidden(ctx, extra);
   // вместо шаблона — свой пост из ленты; встроенные кнопки шага встают под кнопками поста
   const pid = (await extraOf(ctx, key)).post;
@@ -428,6 +438,6 @@ export async function listMsgs(ctx) {
     const i = msgInfo(k);
     const o = all[k];
     const x = (ctx._msgx && ctx._msgx[k]) || {};
-    return { ...i, delay: typeof x.delay === 'number' ? x.delay : (DEFAULT_DELAY[k] ?? 0.7), defDelay: DEFAULT_DELAY[k] ?? 0.7, links: x.links || [], post: x.post || null, hide: !!x.hide, canHide: !!i.button && canHideBtn(k), text: o ? o.text : i.def, changed: !!o, media: o && o.media ? o.media.type : null, canMedia: !i.button && !i.plain, emoji: !!(o && (o.entities || []).some((e) => e.type === 'custom_emoji')) };
+    return { ...i, delay: typeof x.delay === 'number' ? x.delay : (DEFAULT_DELAY[k] ?? 0.7), defDelay: DEFAULT_DELAY[k] ?? 0.7, links: x.links || [], post: x.post || null, off: !!x.off, canOff: OFFABLE.includes(k), hide: !!x.hide, canHide: !!i.button && canHideBtn(k), text: o ? o.text : i.def, changed: !!o, media: o && o.media ? o.media.type : null, canMedia: !i.button && !i.plain, emoji: !!(o && (o.entities || []).some((e) => e.type === 'custom_emoji')) };
   }).map(async (m) => (m.group === 'profile' && !m.changed && (m.key === 'botDesc' || m.key === 'botShort') ? { ...m, text: await liveProfile(ctx, m.key), def: '(как задано в BotFather)' } : m)));
 }

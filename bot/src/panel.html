@@ -564,12 +564,12 @@ function renderTexts() {
     if (!groups[g]) return;
     h += '<div class="grp">' + names[g] + '</div>';
     groups[g].forEach((m) => {
-      h += '<div class="msg" data-k="' + m.key + '"><div class="t">' + (m.changed ? '✎ ' : '') + esc(m.title) + (m.button ? '<span class="tag">кнопка</span>' : '') + mediaTag(m) + '</div><div class="p">' + esc(m.text) + '</div></div>';
+      h += '<div class="msg" data-k="' + m.key + '"' + (m.off ? ' style="opacity:.55"' : '') + '><div class="t" style="display:flex;align-items:center;gap:6px"><span style="flex:1">' + (m.changed ? '✎ ' : '') + esc(m.title) + (m.button ? '<span class="tag">кнопка</span>' : '') + mediaTag(m) + '</span>' + (m.canOff ? '<button type="button" class="chip sw' + (m.off ? '' : ' on') + '" data-moff="' + m.key + '">' + (m.off ? 'выкл' : 'вкл') + '</button>' : '') + '</div><div class="p">' + esc(m.text) + '</div></div>';
     });
   });
   h += '<p class="small muted" style="margin-top:16px">Премиум-эмодзи вставляются только в самом боте: <b>/texts</b>.</p>';
   $('body').innerHTML = h;
-  document.querySelectorAll('.msg').forEach((el) => el.onclick = (e) => { const b = e.target.closest('[data-open]'); openMsg(b ? b.dataset.open : el.dataset.k); });
+  document.querySelectorAll('.msg').forEach((el) => el.onclick = async (e) => { const sw = e.target.closest('[data-moff]'); if (sw) { const mm = S.msgs.find((x) => x.key === sw.dataset.moff); try { const r = await api('/msg/' + sw.dataset.moff, { off: !(mm && mm.off) }); S.msgs = r.msgs; haptic('light'); renderTexts(); } catch (er) { toast(er.message); } return; } const b = e.target.closest('[data-open]'); openMsg(b ? b.dataset.open : el.dataset.k); });
   const ob = async (fromTest) => { try { await api('/run/onboarding', { fromTest, level: view.level }); haptic('medium'); toast('Открой бот — путь начался 👀'); try { tg && tg.close && setTimeout(() => {}, 0); } catch (e) {} } catch (e) { toast(e.message); } };
   $('obNo').onclick = () => ob(false); $('obTest').onclick = () => ob(true);
   $('docsBtn').onclick = openDocs; $('peopleBtn').onclick = openPeople;
