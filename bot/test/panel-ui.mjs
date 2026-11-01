@@ -30,7 +30,7 @@ await page.waitForSelector('.hm');
 assert.ok(await page.$('.hm-g'), 'главная: цифры за неделю');
 assert.ok(/копи/.test(await page.textContent('.hm')), 'главная: видно состояние копии базы');
 await page.screenshot({ path: OUT + '/panel-0-home.png', fullPage: true });
-await page.click('#tabs button[data-t="flow"]');
+await page.click('#tabs button[data-t="feed"]');
 await page.waitForSelector('#newPost');
 await page.waitForSelector('.card');
 await page.screenshot({ path: OUT + '/panel-1-feed.png', fullPage: true });
@@ -144,13 +144,14 @@ assert.ok(sent.some((c) => c.method === 'sendMediaGroup' && c.body.chat_id === 1
 await page.click('#bClose');
 step('«прислать мне» отправляет пост админу');
 
-// 7. даты и подарки
-await page.click('#tabs button[data-t="dates"]'); await page.waitForTimeout(200);
-await page.screenshot({ path: OUT + '/panel-5-dates.png' });
-await page.click('#tabs button[data-t="gifts"]'); await page.waitForTimeout(200);
-assert.ok((await page.textContent('#body')).includes('Мини-курс'), 'подарки по трекам');
-await page.screenshot({ path: OUT + '/panel-6-gifts.png', fullPage: true });
-step('вкладки «Даты» и «Подарки»');
+// 7. даты, подарки и бонус за отзыв теперь в одной «Ленте»
+await page.click('#tabs button[data-t="feed"]'); await page.waitForTimeout(200);
+{
+  const txt = await page.textContent('#body');
+  assert.ok(/Анонсы на дату/.test(txt) && /Подарки после теста/.test(txt) && /Бонус за отзыв/.test(txt) && /Лента по дням/.test(txt), 'в ленте: дни, анонсы, подарки, бонус');
+}
+await page.screenshot({ path: OUT + '/panel-5-feed-all.png', fullPage: true });
+step('лента: дни, анонсы, подарки и бонус за отзыв в одном месте');
 
 // 8. тексты
 await page.click('#tabs button[data-t="texts"]'); await page.waitForTimeout(200);
@@ -169,7 +170,7 @@ assert.equal(m, null);
 step('тексты: правка с подстановкой {имя} и возврат по умолчанию');
 
 // режим «как ученик»: сообщения идут по шагам
-await page.click('#tabs button[data-t="flow"]'); await page.waitForSelector('[data-pmode]');
+await page.click('#tabs button[data-t="feed"]'); await page.waitForSelector('[data-pmode]');
 await page.click('[data-pmode="stud"]');
 for (let i = 0; i < 5; i++) await page.click('[data-stnext]');
 assert.ok((await page.$$('.phone .m')).length >= 4, 'в режиме ученика появились сообщения');
@@ -225,12 +226,12 @@ await page.click('#mClose');
 step('картинка в приветствии: загрузка из панели, превью, убрать');
 
 // 8б. конструктор: пост с развилкой с нуля, пост-ответ из кнопки, документы
-await page.click('#tabs button[data-t="flow"]'); await page.waitForSelector('#newPost');
+await page.click('#tabs button[data-t="feed"]'); await page.waitForSelector('#newPost');
 await page.click('#tabs button[data-t="texts"]'); await page.click('#docsBtn'); await page.waitForSelector('#d_policy');
 await page.fill('#d_policy', 'https://disign.ru/policy'); await page.fill('#d_consent', 'https://disign.ru/consent');
 await page.click('#dSave'); await page.waitForTimeout(400);
 assert.equal((await db.first(`SELECT value FROM settings WHERE key = 'doc:policy'`)).value, 'https://disign.ru/policy');
-await page.click('#tabs button[data-t="flow"]'); await page.waitForSelector('#newPost');
+await page.click('#tabs button[data-t="feed"]'); await page.waitForSelector('#newPost');
 assert.ok(!(await page.$('.note.warn')), 'предупреждение о документах ушло');
 await page.click('#newPost'); await page.waitForSelector('.kind');
 await page.screenshot({ path: OUT + '/panel-10-kinds.png' });
@@ -266,14 +267,14 @@ await page.click('#fSt button[data-v="active"]');
 await page.click('#bSave'); await page.waitForTimeout(700);
 assert.equal((await db.first(`SELECT status, text FROM posts WHERE id = ?`, [node.id])).text, 'Отлично! Начнём с базы');
 // дерево: развилка, ответ внутри, документ и оплата
-await page.click('#tabs button[data-t="dates"]'); await page.waitForTimeout(300);
+await page.click('#tabs button[data-t="feed"]'); await page.waitForTimeout(300);
 const tree = await page.textContent('#body');
 assert.ok(/🔘 Начинаю с нуля/.test(tree) && /🔘 по кнопкеНачинаю с нуля/.test(tree) && /Политика обработки данных/.test(tree) && /Тариф с кураторами · подключим позже/.test(tree), 'дерево показывает ветки');
 await page.screenshot({ path: OUT + '/panel-12-tree.png', fullPage: true });
 step('конструктор: развилка с нуля, пост-ответ из кнопки, документ и оплата, дерево');
 
 // 8б. порядок шагов входа: ▲▼ (без Sortable), выключатель, согласие всегда первое
-await page.click('#tabs button[data-t="flow"]'); await page.waitForSelector('#flowList');
+await page.click('#tabs button[data-t="entry"]'); await page.waitForSelector('#flowList');
 const keys = () => page.$$eval('#flowList .stp[data-k]', (els) => els.map((e) => e.dataset.k));
 assert.deepEqual((await keys()).slice(0, 3), ['hello', 'consentPd', 'consentAds']);
 await page.click('[data-up="askContact"]'); await page.waitForTimeout(500);
@@ -312,12 +313,13 @@ assert.ok(await page.$('#crmF [data-f="lead"]') && await page.$('#crmF [data-f="
 assert.equal(await page.$('.funnel'), null, 'воронки нет');
 await page.click('#crmF [data-f="review"]'); await page.waitForTimeout(200);
 await page.screenshot({ path: OUT + '/panel-16-crm.png', fullPage: true });
-await page.click('#tabs button[data-t="flow"]'); await page.waitForTimeout(200);
-step('вкладка «Заявки и отзывы»');
+await page.click('#tabs button[data-t="feed"]'); await page.waitForTimeout(200);
+assert.ok(await page.$('.list[data-day="1"]'), 'дни ленты на вкладке «Лента»');
+await page.click('#tabs button[data-t="entry"]'); await page.waitForTimeout(200);
+step('вкладка «Люди»');
 
 // 8б. карта пути: шаги входа, посты-ответы, развилка по треку, привязка кнопки через шторку
 assert.ok(await page.$('#mapw .mc-entry'), 'на карте есть шаги входа');
-assert.ok(await page.$('.list[data-day="1"]'), 'дни ленты на той же вкладке');
 {
   // новый пост-ответ из карты: кнопка шага «Тест» ведёт на него
   const before = await page.$$eval('#mapw .mc-post', (e) => e.length);
