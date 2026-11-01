@@ -8,7 +8,7 @@ import { mdToEntities, entitiesToMd } from './fmt.js';
 import { runPreview, runFullPath, startFastRun, stopRuns, stepRuns, activeRun } from './testrun.js';
 import { onStart, docVars, consentView, backfillFb, loadFlow, normFlow, FLOW_OPTIONAL } from './users.js';
 import { MSK, DAY } from './time.js';
-import { saveMsgExtra } from './msgs.js';
+import { saveMsgExtra, saveBtnExtra } from './msgs.js';
 import { listMsgs, saveMsg, resetMsg, btn, say, setMsgMedia, canMedia, msgInfo, loadMsgs } from './msgs.js';
 
 const enc = new TextEncoder();
@@ -410,6 +410,10 @@ export async function handlePanelApi(ctx, request, url) {
     try {
       if (body.reset) await resetMsg(ctx, m[1]);
       else if (body.removeMedia) await setMsgMedia(ctx, m[1], null);
+      else if (body.hide !== undefined || (body.post !== undefined && msgInfo(m[1]) && msgInfo(m[1]).button)) {
+        await saveBtnExtra(ctx, m[1], { hide: body.hide, post: body.post });
+        if (body.text !== undefined) { const t = String(body.text || ''); if (!t.trim()) return json({ error: 'Пустой текст' }, 400); await saveMsg(ctx, m[1], t, []); }
+      }
       else {
         // пауза перед сообщением и свои кнопки-ссылки
         if (body.delay !== undefined || body.links !== undefined || body.post !== undefined) await saveMsgExtra(ctx, m[1], { delay: body.delay, links: body.links, post: body.post });

@@ -4,6 +4,7 @@ import { nodeSqliteAdapter } from '../src/db-node.js';
 import { migrate } from '../src/schema.js';
 import { makeCtx, handleUpdate, tick, clickRedirect } from '../src/core.js';
 import { parseWhen, fmtWhen } from '../src/time.js';
+import { saveBtnExtra } from '../src/msgs.js';
 
 const calls = [];
 let failEmoji = false, fail403 = new Set(), fail429 = false, msgId = 1000;
@@ -842,5 +843,24 @@ step('конструктор сценариев: порядок и выключ�
 }
 step('вход: выбор из аудита (мини-курс/материалы), имя, телефон кнопкой или почта, отзыв о кабинете → бонус и уведомление админу, лента по треку');
 
+
+// кнопки шага: можно спрятать и привязать пост
+{
+  const W = 1501; const kbOf = (chat) => { const c = last(chat)[0]; return ((c && c.body.reply_markup && c.body.reply_markup.inline_keyboard) || []).flat().map((b) => b.callback_data); };
+  await db.run(`INSERT INTO posts (kind, title, text, entities, buttons, status, created_at) VALUES ('node', 'После пропуска', 'Привет из поста кнопки', '[]', '[]', 'active', ?)`, [NOW]); const pb = (await db.first(`SELECT id FROM posts WHERE title = 'После пропуска'`)).id;
+  const C0 = C();
+  await assert.rejects(() => saveBtnExtra(C0, 'consentPdBtn', { hide: true }), /нельзя/);
+  await saveBtnExtra(C0, 'fbYes', { hide: true });
+  await assert.rejects(() => saveBtnExtra(C0, 'fbNo', { hide: true }), /хотя бы одна/);
+  await saveBtnExtra(C0, 'fbNo', { post: Number(pb) });
+  await msg(W, '/start'); await cb(W, 'c:pd'); await cb(W, 'c:ads:1'); await cb(W, 'n:ok'); await cb(W, 'ct:tg');
+  const fbKb = calls.filter((c) => c.body.chat_id === W && /fb:/.test(JSON.stringify(c.body.reply_markup || {}))).pop();
+  assert.ok(fbKb && !JSON.stringify(fbKb.body.reply_markup).includes('fb:yes') && JSON.stringify(fbKb.body.reply_markup).includes('fb:no'), 'спрятанная кнопка не показывается');
+  const w0 = calls.length; await cb(W, 'fb:no');
+  assert.ok(calls.slice(w0).some((c) => c.body.chat_id === W && /Привет из поста кнопки/.test(c.body.text || c.body.caption || '')), 'пост кнопки пришёл');
+  await saveBtnExtra(C0, 'fbYes', { hide: false }); await saveBtnExtra(C0, 'fbNo', { post: null });
+  await db.run(`UPDATE posts SET status = 'archived' WHERE id = ?`, [pb]);
+}
+step('кнопки шага: спрятать и прислать пост после нажатия');
 
 console.log('\nВсе сценарии прошли. Запросов к фейковому Telegram:', calls.length);

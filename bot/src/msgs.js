@@ -205,6 +205,39 @@ export async function saveMsgExtra(ctx, key, { delay, links, post } = {}) {
   return x;
 }
 
+// Встроенные кнопки шага: что можно скрыть и какая кнопка какой callback отдаёт
+export const CB_BTN = { 'c:pd': 'consentPdBtn', 'c:ads:1': 'consentAdsYes', 'c:ads:0': 'consentAdsNo', 'ct:tg': 'contactTg', 'ct:phone': 'contactPhone', 'ct:email': 'contactEmail', 'fb:yes': 'fbYes', 'fb:no': 'fbNo', 'n:ok': 'nameOk', 'tr:course': 'trackCourse', 'tr:mat': 'trackMat' };
+const NO_HIDE = ['consentPdBtn', 'consentAdsYes', 'consentAdsNo']; // без них нет согласия — прятать нельзя
+const BTN_GROUPS = [['contactTg', 'contactPhone', 'contactEmail'], ['fbYes', 'fbNo'], ['trackCourse', 'trackMat']];
+export const canHideBtn = (k) => !NO_HIDE.includes(k);
+export async function btnExtra(ctx, key) { const x = await extraOf(ctx, key); return { hide: !!x.hide, post: x.post || null }; }
+export async function saveBtnExtra(ctx, key, { hide, post } = {}) {
+  const i = msgInfo(key);
+  if (!i || !i.button) throw new Error('Это не кнопка');
+  const x = { ...(await extraOf(ctx, key)) };
+  if (hide !== undefined) {
+    if (hide && !canHideBtn(key)) throw new Error('Эту кнопку убрать нельзя: на ней держится согласие');
+    const grp = BTN_GROUPS.find((g) => g.includes(key));
+    if (hide && grp) { for (const o of grp) if (o !== key && !(await extraOf(ctx, o)).hide) { x.hide = true; break; } if (!x.hide) throw new Error('Нужна хотя бы одна кнопка в шаге'); }
+    else if (hide) x.hide = true; else delete x.hide;
+  }
+  if (post !== undefined) {
+    if (post === null || post === '' || post === 0) delete x.post;
+    else { const row = await ctx.db.first(`SELECT id FROM posts WHERE id = ? AND status != 'archived'`, [Number(post)]); if (!row) throw new Error('Такого поста нет'); x.post = row.id; }
+  }
+  await ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, ['msgx:' + key, JSON.stringify(x)]);
+  if (ctx._msgx) ctx._msgx[key] = x;
+  return x;
+}
+// убрать спрятанные кнопки из клавиатуры
+async function withoutHidden(ctx, extra) {
+  const kb = extra && extra.reply_markup && extra.reply_markup.inline_keyboard;
+  if (!kb) return extra;
+  const rows = [];
+  for (const row of kb) { const r = []; for (const b of row) { const k = CB_BTN[b.callback_data]; if (k && (await extraOf(ctx, k)).hide) continue; r.push(b); } if (r.length) rows.push(r); }
+  return { ...extra, reply_markup: { ...extra.reply_markup, inline_keyboard: rows } };
+}
+
 // Подставить {переменные}; сдвинуть оформление (жирный, премиум-эмодзи) после подстановки
 export function fill(text, entities, vars) {
   let t = text;
@@ -268,6 +301,7 @@ async function withEmojiFallback(send, ents) {
   }
 }
 export async function say(ctx, chatId, key, vars, extra = {}) {
+  extra = await withoutHidden(ctx, extra);
   // вместо шаблона — свой пост из ленты; встроенные кнопки шага встают под кнопками поста
   const pid = (await extraOf(ctx, key)).post;
   if (pid) {
@@ -394,6 +428,6 @@ export async function listMsgs(ctx) {
     const i = msgInfo(k);
     const o = all[k];
     const x = (ctx._msgx && ctx._msgx[k]) || {};
-    return { ...i, delay: typeof x.delay === 'number' ? x.delay : (DEFAULT_DELAY[k] ?? 0.7), defDelay: DEFAULT_DELAY[k] ?? 0.7, links: x.links || [], post: x.post || null, text: o ? o.text : i.def, changed: !!o, media: o && o.media ? o.media.type : null, canMedia: !i.button && !i.plain, emoji: !!(o && (o.entities || []).some((e) => e.type === 'custom_emoji')) };
+    return { ...i, delay: typeof x.delay === 'number' ? x.delay : (DEFAULT_DELAY[k] ?? 0.7), defDelay: DEFAULT_DELAY[k] ?? 0.7, links: x.links || [], post: x.post || null, hide: !!x.hide, canHide: !!i.button && canHideBtn(k), text: o ? o.text : i.def, changed: !!o, media: o && o.media ? o.media.type : null, canMedia: !i.button && !i.plain, emoji: !!(o && (o.entities || []).some((e) => e.type === 'custom_emoji')) };
   }).map(async (m) => (m.group === 'profile' && !m.changed && (m.key === 'botDesc' || m.key === 'botShort') ? { ...m, text: await liveProfile(ctx, m.key), def: '(как задано в BotFather)' } : m)));
 }

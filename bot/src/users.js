@@ -1,5 +1,5 @@
 import { ZONES, LEVELS } from './texts.js';
-import { say, btn, msg as msgText, delayOf, linksOf } from './msgs.js';
+import { say, btn, msg as msgText, delayOf, linksOf, CB_BTN, btnExtra } from './msgs.js';
 import { sendPost, recordDeliveries, loadDocs, sendButtonFile } from './posts.js';
 import { isAdmin } from './admin.js';
 
@@ -491,6 +491,19 @@ export async function onUserCallback(ctx, cq) {
     await untech(ctx, id, mid);
     if (key) { await pauseFor(ctx, id, key); await say(ctx, id, key, vars); }
   };
+
+  // у кнопки шага может быть свой пост: присылаем его перед обычным продолжением пути
+  const bk = CB_BTN[d];
+  if (bk) {
+    const bx = await btnExtra(ctx, bk);
+    if (bx.post) {
+      const target = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [bx.post]);
+      if (target && target.status !== 'archived') {
+        try { await sendPost(ctx.tg, id, target, { uid: id, publicUrl: ctx.publicUrl, arrow: await btn(ctx, 'buttonsArrow'), docs: await loadDocs(ctx) }); }
+        catch (e) { if (e.code === 403) await ctx.db.run(`UPDATE users SET status = 'blocked' WHERE tg_id = ?`, [id]); }
+      }
+    }
+  }
 
   if (d === 'c:pd') {
     await answer('consentThanks');
