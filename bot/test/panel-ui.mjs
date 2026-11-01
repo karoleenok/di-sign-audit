@@ -286,6 +286,14 @@ await page.click('#mClose');
 await page.click('[data-sw="fbOffer"]'); await page.waitForTimeout(400);
 await page.click('[data-down="askContact"]'); await page.waitForTimeout(400); // вернули как было
 step('шаги входа: порядок ▲▼, выключатель, согласие всегда первое, нажатие открывает текст');
+// кнопки шага: прячем «Оставить отзыв» и сохраняем — без ошибок, галочка запоминается
+await page.click('.stp[data-k="askContact"] .st-t'); await page.waitForSelector('.sheet.on'); await page.waitForTimeout(200);
+assert.ok(await page.$('[data-bh="contactPhone"]'), 'у кнопки есть галочка «показывать»');
+await page.click('[data-bh="contactPhone"]'); await page.click('#mSave'); await page.waitForTimeout(500);
+await page.click('.stp[data-k="askContact"] .st-t'); await page.waitForSelector('.sheet.on'); await page.waitForTimeout(200);
+assert.equal(await page.isChecked('[data-bh="contactPhone"]'), false, 'спрятанная кнопка осталась спрятанной');
+await page.click('[data-bh="contactPhone"]'); await page.click('#mSave'); await page.waitForTimeout(500);
+step('кнопки шага в панели: спрятать и вернуть');
 
 // 8б. свои посты без дня: пул показан, он же — список для перетаскивания из ленты и обратно
 assert.ok(await page.$('.poolList[data-pool="1"] .pool-card'), 'пул свободных постов показан');
