@@ -399,6 +399,20 @@ step('выбрать несколько, откат пачки, «где это 
   assert.equal(sc[0].who, 'new', 'развилка только для пришедших без аудита');
   assert.match((await db.first(`SELECT value FROM settings WHERE key = 'flow:order'`)).value, new RegExp('post:' + sc[0].id), 'развилка стоит в порядке входа');
   assert.equal(await page.$('#scaffoldBox'), null, 'после сборки коробка пропала');
+  // сценарии входа: из соцсетей — с развилкой, после аудита — приветствие «после теста», подарок, без развилки
+  assert.ok(await page.$('.stp[data-k="post:' + sc[0].id + '"]') && await page.$('.stp[data-k="hello"]'), 'из соцсетей: приветствие и развилка');
+  assert.equal(await page.$('[data-gift]'), null, 'из соцсетей строки с подарком нет');
+  await page.screenshot({ path: OUT + '/panel-24-site.png', fullPage: true });
+  await page.click('[data-rsrc="audit"]'); await page.waitForTimeout(200);
+  assert.ok(await page.$('.stp[data-k="helloTest"]') && await page.$('[data-gift]'), 'после аудита: приветствие «после теста» и подарок');
+  assert.equal(await page.$('.stp[data-k="post:' + sc[0].id + '"]'), null, 'после аудита развилки нет');
+  await page.screenshot({ path: OUT + '/panel-25-audit.png', fullPage: true });
+  await page.click('[data-rsrc="site"]'); await page.waitForTimeout(150);
+  await page.click('#tabs button[data-t="texts"]'); await page.waitForTimeout(250);
+  const tags = await page.$$eval('#body .tag.sc', (e) => e.map((x) => x.textContent));
+  assert.ok(tags.includes('🌱 из соцсетей') && tags.includes('✅ после аудита') && tags.includes('👥 всем'), 'в настройках у шагов видно сценарий: ' + tags.join(' | '));
+  await page.screenshot({ path: OUT + '/panel-26-texts.png', fullPage: true });
+  await page.click('#tabs button[data-t="path"]'); await page.waitForSelector('.stp[data-k="hello"]');
   // редактор развилки: «кому» и тип кнопки «Отзыв»
   await page.click('.stp[data-k="post:' + sc[0].id + '"]'); await page.waitForSelector('#fWho');
   assert.ok(await page.$('#bEd [data-type="fb"]'), 'у кнопки есть тип «Отзыв»');

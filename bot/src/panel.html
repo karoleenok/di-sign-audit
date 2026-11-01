@@ -60,6 +60,7 @@ h1 i{font-style:italic}
 .card.off{opacity:.38}
 .card.ghost{opacity:.3;background:var(--blue)}
 .card.chosen{box-shadow:0 10px 30px rgba(44,13,2,.18)}
+.tag.sc{margin-left:8px;font-size:11px;white-space:nowrap}.scn{margin:2px 0 10px;padding:10px 12px;border-radius:14px;background:rgba(196,87,42,.08);font-size:13px;line-height:1.35}.scn b{display:block;margin-bottom:2px}
 .slot{display:block;width:100%;min-height:48px;margin:6px 0;border:1.5px dashed var(--line);border-radius:14px;background:transparent;color:var(--soft);font:inherit;font-size:13px;padding:10px 12px;text-align:center;cursor:pointer}.slot.link{border:0;min-height:30px;margin:2px 0 8px;padding:4px;color:var(--accent,#c4572a);text-decoration:underline}.slot:active{background:rgba(196,87,42,.08);border-color:var(--accent,#c4572a)}.list:empty{min-height:12px}
 .handle{flex:none;width:22px;display:flex;align-items:center;justify-content:center;color:var(--faint);cursor:grab;touch-action:none;font-size:18px;letter-spacing:-3px}
 .cbody{flex:1;min-width:0}
@@ -544,7 +545,7 @@ function runBox() {
 function bindRun() {
   const lvl = view.level;
   document.querySelectorAll('[data-rsrc]').forEach((b) => { b.onclick = () => { S.runSrc = b.dataset.rsrc; renderFeed(); }; });
-  if ($('runPrev')) $('runPrev').onclick = async () => { try { await api('/run/preview', { level: lvl, full: true, fromAudit: (S.runSrc || 'audit') === 'audit' }); haptic('medium'); toast('Отправляю весь путь тебе в бот 👀'); } catch (e) { toast(e.message); } };
+  if ($('runPrev')) $('runPrev').onclick = async () => { try { await api('/run/preview', { level: lvl, full: true, fromAudit: (S.runSrc || 'site') === 'audit' }); haptic('medium'); toast('Отправляю весь путь тебе в бот 👀'); } catch (e) { toast(e.message); } };
   if ($('runFast')) $('runFast').onclick = async () => { try { const r = await api('/run/fast', { level: lvl }); S.run = r.run; haptic('medium'); toast('Тест пошёл — смотри в боте ⏩'); renderFeed(); } catch (e) { toast(e.message); } };
   if ($('runStop')) $('runStop').onclick = async () => { try { await api('/run/stop', {}); S.run = null; toast('Тест остановлен'); renderFeed(); } catch (e) { toast(e.message); } };
 }
@@ -633,6 +634,18 @@ function drawCrm() {
 }
 
 // путь ученика: служебные сообщения по порядку (порядок фиксирован — согласие на данные по закону первое)
+// включён ли вход для людей из соцсетей: в пути есть пост «только без аудита»
+function socialOn() {
+  const fl = S.flow || { order: [], off: [] };
+  return fl.order.some((k) => { if (!/^post:\d+$/.test(k) || fl.off.includes(k)) return false; const p = S.posts.find((x) => x.id === +k.slice(5)); return !!(p && p.who === 'new' && p.status === 'active'); });
+}
+// в каком сценарии шаг приходит: чтобы в настройках было видно, где что
+function scTag(k) {
+  const SITE = '🌱 из соцсетей', AUD = '✅ после аудита', ALL = '👥 всем';
+  const soc = socialOn();
+  const t = { hello: SITE, helloTest: AUD, consentPd: ALL, consentAds: ALL, askName: ALL, askContact: ALL, fbOffer: soc ? AUD : ALL, askTrack: soc ? AUD + ', если трек не в ссылке' : ALL, testOffer: SITE, schedCourse: ALL, schedMat: ALL }[k];
+  return t ? '<em class="tag sc" style="font-style:normal">' + t + '</em>' : '';
+}
 const FLOW = [
   { key: 'hello', alt: ['helloTest'], title: 'Приветствие', note: 'Сразу после «Старт». Если человек пришёл из аудита — вариант «после теста».' },
   { key: 'consentPd', btns: ['consentPdBtn'], alt: ['consentThanks'], title: 'Согласие на обработку данных', note: 'Всегда первым: без согласия бот не имеет права ничего присылать и спрашивать контакты.' },
@@ -658,10 +671,10 @@ function renderTexts() {
   FLOW.forEach((st, i) => {
     const m = mOf(st.key); if (!m) return;
     [st.key, ...(st.btns || []), ...(st.alt || [])].forEach((k) => used.add(k));
-    h += '<div class="day"><div class="dayh"><b>' + (i + 1) + '</b><span>' + esc(st.title) + '</span></div>' +
+    h += '<div class="day"><div class="dayh"><b>' + (i + 1) + '</b><span>' + esc(st.title) + '</span>' + scTag(st.key) + '</div>' +
       '<div class="msg" data-k="' + m.key + '" style="margin-bottom:0"><div class="t"><span class="time">⏱ ' + String(m.delay).replace('.', ',') + ' с</span>' + (m.changed ? '<span class="tag">✎ изменено</span>' : '') + mediaTag(m) + '</div><div class="p" style="-webkit-line-clamp:3">' + esc(m.text) + '</div>' +
       (((st.btns || []).length || m.links.length) ? '<div class="meta" style="margin-top:8px">' + (st.btns || []).map((b) => { const bm = mOf(b); return bm ? '<button type="button" class="chip" data-open="' + b + '">🔘 ' + esc(bm.text) + '</button>' : ''; }).join('') + m.links.flat().map((l) => '<span class="chip" style="cursor:default">' + (l.go ? '➡️ ' : l.doc ? '📄 ' : l.pay ? '💳 ' : '🔗 ') + esc(l.text) + '</span>').join('') + '</div>' : '') +
-      '</div>' + (st.alt || []).map((a) => { const am = mOf(a); return am ? '<div class="msg" data-k="' + a + '" style="margin:6px 0 0 18px;padding:10px 12px"><div class="t small" style="display:flex;align-items:center;gap:6px"><span style="flex:1">↳ ' + esc(am.title) + (am.changed ? ' ✎' : '') + mediaTag(am) + '</span>' + (am.canOff ? '<button type="button" class="chip sw' + (am.off ? '' : ' on') + '" data-moff="' + am.key + '">' + (am.off ? 'выкл' : 'вкл') + '</button>' : '') + '</div><div class="p">' + esc(am.text) + '</div></div>' : ''; }).join('') +
+      '</div>' + (st.alt || []).map((a) => { const am = mOf(a); return am ? '<div class="msg" data-k="' + a + '" style="margin:6px 0 0 18px;padding:10px 12px"><div class="t small" style="display:flex;align-items:center;gap:6px"><span style="flex:1">↳ ' + esc(am.title) + (am.changed ? ' ✎' : '') + mediaTag(am) + scTag(a) + '</span>' + (am.canOff ? '<button type="button" class="chip sw' + (am.off ? '' : ' on') + '" data-moff="' + am.key + '">' + (am.off ? 'выкл' : 'вкл') + '</button>' : '') + '</div><div class="p">' + esc(am.text) + '</div></div>' : ''; }).join('') +
       (st.note ? '<p class="small muted" style="margin:6px 2px 0">' + esc(st.note) + '</p>' : '') + '</div>';
   });
   const groups = {};
@@ -853,7 +866,7 @@ function makeNode(shown) {
 const STUDENT = 'Анна';
 const plainT = (t) => esc(String(t || '').replace(/\{имя\}/g, STUDENT)).replace(/\n/g, '<br>');
 function studentSeq() {
-  const fromAudit = (S.runSrc || 'audit') === 'audit';
+  const fromAudit = (S.runSrc || 'site') === 'audit';
   const t = view.track === 'mat' ? 'mat' : 'course';
   const fl = S.flow || { order: Object.keys(ENTRY), off: [] };
   const seq = [];
@@ -886,10 +899,10 @@ function studentHtml() {
   return h + '</div><div class="btns two"><button class="btn ghost" type="button" data-strest="1">Сначала</button><button class="btn" type="button" data-stnext="1">' + (n >= seq.length ? 'Конец пути' : 'Дальше ▸ ' + n + '/' + seq.length) + '</button></div>';
 }
 function pathTop() {
-  const src = S.runSrc || 'audit', m = view.mode || 'build', t = view.track || 'all';
+  const src = S.runSrc || 'site', m = view.mode || 'build', t = view.track || 'all';
   const seg = (attr, opts, cur) => '<div class="seg">' + opts.map(([k, n]) => '<button type="button" ' + attr + '="' + k + '" class="' + (cur === k ? 'on' : '') + '">' + n + '</button>').join('') + '</div>';
   return '<div style="margin:12px 0">' + seg('data-pmode', [['build', 'Собрать'], ['stud', 'Как ученик']], m) + '</div>' +
-    '<div class="ctl"><span class="lab">Человек пришёл</span>' + seg('data-rsrc', [['audit', 'из аудита'], ['site', 'не из аудита (сайт, инста)']], src) +
+    '<div class="ctl"><span class="lab">Сценарий</span>' + seg('data-rsrc', [['site', '🌱 из соцсетей, ещё ничего не проходил'], ['audit', '✅ прошёл аудит']], src) +
     '<span class="lab">' + (m === 'stud' ? 'Выбрал' : 'Лента для') + '</span>' + seg('data-ftrk', m === 'stud' ? [['course', 'мини-курс'], ['mat', 'материалы']] : [['all', 'всех'], ['course', 'мини-курс'], ['mat', 'материалы']], m === 'stud' && t === 'all' ? 'course' : t) + '</div>';
 }
 function attentionHtml(lost) {
@@ -934,7 +947,7 @@ function renderFlow() {
       '<div class="btns two" style="margin:2px 0 4px"><button class="btn ghost" type="button" id="mapNewPost">＋ Пост-ответ</button><button class="btn ghost" type="button" id="mapNewFork">＋ Развилка по треку</button></div>';
   } else {
     h += '<div class="pstage"><div class="grp">① Вход · за 2–3 минуты' + qh('entry') + '</div><p class="small muted" style="margin:-2px 2px 8px">Нажми на шаг — откроется текст. ⋮⋮ меняет порядок, «＋ пост после» вставляет своё сообщение.</p>' + entryBox() + '</div>';
-    h += '<div class="pstage">' + sec('② 🎁 Подарок после теста', 'Приходит сразу после теста, ещё во время входа.', gifts, 'gift', 'gift') + '</div>';
+    h += '<div class="pstage" id="stGift">' + sec('② 🎁 Подарок после теста', 'Приходит сразу после теста, ещё во время входа.', gifts, 'gift', 'gift') + '</div>';
     h += '<div class="pstage"><div class="grp">③ Лента по дням' + qh('days') + '</div><p class="small muted" style="margin:-2px 2px 8px">День 0 — сразу после входа. Тяни пост за ⋮⋮ на другой день.</p>' + daysHtml() +
       '<div class="btns two" style="margin:8px 0 4px"><button type="button" class="btn ghost" data-newk="drip">＋ Новый пост</button><button type="button" class="btn ghost" data-pickk="drip">📋 Из существующих</button></div></div>';
     h += '<div class="pstage">' + sec('④ 💬 По событию: после отзыва', 'Бонус уходит сразу после отзыва о кабинете, в любой день.', S.posts.filter((p) => p.kind === 'fb').sort((a, b) => a.pos - b.pos || a.id - b.id), 'fb', 'fb') + '</div>';
@@ -1355,7 +1368,7 @@ const ENTRY = {
 const WHO = { hello: 'всем, сразу после «Старт»', consentPd: 'всем, первым шагом', consentAds: 'всем', askName: 'всем, у кого ещё нет имени', askContact: 'всем, у кого ещё нет контакта', fbOffer: 'всем, по желанию', askTrack: 'тем, у кого ещё не выбран трек', testOffer: 'тем, кто ещё не проходил тест', schedCourse: 'всем, последним шагом входа' };
 const SKIPS = { askTrack: 'пропускается, если пришёл из аудита: трек уже в ссылке', testOffer: 'не предлагается, если пришёл из аудита: тест пройден, подарок идёт сразу' };
 function entryExtra(k, o) {
-  const fromAudit = (S.runSrc || 'audit') === 'audit';
+  const fromAudit = (S.runSrc || 'site') === 'audit';
   const skip = fromAudit && SKIPS[k] && !o.off;
   let h = '<div class="sumln">' + (skip ? SKIPS[k] : /^post:/.test(k) ? 'придёт: всем, отдельным шагом' : 'придёт: ' + (WHO[k] || 'всем')) + '</div>';
   const st = FLOW.find((x) => x.key === k);
@@ -1384,8 +1397,18 @@ function entryBox() {
     (o.nx2 ? '' : '') + (o.rm ? '<button type="button" class="chip" data-rm="' + k + '" aria-label="убрать из сценария">✕</button>' : '') + (o.sw ? '<button type="button" class="chip sw' + (o.off ? '' : ' on') + '" data-sw="' + (o.swk || k) + '">' + (o.off ? 'выкл' : 'вкл') + '</button>' : '') + '</div>' + entryExtra(k, o);
   const pt = (k) => { const m = S.msgs.find((x) => x.key === k); const p = m && m.post && S.posts.find((x) => x.id === m.post); return p ? ' · 🔁 твой пост «' + esc((p.title || p.text || '#' + p.id).slice(0, 30)) + '»' : ''; };
   let n = 1;
-  let h = row('hello', '👋 Приветствие', pt('hello').replace(/^ · /, ''), n++, {});
+  const sc = (S.runSrc || 'site') === 'audit' ? 'audit' : 'site';
+  const soc = socialOn();
+  const hiddenFor = (k) => {
+    if (/^post:\d+$/.test(k)) { const p = S.posts.find((x) => x.id === +k.slice(5)); return !!(p && p.who === 'new' && sc === 'audit'); }
+    return soc && sc === 'site' && (k === 'fbOffer' || k === 'askTrack'); // эти две только после аудита, когда включён вход из соцсетей
+  };
+  const giftN = S.posts.filter((p) => p.kind === 'gift' && p.status === 'active').length;
+  const giftRow = () => '<div class="stp" role="button" tabindex="0" data-gift="1"><div class="lock" title="подарки правятся в блоке ② ниже">🎁</div><b>' + (n++) + '</b><span class="st-t">🎁 Подарок после теста<i>подарков включено: ' + giftN + ' · нажми, чтобы перейти к ним (блок ② ниже)</i></span></div>';
+  let h = row(sc === 'audit' ? 'helloTest' : 'hello', sc === 'audit' ? '👋 Приветствие · после теста' : '👋 Приветствие', pt(sc === 'audit' ? 'helloTest' : 'hello').replace(/^ · /, ''), n++, {});
   fl.order.forEach((k) => {
+    if (hiddenFor(k)) return;
+    if (k === 'testOffer' && sc === 'audit') { h += giftRow(); return; }
     if (/^post:\d+$/.test(k)) {
       const p = S.posts.find((x) => x.id === +k.slice(5));
       if (!p) return;
@@ -1394,7 +1417,10 @@ function entryBox() {
   });
   h += row('schedCourse', '🗓 Финальное сообщение', pt('schedCourse').replace(/^ · /, ''), n++, { sw: true, swk: 'sched', off: fl.off.includes('sched') });
   const miss = !d.policy || !d.consent;
-  return '<div class="steps" id="flowList">' + h + '</div>' +
+  const banner = sc === 'audit'
+    ? '<b>✅ Сценарий: прошёл аудит</b>Человек вернулся из теста по ссылке. Бот уже знает его зону и уровень, поэтому развилки нет, а подарок приходит сразу. Переключатель «Сценарий» выше показывает второй путь.'
+    : '<b>🌱 Сценарий: пришёл из соцсетей и ещё ничего не проходил</b>Приветствие и согласия' + (soc ? ', затем развилка «экскурсия / тарифы / аудит»' : '') + ', дальше обычный вход. Переключатель «Сценарий» выше показывает путь после аудита.';
+  return '<div class="scn">' + banner + '</div><div class="steps" id="flowList">' + h + '</div>' +
     (miss ? '<div class="note warn">Нет ссылок на политику и согласие: бот пока только для своих (152-ФЗ). Добавь их в «Прочее».</div>' : '');
 }
 // «＋ дальше»: выбрать (или создать) пост, который пойдёт сразу после этого шага
@@ -1433,16 +1459,20 @@ function bindEntry() {
     el.onclick = (e) => { if (e.target.closest('.handle,[data-sw],[data-up],[data-down],[data-rm],[data-next]')) return; open(); };
     el.onkeydown = (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === el) { e.preventDefault(); open(); } };
   });
+  list.querySelectorAll('[data-gift]').forEach((el) => { el.onclick = () => { const t = $('stGift'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); }; });
   list.querySelectorAll('[data-sw]').forEach((b) => b.onclick = () => {
     const f = cur(), k = b.dataset.sw;
     saveFlow(f.order.slice(), f.off.includes(k) ? f.off.filter((x) => x !== k) : [...f.off, k]);
   });
   list.querySelectorAll('[data-next]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); pickNext(b.dataset.next); });
   list.querySelectorAll('[data-rm]').forEach((b) => b.onclick = () => { const f = cur(), k = b.dataset.rm; saveFlow(f.order.filter((x) => x !== k), f.off.filter((x) => x !== k)); });
+  const visKeys = () => [...list.querySelectorAll('.stp[data-mv]')].map((x) => x.dataset.k);
   const move = (k, dir) => {
-    const f = cur(), o = f.order.slice(), i = o.indexOf(k), j = i + dir;
-    if (i < 0 || j < 1 || j >= o.length) return; // на место согласия — нельзя
-    [o[i], o[j]] = [o[j], o[i]];
+    const f = cur(), o = f.order.slice(), vis = visKeys(), vi = vis.indexOf(k), nb = vis[vi + dir];
+    if (vi < 0 || !nb) return; // на место согласия — нельзя
+    const i = o.indexOf(k), j = o.indexOf(nb);
+    if (i < 0 || j < 1) return;
+    [o[i], o[j]] = [o[j], o[i]]; // меняемся с ближайшим видимым шагом: скрытые шаги другого сценария остаются на местах
     saveFlow(o, f.off);
   };
   list.querySelectorAll('[data-up]').forEach((b) => b.onclick = () => move(b.dataset.up, -1));
@@ -1451,8 +1481,10 @@ function bindEntry() {
     handle: '.handle', draggable: '.stp[data-mv]', animation: 160, ghostClass: 'ghost', chosenClass: 'chosen', forceFallback: true, fallbackTolerance: 4, scroll: true, bubbleScroll: true,
     onMove: (ev) => !ev.related || !!ev.related.dataset.mv, // выше согласия и ниже последнего шага — нельзя
     onEnd: () => {
-      const o = ['consentPd', ...[...list.querySelectorAll('.stp[data-mv]')].map((x) => x.dataset.k)];
-      saveFlow(o, cur().off);
+      // видимые шаги занимают свои места в новом порядке, скрытые (другого сценария) остаются где были
+      const f = cur(), vis = visKeys(), set = new Set(vis); let i = 0;
+      const o = f.order.map((k) => (set.has(k) ? vis[i++] : k));
+      saveFlow(o, f.off);
     },
   });
   list.querySelectorAll('[data-kt]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); const o = view.open = view.open || []; const i = o.indexOf(b.dataset.kt); if (i < 0) o.push(b.dataset.kt); else o.splice(i, 1); renderFeed(); });
