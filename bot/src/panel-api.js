@@ -243,24 +243,29 @@ export async function handlePanelApi(ctx, request, url) {
     return json({ ok: true, ...r });
   }
 
-  // перенос поста между лентой по дням и «постами для шагов» (без дня)
+  // перенос поста в любой раздел: лента, дата, подарок, бонус за отзыв, пост для шага
   m = /^\/post\/(\d+)\/move$/.exec(path);
   if (m && request.method === 'POST') {
     const p = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [+m[1]]);
     if (!p) return json({ error: 'Поста нет' }, 404);
-    if (body.to === 'node') {
-      if (p.kind !== 'drip') return json({ error: 'В посты для шагов можно перенести только пост из ленты' }, 400);
-      await ctx.db.run(`UPDATE posts SET kind = 'node', day = NULL, mode = 'day', after_id = NULL, delay_min = 0 WHERE id = ?`, [p.id]);
-      return json({ ok: true });
-    }
-    if (body.to === 'drip') {
-      if (p.kind !== 'node') return json({ error: 'В ленту можно перенести только пост для шага' }, 400);
-      const day = parseInt(body.day, 10);
+    const to = body.to;
+    if (!['drip', 'date', 'gift', 'node', 'fb'].includes(to)) return json({ error: 'Непонятно, куда переносить' }, 400);
+    if (to === p.kind && to !== 'drip') return json({ ok: true });
+    // включённый пост при переносе встаёт на паузу: ничего не должно уйти случайно
+    const keep = (p.kind === 'drip' && to === 'node') || (p.kind === 'node' && to === 'drip');
+    const st = keep ? p.status : (p.status === 'active' ? 'paused' : p.status);
+    if (to === 'drip') {
+      const day = body.day === undefined ? (p.kind === 'node' ? 1 : 0) : parseInt(body.day, 10);
       if (!(day >= 0 && day <= 365)) return json({ error: 'День — от 0 до 365' }, 400);
-      await ctx.db.run(`UPDATE posts SET kind = 'drip', day = ?, send_time = ?, mode = 'day', after_id = NULL, delay_min = 0 WHERE id = ?`, [day, day === 0 ? '00:00' : '11:00', p.id]);
+      await ctx.db.run(`UPDATE posts SET kind = 'drip', day = ?, send_time = ?, run_at = NULL, mode = 'day', after_id = NULL, delay_min = 0, status = ? WHERE id = ?`, [day, day === 0 ? '00:00' : '11:00', st, p.id]);
       return json({ ok: true });
     }
-    return json({ error: 'Непонятно, куда переносить' }, 400);
+    if (to === 'date') {
+      await ctx.db.run(`UPDATE posts SET kind = 'date', day = NULL, run_at = NULL, mode = 'day', after_id = NULL, delay_min = 0, status = ? WHERE id = ?`, [st, p.id]);
+      return json({ ok: true, needDate: true });
+    }
+    await ctx.db.run(`UPDATE posts SET kind = ?, day = NULL, run_at = NULL, mode = 'day', after_id = NULL, delay_min = 0, status = ? WHERE id = ?`, [to, st, p.id]);
+    return json({ ok: true });
   }
 
   // копия существующего поста в другой раздел (текст, оформление, премиум-эмодзи, файлы и кнопки сохраняются; оригинал не трогаем)

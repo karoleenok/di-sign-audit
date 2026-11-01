@@ -221,7 +221,7 @@ async function assemble(ctx, id) {
 }
 
 async function askAudience(ctx, id) {
-  return say(ctx, id, 'Кому отправлять?', { reply_markup: kb([[{ text: 'Всем', callback_data: 'w:aud:all' }], [{ text: 'Начинающим', callback_data: 'w:aud:start' }, { text: 'Продолжающим', callback_data: 'w:aud:pro' }]]) });
+  return say(ctx, id, 'Кому отправлять?', { reply_markup: kb([[{ text: 'Всем', callback_data: 'w:aud:all' }], [{ text: 'Мини-курс', callback_data: 'w:aud:course' }, { text: 'Материалы', callback_data: 'w:aud:mat' }]]) });
 }
 
 async function preview(ctx, id, d) {
@@ -273,6 +273,7 @@ export async function onAdminCallback(ctx, cq) {
       [{ text: '📅 Через N дней после входа', callback_data: 'w:kind:drip' }],
       [{ text: '🕒 В конкретные дату и время', callback_data: 'w:kind:date' }],
       [{ text: '🎁 Подарок после теста', callback_data: 'w:kind:gift' }],
+      [{ text: '💬 Бонус за отзыв о кабинете', callback_data: 'w:kind:fb' }],
       [{ text: '🔘 Ответ на кнопку (приходит по нажатию)', callback_data: 'w:kind:node' }],
     ]) });
   }
@@ -286,7 +287,7 @@ export async function onAdminCallback(ctx, cq) {
   }
   if (data.startsWith('w:tm:') && d.post) { d.post.send_time = data.slice(5); await setState(ctx, id, 'w:aud', d); return askAudience(ctx, id); }
   if (data.startsWith('w:aud:') && d.post) {
-    d.post.audience = data.slice(6);
+    d.post.track = ['course', 'mat'].includes(data.slice(6)) ? data.slice(6) : 'all';
     return askButtons(ctx, id, d);
   }
   if (data === 'w:nobtn' && d.post) { d.post.buttons = null; await setState(ctx, id, 'w:preview', d); return preview(ctx, id, d); }
@@ -295,8 +296,8 @@ export async function onAdminCallback(ctx, cq) {
     const on = data.endsWith(':1');
     const p = d.post;
     await ctx.db.run(
-      `INSERT INTO posts (title, kind, audience, zone, day, send_time, run_at, catchup, status, text, entities, media, buttons, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [p.title || null, p.kind, p.audience, null, p.day ?? null, p.send_time || '11:00', p.run_at || null, p.catchup ? 1 : 0, on ? 'active' : 'draft', p.text, p.entities, p.media, p.buttons, id, ctx.now],
+      `INSERT INTO posts (title, kind, audience, zone, day, send_time, run_at, catchup, status, text, entities, media, buttons, created_by, created_at, track) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [p.title || null, p.kind, 'all', null, p.day ?? null, p.send_time || '11:00', p.run_at || null, p.catchup ? 1 : 0, on ? 'active' : 'draft', p.text, p.entities, p.media, p.buttons, id, ctx.now, p.track || 'all'],
     );
     const row = await ctx.db.first(`SELECT MAX(id) AS id FROM posts WHERE created_by = ?`, [id]);
     await clearState(ctx, id);
@@ -387,6 +388,7 @@ export async function showPost(ctx, id, pid, note) {
     [{ text: '👁 Показать мне', callback_data: `p:${pid}:t` }, ...onOff],
     [{ text: '✏️ Текст и картинки', callback_data: `p:${pid}:ec` }, { text: '🔘 Кнопки', callback_data: `p:${pid}:eb` }],
     [{ text: '🕒 Когда', callback_data: `p:${pid}:ew` }, { text: '👥 Кому', callback_data: `p:${pid}:ea` }],
+    [{ text: '🔀 В другой раздел', callback_data: `p:${pid}:mv` }],
   ];
   if (p.kind === 'date') rows.push([{ text: '🚀 Отправить сейчас', callback_data: `p:${pid}:sn` }]);
   if ((p.buttons || '').includes('"go"')) rows.push([{ text: `☑️ Кнопки-выбор: ${p.once ? 'да' : 'нет'}`, callback_data: `p:${pid}:once` }]);
@@ -429,8 +431,20 @@ async function postAction(ctx, id, pid, act) {
     if (p.kind === 'node') return say(ctx, id, 'Пост-ответ приходит сразу, когда человек нажимает кнопку, которая ведёт сюда. Время для него не задаётся.');
     return say(ctx, id, 'Подарок уходит сразу после теста — время для него не задаётся. Кому он уходит — кнопка «👥 Кому».');
   }
-  if (act === 'ea') return say(ctx, id, 'Кому отправлять?', { reply_markup: kb([[{ text: 'Всем', callback_data: `p:${pid}:a:all` }], [{ text: 'Начинающим', callback_data: `p:${pid}:a:start` }, { text: 'Продолжающим', callback_data: `p:${pid}:a:pro` }]]) });
-  if (act.startsWith('a:')) return upd(`UPDATE posts SET audience = ? WHERE id = ?`, [act.slice(2)], 'Аудитория обновлена ✓');
+  if (act === 'ea') return say(ctx, id, 'Кому отправлять?', { reply_markup: kb([[{ text: 'Всем', callback_data: `p:${pid}:a:all` }], [{ text: 'Мини-курс', callback_data: `p:${pid}:a:course` }, { text: 'Материалы', callback_data: `p:${pid}:a:mat` }]]) });
+  if (act.startsWith('a:')) return upd(`UPDATE posts SET track = ? WHERE id = ?`, [['course', 'mat'].includes(act.slice(2)) ? act.slice(2) : 'all'], 'Кому отправлять: обновлено ✓');
+  if (act === 'mv') {
+    const opts = [['drip', '📅 Лента по дням'], ['date', '🕒 В конкретную дату'], ['gift', '🎁 Подарок после теста'], ['fb', '💬 Бонус за отзыв'], ['node', '🔘 Ответ на кнопку']].filter((o) => o[0] !== p.kind);
+    return say(ctx, id, 'Куда перенести пост? Текст, кнопки и премиум-эмодзи останутся. Включённый пост встанет на паузу, чтобы ничего не ушло случайно.', { reply_markup: kb([...opts.map((o) => [{ text: o[1], callback_data: `p:${pid}:mv:${o[0]}` }]), [{ text: 'Отмена', callback_data: `p:${pid}` }]]) });
+  }
+  if (act.startsWith('mv:')) {
+    const to = act.slice(3);
+    if (!['drip', 'date', 'gift', 'node', 'fb'].includes(to) || to === p.kind) return showPost(ctx, id, pid);
+    await ctx.db.run(`UPDATE posts SET kind = ?, day = NULL, run_at = NULL, mode = 'day', after_id = NULL, delay_min = 0, status = CASE WHEN status = 'active' THEN 'paused' ELSE status END WHERE id = ?`, [to, pid]);
+    if (to === 'drip') { await setState(ctx, id, 'e:day:' + pid, {}); return say(ctx, id, 'Перенесла в ленту по дням. Через сколько дней после входа отправлять? Число, 0 — сразу.'); }
+    if (to === 'date') { await setState(ctx, id, 'e:when:' + pid, {}); return say(ctx, id, 'Перенесла в «В конкретную дату». Когда отправить? Например: 05.11 19:00'); }
+    return showPost(ctx, id, pid, 'Перенесено ✓ Если пост был включён, он на паузе: включи, когда будет нужно.');
+  }
   if (act === 'sn') {
     const n = await audienceCount(ctx.db, p);
     return say(ctx, id, `Отправить пост #${pid} сейчас? Подходит людей: ${n}.`, { reply_markup: kb([[{ text: '🚀 Да, отправить', callback_data: `p:${pid}:sy` }, { text: 'Нет', callback_data: `p:${pid}` }]]) });

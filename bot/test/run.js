@@ -738,12 +738,33 @@ step('кнопка «файл»: у шага и у поста по нажати�
     assert.equal((await api('/post/' + np.id + '/move', { to: 'node' })).ok, true);
     let row = await db.first(`SELECT kind, day, mode FROM posts WHERE id = ?`, [np.id]);
     assert.equal(row.kind, 'node'); assert.equal(row.day, null);
-    assert.equal((await api('/post/' + np.id + '/move', { to: 'node' })).status, 400, 'пост для шага снова в «для шагов» нельзя');
+    assert.equal((await api('/post/' + np.id + '/move', { to: 'node' })).ok, true, 'перенос туда, где пост уже лежит, ничего не ломает');
     assert.equal((await api('/post/' + np.id + '/move', { to: 'drip', day: 3 })).ok, true);
     row = await db.first(`SELECT kind, day, mode, send_time FROM posts WHERE id = ?`, [np.id]);
     assert.deepEqual({ ...row }, { kind: 'drip', day: 3, mode: 'day', send_time: '11:00' });
     assert.equal((await api('/post/' + np.id + '/move', { to: 'drip', day: 999 })).status, 400);
-    await db.run(`UPDATE posts SET status = 'archived' WHERE id = ?`, [np.id]);
+    // любой раздел: включённый пост при переносе встаёт на паузу
+    for (const to of ['gift', 'fb', 'date', 'node']) {
+      await db.run(`UPDATE posts SET status = 'active' WHERE id = ?`, [np.id]);
+      assert.equal((await api('/post/' + np.id + '/move', { to })).ok, true, 'в ' + to);
+      row = await db.first(`SELECT kind, day, status, run_at FROM posts WHERE id = ?`, [np.id]);
+      assert.equal(row.kind, to); assert.equal(row.day, null); assert.equal(row.status, 'paused', 'включённый пост на паузе после переноса в ' + to);
+    }
+    assert.equal((await api('/post/' + np.id + '/move', { to: 'вселенная' })).status, 400);
+    // в боте: /new умеет «бонус за отзыв», на карточке поста есть «в другой раздел»
+    await msg(100, '/new'); await msg(100, 'Бонус из бота');
+    await cb(100, 'w:done'); await cb(100, 'w:kind:fb'); await cb(100, 'w:aud:course'); await cb(100, 'w:nobtn'); await cb(100, 'w:save:0');
+    const bp = await db.first(`SELECT id, kind, track, status FROM posts WHERE text = 'Бонус из бота'`);
+    assert.deepEqual({ kind: bp.kind, track: bp.track, status: bp.status }, { kind: 'fb', track: 'course', status: 'draft' }, '/new создал бонус за отзыв для мини-курса');
+    const c1 = calls.length;
+    await cb(100, 'p:' + bp.id + ':mv');
+    assert.ok(calls.slice(c1).some((c) => c.body.chat_id === 100 && /Куда перенести/.test(c.body.text || '')), 'бот спрашивает, куда перенести');
+    await cb(100, 'p:' + bp.id + ':mv:gift');
+    assert.equal((await db.first(`SELECT kind FROM posts WHERE id = ?`, [bp.id])).kind, 'gift', 'перенесён в подарки');
+    await cb(100, 'p:' + bp.id + ':mv:drip'); await msg(100, '4'); await msg(100, '10:00');
+    row = await db.first(`SELECT kind, day, send_time FROM posts WHERE id = ?`, [bp.id]);
+    assert.deepEqual({ ...row }, { kind: 'drip', day: 4, send_time: '10:00' }, 'в ленту: бот спросил день и время');
+    await db.run(`UPDATE posts SET status = 'archived' WHERE id IN (?, ?)`, [bp.id, np.id]);
   }
   // полный путь: после аудита и с сайта
   for (const fromAudit of [true, false]) {

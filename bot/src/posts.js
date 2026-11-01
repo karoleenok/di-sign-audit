@@ -164,7 +164,7 @@ export function postSummary(p) {
   return [
     `#${p.id} · ${st}`,
     `Когда: ${postWhen(p)}`,
-    ...(p.kind === 'node' ? [] : [`Кому: ${AUD[p.audience] || p.audience}`]),
+    ...(p.kind === 'node' ? [] : [`Кому: ${{ course: 'мини-курс', mat: 'материалы' }[p.track] || 'всем'}`]),
     `Кнопок: ${btns}${p.kind === 'drip' ? ` · догонять опоздавших: ${p.catchup ? 'да' : 'нет'}` : ''}`,
   ].join('\n');
 }
