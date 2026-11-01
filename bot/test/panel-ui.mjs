@@ -409,6 +409,34 @@ step('выбрать несколько, откат пачки, «где это 
 }
 step('заготовка входа из соцсетей, кнопка отзыва, откат');
 
+// 8е. пустое место пути: нажать, выбрать готовый пост, он переезжает туда; копия; поиск
+{
+  await db.run(`INSERT INTO posts (title, kind, audience, track, status, text, entities, media, created_by, created_at) VALUES ('ПЕРЕНЕСИ МЕНЯ', 'node', 'all', 'all', 'draft', 'текст для переноса', '[]', '[]', 1, 1)`);
+  const mv = await db.first(`SELECT id FROM posts WHERE title = 'ПЕРЕНЕСИ МЕНЯ'`);
+  await page.reload(); await page.waitForSelector('.hm'); await page.click('#tabs button[data-t="path"]'); await page.waitForSelector('[data-slot^="drip:"]');
+  const slot = await page.$eval('[data-slot^="drip:"]', (e) => e.dataset.slot);
+  const day = +slot.split(':')[1];
+  await page.screenshot({ path: OUT + '/panel-22-slot.png', fullPage: true });
+  await page.click('[data-slot="' + slot + '"]'); await page.waitForSelector('#pkList .kind');
+  await page.fill('#pkQ', 'ПЕРЕНЕСИ'); await page.waitForTimeout(150);
+  assert.equal((await page.$$('#pkList .kind')).length, 1, 'поиск оставил один пост');
+  await page.screenshot({ path: OUT + '/panel-23-pick.png' });
+  await page.click('#pkList .kind'); await page.waitForTimeout(700);
+  const row = await db.first(`SELECT kind, day, status FROM posts WHERE id = ?`, [mv.id]);
+  assert.deepEqual({ ...row }, { kind: 'drip', day, status: 'draft' }, 'пост переехал в выбранный день, а не скопировался');
+  assert.equal((await db.all(`SELECT id FROM posts WHERE title LIKE 'ПЕРЕНЕСИ МЕНЯ%'`)).length, 1, 'дубля нет');
+  // копия в подарок
+  await page.waitForSelector('[data-slot="gift"], [data-pickk="gift"]');
+  await page.evaluate(() => (document.querySelector('[data-slot="gift"]') || document.querySelector('[data-pickk="gift"]')).click());
+  await page.waitForSelector('#pkList .kind'); await page.click('#pkMode [data-v="copy"]');
+  await page.fill('#pkQ', 'ПЕРЕНЕСИ'); await page.waitForTimeout(150);
+  await page.click('#pkList .kind'); await page.waitForTimeout(800);
+  assert.equal((await db.all(`SELECT id FROM posts WHERE title LIKE 'ПЕРЕНЕСИ МЕНЯ%'`)).length, 2, 'копия создана, оригинал на месте');
+  assert.equal((await db.first(`SELECT kind FROM posts WHERE id = ?`, [mv.id])).kind, 'drip', 'оригинал не тронут');
+  await page.evaluate(() => document.querySelector('#sheetBg').click()); await page.waitForTimeout(200);
+}
+step('пустое место пути: выбрать пост и поставить туда, перенос и копия');
+
 // 9. открыть не из Telegram
 INIT = '';
 const p2 = await b.newPage(); await p2.route('**/telegram-web-app.js', (r) => r.fulfill({ contentType: 'application/javascript', body: stub('') }));

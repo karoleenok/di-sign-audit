@@ -60,6 +60,7 @@ h1 i{font-style:italic}
 .card.off{opacity:.38}
 .card.ghost{opacity:.3;background:var(--blue)}
 .card.chosen{box-shadow:0 10px 30px rgba(44,13,2,.18)}
+.slot{display:block;width:100%;min-height:48px;margin:6px 0;border:1.5px dashed var(--line);border-radius:14px;background:transparent;color:var(--soft);font:inherit;font-size:13px;padding:10px 12px;text-align:center;cursor:pointer}.slot.link{border:0;min-height:30px;margin:2px 0 8px;padding:4px;color:var(--accent,#c4572a);text-decoration:underline}.slot:active{background:rgba(196,87,42,.08);border-color:var(--accent,#c4572a)}.list:empty{min-height:12px}
 .handle{flex:none;width:22px;display:flex;align-items:center;justify-content:center;color:var(--faint);cursor:grab;touch-action:none;font-size:18px;letter-spacing:-3px}
 .cbody{flex:1;min-width:0}
 .ctop{display:flex;gap:8px;align-items:center;margin-bottom:4px;flex-wrap:wrap}
@@ -454,7 +455,7 @@ function daysHtml() {
   if (!drip.length) h += '<div class="empty">Постов по дням пока нет.<br>Создай первый: «＋ Новый пост» вверху.</div>';
   for (let d = 0; d <= last; d++) {
     const items = filtered.filter((p) => bucketDay(p, ids) === d).sort((a, b) => offMin(a, ids) - offMin(b, ids) || a.pos - b.pos || a.id - b.id);
-    h += '<section class="day"><div class="dayh"><b>День ' + d + '</b><span>' + dayLabel(d) + '</span></div><div class="list" data-day="' + d + '">' + items.map((p) => cardHtml(p, { drag: true })).join('') + '</div></section>';
+    h += '<section class="day"><div class="dayh"><b>День ' + d + '</b><span>' + dayLabel(d) + '</span></div><div class="list" data-day="' + d + '">' + items.map((p) => cardHtml(p, { drag: true })).join('') + '</div>' + (items.length ? '' : '<button type="button" class="slot link" data-slot="drip:' + d + '">или нажми и выбери готовый пост</button>') + '</section>';
   }
   return h;
 }
@@ -926,7 +927,7 @@ function renderFlow() {
   let h = pathBar() + inboxHtml() + scaffoldHtml() + pathTop() + '@@ATTN@@' + runBox();
   h += '<div class="btns two" style="margin:0 0 4px"><button class="btn" type="button" id="newPost">＋ Добавить в путь</button><button class="btn ghost" type="button" data-newk="date">＋ Анонс на дату</button></div>';
   const sec = (title, note, list, kind, help) => '<div class="grp">' + title + (help ? qh(help) : '') + '</div>' + (note ? '<p class="small muted" style="margin:-2px 2px 10px">' + note + '</p>' : '') +
-    (list.length ? list.map((p) => '<div class="tree">' + node(p, 0, []) + '</div>').join('') : '<p class="small muted dash">Пока пусто.</p>') +
+    (list.length ? list.map((p) => '<div class="tree">' + node(p, 0, []) + '</div>').join('') : (kind ? '<button type="button" class="slot" data-slot="' + kind + '">＋ Нажми и выбери пост — он будет жить здесь</button>' : '<p class="small muted dash">Пока пусто.</p>')) +
     (kind ? '<div class="btns two" style="margin:8px 0 4px"><button type="button" class="btn ghost" data-newk="' + kind + '">＋ Новый пост</button><button type="button" class="btn ghost" data-pickk="' + kind + '">📋 Из существующих</button></div>' + (kind === 'fb' ? '<button type="button" class="btn ghost" data-fbback="1" style="width:100%">Отправить бонус тем, кто уже оставил отзыв</button>' : '') : '');
   if (pv === 'map') {
     h += '<div class="grp">Карта пути' + qh('map') + '</div><p class="small muted" style="margin:-2px 2px 8px">Слева — шаги входа, правее — посты и развилки. Нажми на кнопку, чтобы выбрать, куда она ведёт.</p>' + mapHtml() +
@@ -1508,18 +1509,58 @@ async function fbBackfill() {
     });
   } catch (e) { toast(e.message); }
 }
-// выбрать готовый пост и положить его копию в раздел (оригинал остаётся)
-function pickExisting(kind) {
-  const list = S.posts.filter((p) => p.kind !== kind || true).sort((a, b) => b.id - a.id);
-  sheet('<span class="pill">Из существующих</span><h2>Какой пост добавить в «' + KIND[kind].replace(/^\S+\s/, '') + '»?</h2><p class="small muted" style="margin:0 0 8px">Сделаю копию с текстом, картинками, оформлением и кнопками. Оригинал останется на месте. Дальше поставишь дату или время и включишь.</p><div class="pk">' +
-    (list.length ? list.map((p) => '<button type="button" class="kind" data-id="' + p.id + '"><b>' + esc(postName(p).slice(0, 60)) + '</b><span>' + KIND[p.kind] + ' · #' + p.id + (p.status !== 'active' ? ' · ' + (p.status === 'draft' ? 'черновик' : 'пауза') : '') + '</span></button>').join('') : '<p class="small muted">Постов пока нет.</p>') +
-    '</div><div class="btns"><button class="btn ghost" id="pkClose">Закрыть</button></div>');
-  $('pkClose').onclick = closeSheet;
-  document.querySelectorAll('.pk .kind').forEach((el) => el.onclick = async () => {
-    try { const r = await api('/post/' + el.dataset.id + '/copy', { kind }); await reload(); haptic('medium'); openPost(r.post.id); toast('Копия готова — поставь дату и включи'); }
-    catch (e) { toast(e.message); }
-  });
+// выбрать готовый пост и поставить его в это место пути (по умолчанию переносим, можно сделать копию)
+const PLACE_NAME = { drip: 'Лента по дням', gift: 'Подарок после теста', fb: 'После отзыва', date: 'На дату' };
+function whereNow(p) {
+  const k = p.kind;
+  return (k === 'drip' ? (p.mode && p.mode !== 'day' ? '③ лента, по таймеру' : '③ лента, день ' + (p.day ?? 0)) : k === 'gift' ? '② подарок после теста' : k === 'fb' ? '④ после отзыва' : k === 'date' ? '⑤ на дату' : '🔘 пост-ответ')
+    + (p.status !== 'active' ? ' · ' + (p.status === 'draft' ? 'черновик' : 'пауза') : '');
 }
+function pickExisting(kind, day) {
+  const hasDay = day !== undefined && day !== null && day !== '';
+  const refd = (p) => (S.posts || []).some((q) => (q.rows || []).flat().some((b) => b.go === p.id)) || ((S.flow && S.flow.order) || []).includes('post:' + p.id) || (S.msgs || []).some((m) => m.post === p.id);
+  const list = S.posts.filter((p) => !p.fork && !(p.kind === kind && (kind !== 'drip' || !hasDay || +p.day === +day)))
+    .sort((a, b) => (b.inbox ? 1 : 0) - (a.inbox ? 1 : 0) || b.id - a.id);
+  const place = PLACE_NAME[kind] + (kind === 'drip' && hasDay ? ' · день ' + day : '');
+  let mode = 'move', q = '';
+  const rows = () => {
+    const f = q.trim().toLowerCase();
+    const l = list.filter((p) => !f || (postName(p) + ' ' + (p.text || '')).toLowerCase().includes(f));
+    return l.length ? l.map((p) => '<button type="button" class="kind" data-id="' + p.id + '"><b>' + esc(postName(p).slice(0, 60)) + '</b><span>' + (p.inbox ? '✉️ новый из бота · ' : '') + esc(whereNow(p)) + (refd(p) ? ' · на него ведут кнопки или шаги' : '') + '</span></button>').join('') : '<p class="small muted" style="margin:8px 2px">Ничего не нашлось.</p>';
+  };
+  sheet('<span class="pill">Поставить в путь</span><h2>Что поставить в «' + esc(place) + '»?</h2>' +
+    segHtml('pkMode', [['move', 'Перенести сюда'], ['copy', 'Сделать копию']], mode) +
+    '<p class="small muted" id="pkNote" style="margin:6px 2px 8px"></p>' +
+    (kind === 'drip' && !hasDay ? '<label class="f">В какой день</label><input id="pkDay" type="number" inputmode="numeric" min="0" max="365" value="1">' : '') +
+    '<input id="pkQ" type="search" placeholder="Найти пост по названию или тексту" style="margin:8px 0"><div class="kinds pk" id="pkList">' + rows() + '</div>' +
+    '<div class="btns"><button class="btn ghost" id="pkClose" type="button">Закрыть</button></div>');
+  const note = () => { $('pkNote').textContent = mode === 'move' ? 'Пост уйдёт из старого места и будет жить здесь. Если он был включён, встанет на паузу: проверь и включи сам.' : 'Сделаю копию с текстом, картинками, оформлением и кнопками. Оригинал останется где был, копия будет черновиком.'; };
+  note();
+  segBind('pkMode', (v) => { mode = v; note(); });
+  $('pkClose').onclick = closeSheet;
+  const bindRows = () => document.querySelectorAll('#pkList .kind').forEach((el) => el.onclick = async () => {
+    const id = +el.dataset.id, d = hasDay ? +day : Math.max(0, Math.min(365, parseInt(($('pkDay') || {}).value, 10) || 0));
+    try {
+      if (mode === 'copy') {
+        const r = await api('/post/' + id + '/copy', { kind });
+        if (kind === 'drip') await api('/post/' + r.post.id + '/move', { to: 'drip', day: d });
+        closeSheet(); await reload(); haptic('medium'); openPost(r.post.id); toast('Копия готова: поправь и включи');
+      } else {
+        const r = await api('/post/' + id + '/move', kind === 'drip' ? { to: 'drip', day: d } : { to: kind });
+        closeSheet(); await reload(); haptic('medium');
+        if (r.needDate) { openPost(id); toast('Поставь дату и включи'); } else toast('Готово: пост теперь здесь. Если он был включён, он на паузе');
+      }
+    } catch (e) { toast(e.message); }
+  });
+  bindRows();
+  $('pkQ').oninput = (e) => { q = e.target.value; $('pkList').innerHTML = rows(); bindRows(); };
+}
+// нажали на пустое место пути — выбрать пост, который будет там жить
+document.addEventListener('click', (e) => {
+  const el = e.target.closest && e.target.closest('[data-slot]');
+  if (!el) return;
+  haptic(); const [k, d] = el.dataset.slot.split(':'); pickExisting(k, d === undefined ? undefined : +d);
+});
 function openNew(preset) {
   preset = preset || {};
   if (preset.kind) return openPost(null, { draft: Object.assign(blankPost(preset.kind), preset) });
