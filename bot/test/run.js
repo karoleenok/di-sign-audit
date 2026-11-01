@@ -862,5 +862,16 @@ step('вход: выбор из аудита (мини-курс/материал
   await db.run(`UPDATE posts SET status = 'archived' WHERE id = ?`, [pb]);
 }
 step('кнопки шага: спрятать и прислать пост после нажатия');
+// финальное сообщение входа можно выключить: вход всё равно завершается, лента идёт
+{
+  const Z = 1601; const C1 = C();
+  await C1.db.run(`INSERT INTO settings (key, value) VALUES ('flow:off', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [JSON.stringify(['sched'])]);
+  await msg(Z, '/start audit_top_pro_month'); await cb(Z, 'c:pd'); await cb(Z, 'c:ads:1'); await cb(Z, 'n:ok'); await cb(Z, 'ct:tg'); await cb(Z, 'fb:no');
+  const z = await C1.db.first('SELECT * FROM users WHERE tg_id = ?', [Z]);
+  assert.ok(z.sched_at && z.status === 'active', 'вход завершён');
+  assert.ok(!/ты с нами/.test(lastText(Z) || ''), 'финальное сообщение не прислано');
+  await C1.db.run(`DELETE FROM settings WHERE key = 'flow:off'`);
+}
+step('финальное сообщение входа можно выключить');
 
 console.log('\nВсе сценарии прошли. Запросов к фейковому Telegram:', calls.length);

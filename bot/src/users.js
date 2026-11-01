@@ -137,7 +137,7 @@ export async function onStart(ctx, msg, payload) {
 //   -> (тест, если не проходил) -> подарок -> пост-расписание по треку -> дальше лента
 // ---------- порядок шагов входа (меняется в панели: Сценарий → Вход в бот) ----------
 export const FLOW_STEPS = ['consentPd', 'consentAds', 'askName', 'askContact', 'fbOffer', 'askTrack', 'testOffer'];
-export const FLOW_OPTIONAL = ['askName', 'askContact', 'fbOffer', 'askTrack', 'testOffer']; // эти можно выключить
+export const FLOW_OPTIONAL = ['askName', 'askContact', 'fbOffer', 'askTrack', 'testOffer', 'sched']; // эти можно выключить
 // свой пост, вставленный в сценарий входа новым шагом: ключ «post:<id>»
 export const isPostStep = (k) => /^post:\d+$/.test(String(k));
 export function normFlow(order, off) {
@@ -286,8 +286,7 @@ export async function nextStep(ctx, u) {
   }
   if (!u.sched_at) {
     const key = u.track === 'course' ? 'schedCourse' : 'schedMat';
-    await pauseFor(ctx, id, key);
-    await say(ctx, id, key, {});
+    if (!off.includes('sched')) { await pauseFor(ctx, id, key); await say(ctx, id, key, {}); }
     // вход пройден — отсюда считается лента
     await ctx.db.run(`UPDATE users SET sched_at = ?, status = 'active', joined_at = COALESCE(joined_at, ?) WHERE tg_id = ?`, [ctx.now, ctx.now, id]);
   } else if (u.status !== 'active') {

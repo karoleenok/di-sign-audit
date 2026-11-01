@@ -757,7 +757,7 @@ function studentSeq() {
     addMsg(k);
   });
   if (fromAudit) S.posts.filter((p) => p.kind === 'gift' && p.status === 'active' && (p.track || 'all') !== (t === 'mat' ? 'course' : 'mat') ).forEach((p) => seq.push({ post: p, note: 'подарок после теста' }));
-  addMsg(t === 'mat' ? 'schedMat' : 'schedCourse');
+  if (!fl.off.includes('sched')) addMsg(t === 'mat' ? 'schedMat' : 'schedCourse');
   const ids = byIdMap();
   S.posts.filter((p) => p.kind === 'drip' && p.status === 'active' && ((p.track || 'all') === 'all' || p.track === t)).sort((a, b) => offMin(a, ids) - offMin(b, ids) || a.pos - b.pos || a.id - b.id).forEach((p) => seq.push({ post: p, day: bucketDay(p, ids) }));
   return seq;
@@ -923,7 +923,7 @@ function entryBox() {
     '<b>' + i + '</b><span class="st-t">' + t + (sub ? '<i>' + sub + '</i>' : '') + '</span>' +
     
     (o.mv && !window.Sortable ? '<span class="mv"><button type="button" class="chip" data-up="' + k + '" aria-label="выше">▲</button><button type="button" class="chip" data-down="' + k + '" aria-label="ниже">▼</button></span>' : '') +
-    (o.nx2 ? '' : '') + (o.rm ? '<button type="button" class="chip" data-rm="' + k + '" aria-label="убрать из сценария">✕</button>' : '') + (o.sw ? '<button type="button" class="chip sw' + (o.off ? '' : ' on') + '" data-sw="' + k + '">' + (o.off ? 'выкл' : 'вкл') + '</button>' : '') + '</div>' + entryExtra(k, o);
+    (o.nx2 ? '' : '') + (o.rm ? '<button type="button" class="chip" data-rm="' + k + '" aria-label="убрать из сценария">✕</button>' : '') + (o.sw ? '<button type="button" class="chip sw' + (o.off ? '' : ' on') + '" data-sw="' + (o.swk || k) + '">' + (o.off ? 'выкл' : 'вкл') + '</button>' : '') + '</div>' + entryExtra(k, o);
   const pt = (k) => { const m = S.msgs.find((x) => x.key === k); const p = m && m.post && S.posts.find((x) => x.id === m.post); return p ? ' · 🔁 твой пост «' + esc((p.title || p.text || '#' + p.id).slice(0, 30)) + '»' : ''; };
   let n = 1;
   let h = row('hello', '👋 Приветствие', pt('hello').replace(/^ · /, ''), n++, {});
@@ -934,7 +934,7 @@ function entryBox() {
       h += row(k, '↳ 🔁 Свой пост «' + esc(postName(p).slice(0, 34)) + '»', p.status === 'active' ? 'отдельный шаг: уходит один раз, вход идёт дальше' : '<b class="warn-t">' + (p.status === 'draft' ? 'черновик' : 'не включён') + ' — не уйдёт, пока не включишь пост</b>', n++, { mv: true, sw: true, off: fl.off.includes(k), rm: true, nx: true });
     } else h += row(k, ENTRY[k][0], pt(k).replace(/^ · /, ''), n++, { mv: k !== 'consentPd', sw: opt.includes(k), off: fl.off.includes(k) });
   });
-  h += row('schedCourse', '🗓 Расписание по треку', pt('schedCourse').replace(/^ · /, ''), n++, {});
+  h += row('schedCourse', '🗓 Финальное сообщение', pt('schedCourse').replace(/^ · /, ''), n++, { sw: true, swk: 'sched', off: fl.off.includes('sched') });
   const miss = !d.policy || !d.consent;
   return '<div class="steps" id="flowList">' + h + '</div>' +
     (miss ? '<div class="note warn">Нет ссылок на политику и согласие: бот пока только для своих (152-ФЗ). Добавь их в «Прочее».</div>' : '');
