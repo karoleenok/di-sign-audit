@@ -260,13 +260,15 @@ function mediaStrip(p, max) {
   return '<div class="strip">' + shown.map((f) => f.type === 'photo' ? '<img alt="" data-fid="' + esc(f.file_id) + '">' : '<span class="ph" title="' + esc(f.name || f.type) + '">' + (ic[f.type] || '📎') + '</span>').join('') +
     (fs.length > max ? '<span class="more">+' + (fs.length - max) + '</span>' : '') + '</div>';
 }
+// не загрузилось превью — показываем значок, а не пустое место
+function noThumb(img) { if (!img.parentNode) return; const sp = document.createElement('span'); sp.className = 'ph'; sp.title = 'превью не загрузилось'; sp.textContent = '🖼'; img.replaceWith(sp); }
 function loadThumbs(root) {
   const imgs = (root || document).querySelectorAll('img[data-fid]:not([src])');
   const go = (img) => {
     const fid = img.dataset.fid;
     if (THUMBS.has(fid)) { const u = THUMBS.get(fid); if (u) img.src = u; return; }
     fetch('/api/panel/file?id=' + encodeURIComponent(fid), { headers: { 'x-init-data': INIT } }).then((r) => r.ok ? r.blob() : null)
-      .then((b) => { const u = b ? URL.createObjectURL(b) : ''; THUMBS.set(fid, u); document.querySelectorAll('img[data-fid="' + fid + '"]').forEach((x) => { if (u) x.src = u; }); }).catch(() => {});
+      .then((b) => { const u = b ? URL.createObjectURL(b) : ''; THUMBS.set(fid, u); document.querySelectorAll('img[data-fid="' + fid + '"]').forEach((x) => { if (u) x.src = u; else noThumb(x); }); }).catch(() => document.querySelectorAll('img[data-fid="' + fid + '"]').forEach(noThumb));
   };
   if (!('IntersectionObserver' in window)) { imgs.forEach(go); return; }
   const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { io.unobserve(e.target); go(e.target); } }), { rootMargin: '200px' });

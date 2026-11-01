@@ -80,7 +80,9 @@ export async function handlePanelApi(ctx, request, url) {
     if (!/^[\w-]{10,200}$/.test(fid)) return json({ error: 'Неверный файл' }, 400);
     try {
       const r = await ctx.tg.download(fid);
-      return new Response(r.body, { headers: { 'content-type': r.headers.get('content-type') || 'image/jpeg', 'cache-control': 'private, max-age=600' } });
+      // Telegram отдаёт файлы как application/octet-stream, а превью в панели — только фото: webview такой blob не рисует, поэтому ставим image/jpeg
+      const ct = (r.headers.get('content-type') || '').toLowerCase();
+      return new Response(r.body, { headers: { 'content-type': /^image\//.test(ct) ? ct : 'image/jpeg', 'cache-control': 'private, max-age=600' } });
     } catch (e) { return json({ error: 'Не получилось загрузить превью' }, 400); }
   }
 
