@@ -136,6 +136,7 @@ export async function handlePanelApi(ctx, request, url) {
       posts: posts.map((p) => postOut(p, sent[p.id], clicks[p.id])),
       msgs: await listMsgs(ctx),
       docs: await loadDocs(ctx), docNames: DOCS, tracks: TRACKS, flow: await loadFlow(ctx), flowOptional: FLOW_OPTIONAL,
+      leadCount: ((await ctx.db.first(`SELECT COUNT(*) AS n FROM users WHERE tg_id IN (SELECT tg_id FROM leads) OR fb_at IS NOT NULL`)) || {}).n || 0,
       fbCount: ((await ctx.db.first(`SELECT COUNT(*) AS n FROM users WHERE fb_at IS NOT NULL`)) || {}).n || 0,
       people: { all: people.n || 0, active: people.active || 0 },
       run: await activeRun(ctx.db, user.id),

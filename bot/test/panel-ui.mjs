@@ -302,17 +302,14 @@ assert.match(await page.textContent('[data-moff="adsNo"]'), /выкл/);
 await page.click('[data-moff="adsNo"]'); await page.waitForTimeout(500);
 assert.match(await page.textContent('[data-moff="adsNo"]'), /вкл/);
 step('служебные ответы шага: вкл/выкл в панели');
-// «Люди»: воронка, фильтры, поиск
-await page.click('#tabs button[data-t="reviews"]'); await page.waitForSelector('.funnel'); 
-assert.match(await page.textContent('.funnel'), /пришли[\s\S]*прошли вход[\s\S]*в ленте/);
-assert.ok((await page.$$('.msg.crm')).length >= 1, 'люди показаны');
-await page.click('#crmF [data-f="feed"]'); await page.waitForTimeout(200);
-await page.fill('#crmQ', 'zzzневстречается'); await page.waitForTimeout(200);
-assert.match(await page.textContent('#body'), /Никого не нашла/);
-await page.fill('#crmQ', ''); await page.click('#crmF [data-f="all"]'); await page.waitForTimeout(200);
+// «Заявки и отзывы»
+await page.click('#tabs button[data-t="reviews"]'); await page.waitForTimeout(500);
+assert.ok(await page.$('#crmF [data-f="lead"]') && await page.$('#crmF [data-f="review"]'), 'фильтры: заявки и отзывы');
+assert.equal(await page.$('.funnel'), null, 'воронки нет');
+await page.click('#crmF [data-f="review"]'); await page.waitForTimeout(200);
+await page.screenshot({ path: OUT + '/panel-16-crm.png', fullPage: true });
 await page.click('#tabs button[data-t="flow"]'); await page.waitForTimeout(200);
-await page.click('#tabs button[data-t="reviews"]'); await page.waitForTimeout(300); await page.screenshot({ path: OUT + '/panel-16-crm.png', fullPage: true }); await page.click('#tabs button[data-t="flow"]');
-step('вкладка «Люди»: воронка, фильтры, поиск');
+step('вкладка «Заявки и отзывы»');
 
 // 8б. свои посты без дня: пул показан, он же — список для перетаскивания из ленты и обратно
 assert.ok(await page.$('.poolList[data-pool="1"] .pool-card'), 'пул свободных постов показан');
