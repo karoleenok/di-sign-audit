@@ -963,5 +963,48 @@ step('замена содержимого поста через бота');
   assert.equal((await call('/post/' + hp.id + '/restore', { version: 999999 })).error, 'Такой версии нет');
 }
 step('история версий текста поста');
+// откат на шаг назад, архив, «новые из бота»
+{
+  const { handlePanelApi } = await import('../src/panel-api.js');
+  const crypto = await import('node:crypto');
+  const pp = new URLSearchParams({ auth_date: String(NOW), user: JSON.stringify({ id: 100, first_name: 'Каролина' }) });
+  const dcs = [...pp.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, v]) => `${k}=${v}`).join('\n');
+  const secret = crypto.createHmac('sha256', 'WebAppData').update(env.BOT_TOKEN).digest();
+  pp.set('hash', crypto.createHmac('sha256', secret).update(dcs).digest('hex'));
+  const call = async (path, body) => { const req = new Request('https://bot.test/api/panel' + path, { method: body ? 'POST' : 'GET', headers: { 'x-init-data': pp.toString(), 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }); const r = await handlePanelApi(C(), req, new URL(req.url)); return r.json(); };
+  const up = (await call('/post/new', { kind: 'node', md: 'ДО ОТКАТА', status: 'active' })).post;
+  await call('/post/' + up.id, { md: 'ПОСЛЕ ПРАВКИ' });
+  let st = await call('/state');
+  assert.match(st.undo.label, /правка «ПОСЛЕ ПРАВКИ»|правка «ДО ОТКАТА»/, 'панель знает, что можно отменить');
+  assert.equal(st.undo.by, 'Каролина');
+  let u = await call('/undo', {});
+  assert.ok(u.ok, 'откат прошёл');
+  assert.equal((await C().db.first('SELECT text FROM posts WHERE id = ?', [up.id])).text, 'ДО ОТКАТА', 'текст вернулся');
+  u = await call('/undo', {});
+  assert.equal(await C().db.first('SELECT id FROM posts WHERE id = ?', [up.id]), null, 'второй откат убирает созданный пост');
+  // откат текста бота и порядка шагов
+  await call('/msg/unknown', { text: 'ИЗМЕНЁННЫЙ ОТВЕТ' });
+  await call('/undo', {});
+  assert.notEqual(((await C().db.first(`SELECT value FROM settings WHERE key = 'msg:unknown'`)) || {}).value || '', JSON.stringify({ text: 'ИЗМЕНЁННЫЙ ОТВЕТ' }), 'текст бота откатился');
+  assert.ok(!/ИЗМЕНЁННЫЙ/.test(((await C().db.first(`SELECT value FROM settings WHERE key = 'msg:unknown'`)) || {}).value || ''), 'в базе нет изменённого текста');
+  // ошибка не попадает в откат
+  const before = (await call('/state')).undo;
+  await call('/post/999999', { md: 'x' });
+  assert.deepEqual((await call('/state')).undo, before, 'неудачная правка не плодит откат');
+  // архив
+  const ar = (await call('/post/new', { kind: 'node', md: 'В АРХИВ', status: 'active' })).post;
+  await call('/post/' + ar.id, { status: 'archived' });
+  assert.ok((await call('/archive')).posts.some((p) => p.id === ar.id), 'пост в архиве');
+  assert.ok(!(await call('/state')).posts.some((p) => p.id === ar.id), 'в пути его нет');
+  await call('/post/' + ar.id, { status: 'active' });
+  assert.ok((await call('/state')).posts.some((p) => p.id === ar.id && p.status === 'active'), 'вернулся из архива');
+  // пост из бота попадает во «входящие», правка в панели убирает отметку
+  await msg(100, '/new'); await msg(100, 'ИЗ БОТА ВО ВХОДЯЩИЕ'); await cb(100, 'w:done'); await cb(100, 'w:kind:node'); await cb(100, 'w:nobtn'); await cb(100, 'w:save:0');
+  const ib = (await call('/state')).posts.find((p) => p.text === 'ИЗ БОТА ВО ВХОДЯЩИЕ');
+  assert.ok(ib && ib.inbox, 'пост из /new помечен как новый');
+  await call('/post/' + ib.id, { inbox: 0 });
+  assert.ok(!(await call('/state')).posts.find((p) => p.id === ib.id).inbox, 'отметка снята');
+}
+step('откат на шаг назад, архив, новые из бота');
 
 console.log('\nВсе сценарии прошли. Запросов к фейковому Telegram:', calls.length);

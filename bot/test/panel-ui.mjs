@@ -10,7 +10,7 @@ const OUT = process.env.SHOTS || '.';
 const b = await chromium.launch();
 const page = await b.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
 const errs = [];
-page.on('pageerror', (e) => errs.push(e.message));
+page.on('pageerror', (e) => { errs.push(e.message); console.log('PAGEERR', e.message); });
 const stub = (init) => `window.Telegram={WebApp:{initData:${JSON.stringify(init)},ready(){},expand(){},setHeaderColor(){},setBackgroundColor(){},HapticFeedback:{impactOccurred(){}}}};`;
 let INIT = initData();
 await page.route('**/telegram-web-app.js', (r) => r.fulfill({ contentType: 'application/javascript', body: stub(INIT) }));
@@ -30,7 +30,7 @@ await page.waitForSelector('.hm');
 assert.ok(await page.$('.hm-g'), 'главная: цифры за неделю');
 assert.ok(/копи/.test(await page.textContent('.hm')), 'главная: видно состояние копии базы');
 await page.screenshot({ path: OUT + '/panel-0-home.png', fullPage: true });
-await page.click('#tabs button[data-t="feed"]');
+await page.click('#tabs button[data-t="path"]');
 await page.waitForSelector('#newPost');
 await page.waitForSelector('.card');
 await page.screenshot({ path: OUT + '/panel-1-feed.png', fullPage: true });
@@ -145,10 +145,13 @@ await page.click('#bClose');
 step('«прислать мне» отправляет пост админу');
 
 // 7. даты, подарки и бонус за отзыв теперь в одной «Ленте»
-await page.click('#tabs button[data-t="feed"]'); await page.waitForTimeout(200);
+await page.click('#tabs button[data-t="path"]'); await page.waitForTimeout(200);
 {
   const txt = await page.textContent('#body');
-  assert.ok(/Анонсы на дату/.test(txt) && /Подарки после теста/.test(txt) && /Бонус за отзыв/.test(txt) && /Лента по дням/.test(txt), 'в ленте: дни, анонсы, подарки, бонус');
+  assert.ok(/Вход/.test(txt) && /Подарок после теста/.test(txt) && /после отзыва/.test(txt) && /Лента по дням/.test(txt) && /На дату/.test(txt), 'в пути по порядку: вход, подарок, лента, бонус, даты');
+  const order = ['① Вход', '② 🎁', '③ Лента', '④ 💬', '⑤ 🕒'].map((s) => txt.indexOf(s));
+  assert.deepEqual([...order].sort((a, b) => a - b), order, 'порядок как у ученика');
+  assert.ok(order.every((x) => x >= 0), 'все этапы на месте');
 }
 await page.screenshot({ path: OUT + '/panel-5-feed-all.png', fullPage: true });
 step('лента: дни, анонсы, подарки и бонус за отзыв в одном месте');
@@ -170,7 +173,7 @@ assert.equal(m, null);
 step('тексты: правка с подстановкой {имя} и возврат по умолчанию');
 
 // режим «как ученик»: сообщения идут по шагам
-await page.click('#tabs button[data-t="feed"]'); await page.waitForSelector('[data-pmode]');
+await page.click('#tabs button[data-t="path"]'); await page.waitForSelector('[data-pmode]');
 await page.click('[data-pmode="stud"]');
 for (let i = 0; i < 5; i++) await page.click('[data-stnext]');
 assert.ok((await page.$$('.phone .m')).length >= 4, 'в режиме ученика появились сообщения');
@@ -226,12 +229,12 @@ await page.click('#mClose');
 step('картинка в приветствии: загрузка из панели, превью, убрать');
 
 // 8б. конструктор: пост с развилкой с нуля, пост-ответ из кнопки, документы
-await page.click('#tabs button[data-t="feed"]'); await page.waitForSelector('#newPost');
+await page.click('#tabs button[data-t="path"]'); await page.waitForSelector('#newPost');
 await page.click('#tabs button[data-t="texts"]'); await page.click('#docsBtn'); await page.waitForSelector('#d_policy');
 await page.fill('#d_policy', 'https://disign.ru/policy'); await page.fill('#d_consent', 'https://disign.ru/consent');
 await page.click('#dSave'); await page.waitForTimeout(400);
 assert.equal((await db.first(`SELECT value FROM settings WHERE key = 'doc:policy'`)).value, 'https://disign.ru/policy');
-await page.click('#tabs button[data-t="feed"]'); await page.waitForSelector('#newPost');
+await page.click('#tabs button[data-t="path"]'); await page.waitForSelector('#newPost');
 assert.ok(!(await page.$('.note.warn')), 'предупреждение о документах ушло');
 await page.click('#newPost'); await page.waitForSelector('.kind');
 await page.screenshot({ path: OUT + '/panel-10-kinds.png' });
@@ -267,14 +270,14 @@ await page.click('#fSt button[data-v="active"]');
 await page.click('#bSave'); await page.waitForTimeout(700);
 assert.equal((await db.first(`SELECT status, text FROM posts WHERE id = ?`, [node.id])).text, 'Отлично! Начнём с базы');
 // дерево: развилка, ответ внутри, документ и оплата
-await page.click('#tabs button[data-t="feed"]'); await page.waitForTimeout(300);
+await page.click('#tabs button[data-t="path"]'); await page.waitForTimeout(300);
 const tree = await page.textContent('#body');
 assert.ok(/🔘 Начинаю с нуля/.test(tree) && /🔘 по кнопкеНачинаю с нуля/.test(tree) && /Политика обработки данных/.test(tree) && /Тариф с кураторами · подключим позже/.test(tree), 'дерево показывает ветки');
 await page.screenshot({ path: OUT + '/panel-12-tree.png', fullPage: true });
 step('конструктор: развилка с нуля, пост-ответ из кнопки, документ и оплата, дерево');
 
 // 8б. порядок шагов входа: ▲▼ (без Sortable), выключатель, согласие всегда первое
-await page.click('#tabs button[data-t="entry"]'); await page.waitForSelector('#flowList');
+await page.click('#tabs button[data-t="path"]'); await page.waitForSelector('#flowList');
 const keys = () => page.$$eval('#flowList .stp[data-k]', (els) => els.map((e) => e.dataset.k));
 assert.deepEqual((await keys()).slice(0, 3), ['hello', 'consentPd', 'consentAds']);
 await page.click('[data-up="askContact"]'); await page.waitForTimeout(500);
@@ -313,12 +316,13 @@ assert.ok(await page.$('#crmF [data-f="lead"]') && await page.$('#crmF [data-f="
 assert.equal(await page.$('.funnel'), null, 'воронки нет');
 await page.click('#crmF [data-f="review"]'); await page.waitForTimeout(200);
 await page.screenshot({ path: OUT + '/panel-16-crm.png', fullPage: true });
-await page.click('#tabs button[data-t="feed"]'); await page.waitForTimeout(200);
+await page.click('#tabs button[data-t="path"]'); await page.waitForTimeout(200);
 assert.ok(await page.$('.list[data-day="1"]'), 'дни ленты на вкладке «Лента»');
-await page.click('#tabs button[data-t="entry"]'); await page.waitForTimeout(200);
+await page.click('#tabs button[data-t="path"]'); await page.waitForTimeout(200);
 step('вкладка «Люди»');
 
 // 8б. карта пути: шаги входа, посты-ответы, развилка по треку, привязка кнопки через шторку
+await page.click('[data-pv="map"]'); await page.waitForSelector('#mapw');
 assert.ok(await page.$('#mapw .mc-entry'), 'на карте есть шаги входа');
 {
   // новый пост-ответ из карты: кнопка шага «Тест» ведёт на него
@@ -334,6 +338,34 @@ assert.ok(await page.$('#mapw .mc-entry'), 'на карте есть шаги в
   await page.evaluate(() => document.getElementById('sheetBg').click()); await page.locator('#mapw').screenshot({ path: OUT + '/panel-17-map.png' });
 }
 step('карта пути: развилка по треку и привязка ветки');
+
+// 8в. откат стрелкой, архив, подсказки «?», новые из бота
+await page.click('[data-pv="list"]'); await page.waitForTimeout(200);
+{
+  // подсказка
+  await page.click('.pbar [data-q="path"]'); await page.waitForTimeout(100);
+  assert.ok(await page.isVisible('#qpop.on') && /сверху вниз/.test(await page.textContent('#qpop')), 'кружок «?» показывает подсказку');
+  await page.mouse.click(5, 5); await page.waitForTimeout(100);
+  assert.ok(!(await page.isVisible('#qpop.on')), 'подсказка закрывается');
+  // откат: архивируем пост через API панели, стрелка его возвращает
+  const victim = await db.first(`SELECT id FROM posts WHERE status = 'active' AND kind = 'drip' ORDER BY id LIMIT 1`);
+  await page.evaluate(async (id) => { await fetch('/api/panel/post/' + id, { method: 'POST', headers: { 'x-init-data': window.Telegram.WebApp.initData, 'content-type': 'application/json' }, body: JSON.stringify({ status: 'archived' }) }); }, victim.id);
+  await page.click('#tabs button[data-t="path"]'); await page.evaluate(() => {});
+  await page.reload(); await page.waitForSelector('.hm'); await page.click('#tabs button[data-t="path"]'); await page.waitForTimeout(200);
+  assert.ok(/в архив/.test(await page.textContent('.undo-l')), 'под стрелкой видно, что отменится');
+  await page.click('#archBtn'); await page.waitForSelector('#sheet.on [data-unarch]');
+  assert.ok(await page.$('#sheet [data-unarch="' + victim.id + '"]'), 'пост виден в архиве');
+  await page.click('#arX');
+  await page.click('#undoBtn'); await page.waitForTimeout(500);
+  assert.equal((await db.first(`SELECT status FROM posts WHERE id = ?`, [victim.id])).status, 'active', 'стрелка вернула пост из архива');
+  // новые из бота
+  await db.run(`UPDATE posts SET inbox = 1 WHERE id = ?`, [victim.id]);
+  await page.reload(); await page.waitForSelector('.hm'); await page.click('#tabs button[data-t="path"]'); await page.waitForSelector('.inbox');
+  await page.screenshot({ path: OUT + '/panel-18-path.png', fullPage: true });
+  await page.click('[data-ibok="' + victim.id + '"]'); await page.waitForTimeout(400);
+  assert.equal(await page.$('.inbox'), null, 'после ✓ полоса пропала');
+}
+step('откат стрелкой, архив, подсказки, новые из бота');
 
 // 9. открыть не из Telegram
 INIT = '';

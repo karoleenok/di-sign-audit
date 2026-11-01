@@ -224,6 +224,13 @@ textarea{min-height:120px;resize:vertical;line-height:1.45}
 .hm{display:flex;flex-direction:column;gap:12px;margin-top:14px}.hm-g{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.hm-t{background:var(--card);border-radius:16px;padding:12px;box-shadow:var(--shadow)}.hm-t b{display:block;font:400 34px/1 var(--serif)}.hm-t span{font-size:12px;color:var(--soft)}
 .hm-a{display:block;width:100%;min-height:44px;text-align:left;border:0;border-top:1px solid rgba(164,66,27,.2);background:transparent;padding:6px 0;font-size:14px;cursor:pointer;color:inherit}.hm-r{display:flex;justify-content:space-between;align-items:center;gap:8px;min-height:44px;border-top:1px solid var(--line);padding:6px 0}.hm-r a{text-decoration:none}
 .tabs .seg{overflow-x:auto;scrollbar-width:none}.tabs .seg button{padding:9px 5px;font-size:14px}
+.undo{flex:none;width:40px;height:40px;border-radius:12px;border:1px solid var(--line);background:var(--card);font-size:20px;line-height:1;cursor:pointer;margin-left:8px}.undo:disabled{opacity:.35;cursor:default}.undo-l{text-align:right;margin-top:4px;display:flex;justify-content:flex-end;align-items:center;gap:4px}
+.qh{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;border:1.5px solid var(--faint);background:transparent;color:var(--soft);font:600 11px/1 var(--sans);padding:0;margin-left:6px;vertical-align:middle;cursor:pointer;flex:none;position:relative}.qh::after{content:'';position:absolute;inset:-12px}
+.qpop{position:fixed;z-index:80;background:var(--ink);color:var(--bg);border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.45;box-shadow:0 10px 30px rgba(44,13,2,.3);display:none}.qpop.on{display:block}
+.pbar{display:flex;align-items:center;gap:8px;margin:14px 0 4px;flex-wrap:wrap}.pbar-t{font-weight:600;display:flex;align-items:center}
+.inbox{background:#f4c9f6;border-radius:16px;padding:10px 12px;margin:10px 0;display:flex;flex-direction:column;gap:8px}.inbox-h{display:flex;align-items:center}.inbox-r{background:var(--card);border-radius:12px;padding:8px 10px;display:flex;align-items:center;gap:8px}.inbox-r>span{flex:1}
+.btn.sm{padding:8px 12px;font-size:13px;min-height:40px;width:auto;flex:none}
+.pstage{margin-top:10px}
 </style>
 </head>
 <body>
@@ -232,6 +239,7 @@ textarea{min-height:120px;resize:vertical;line-height:1.45}
 </div>
 <div class="sheet-bg" id="sheetBg"></div>
 <div class="sheet" id="sheet"></div>
+<div class="qpop" id="qpop" role="tooltip"></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -360,21 +368,28 @@ function cardHtml(p, opts) {
 // ---------- отрисовка ----------
 function render() {
   const app = $('app');
+  if (tab === 'entry' || tab === 'feed' || tab === 'flow') tab = 'path';
   const counts = { feed: S.posts.filter((p) => p.kind === 'drip').length, dates: S.posts.filter((p) => p.kind === 'date').length, gifts: S.posts.filter((p) => p.kind === 'gift').length, fb: S.fbCount || 0, fb0: S.posts.filter((p) => p.kind === 'fb').length };
   app.innerHTML =
-    '<div class="top"><span class="pill">Di Sign University · панель</span><span class="small muted">людей: ' + S.people.all + ' · в рассылке: ' + S.people.active + '</span></div>' +
-    (tab === 'home' ? '<h1>Глав<i>ная</i></h1><p class="lead">Что сейчас важно, без поиска по вкладкам.</p>'
+    '<div class="top"><span class="pill">Di Sign University · панель</span><span class="small muted" style="flex:1;text-align:right">людей: ' + S.people.all + ' · в рассылке: ' + S.people.active + '</span>' +
+    '<button type="button" id="undoBtn" class="undo"' + (S.undo ? ' title="Отменить: ' + esc(S.undo.label) + '"' : ' disabled title="Отменять нечего"') + ' aria-label="Отменить последнее действие">↶</button></div>' +
+    (S.undo ? '<div class="undo-l small muted">последнее: ' + esc(S.undo.label) + (S.undo.by ? ' · ' + esc(S.undo.by) : '') + qh('undo') + '</div>' : '') +
+    (tab === 'path' ? '<h1>Путь <i>ученика</i></h1><p class="lead">Вход, подарок, лента, бонус и анонсы — по порядку, как их получает ученик.</p>'
+      : tab === 'home' ? '<h1>Глав<i>ная</i></h1><p class="lead">Что сейчас важно, без поиска по вкладкам.</p>'
       : tab === 'entry' ? '<h1>Вход <i>в бот</i></h1><p class="lead">Как бот встречает нового человека: шаги, кнопки и куда они ведут.</p>'
       : tab === 'feed' ? '<h1>Лента <i>постов</i></h1><p class="lead">Что уходит и когда: по дням после входа, на дату, подарки и бонус за отзыв.</p>'
       : tab === 'flow' ? '<h1>Путь <i>ученика</i></h1><p class="lead" hidden>Вход, подарок, лента по дням, даты и бонус за отзыв — в одном месте. Тяни за ⋮⋮, нажми на пост или шаг — откроется редактор.</p>'
       : tab === 'reviews' ? '<h1>Люди</h1><p class="lead">Кто оставил заявку на предзапись или отзыв о кабинете и как с ним связаться.</p>'
-      : tab === 'texts' ? '<h1>Тексты <i>бота</i></h1><p class="lead">Служебные сообщения: приветствие, согласия, вопросы, команды.</p>'
+      : tab === 'texts' ? '<h1>Настройки</h1><p class="lead">Документы, команды ученика, профиль бота и остальные тексты.</p>'
       : '<h1>Весь путь <i>ученика</i></h1><p class="lead">Вход, лента, даты и бонус — в одном месте.</p>') +
     '<div class="tabs"><div class="seg" id="tabs">' +
-    [['home','Главная'],['entry','Вход'],['feed','Лента · ' + (counts.feed + counts.dates + counts.gifts + counts.fb0)],['reviews','Люди · ' + (S.leadCount || 0)],['texts','Тексты']].map(([k,t]) => '<button data-t="' + k + '" class="' + (tab === k ? 'on' : '') + '">' + t + '</button>').join('') +
+    [['home','Главная'],['path','Путь · ' + (counts.feed + counts.dates + counts.gifts + counts.fb0)],['reviews','Люди · ' + (S.leadCount || 0)],['texts','Настройки']].map(([k,t]) => '<button data-t="' + k + '" class="' + (tab === k ? 'on' : '') + '">' + t + '</button>').join('') +
     '</div></div><div id="body"></div>';
   $('tabs').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; tab = b.dataset.t; haptic(); render(); window.scrollTo(0, 0); };
-  ({ home: renderHome, entry: renderFlow, feed: renderFlow, reviews: renderReviews, texts: renderTexts })[tab]();
+  if (tab === 'entry' || tab === 'feed' || tab === 'flow') tab = 'path';
+  ({ home: renderHome, path: renderFlow, reviews: renderReviews, texts: renderTexts })[tab]();
+  if ($('undoBtn')) $('undoBtn').onclick = doUndo;
+  bindHelp();
   setTimeout(() => loadThumbs($('body')), 0);
 }
 
@@ -411,7 +426,7 @@ async function renderHome() {
   document.querySelectorAll('[data-hm]').forEach((b) => b.onclick = () => {
     const k = b.dataset.hm; haptic();
     if (k === 'docs') { tab = 'texts'; render(); window.scrollTo(0, 0); setTimeout(openDocs, 50); }
-    else if (k === 'flow' || k === 'reviews') { tab = k === 'flow' ? 'entry' : k; render(); window.scrollTo(0, 0); }
+    else if (k === 'flow' || k === 'reviews') { tab = k === 'flow' ? 'path' : k; render(); window.scrollTo(0, 0); }
     else if (/^post:/.test(k)) openPost(+k.slice(5));
   });
 }
@@ -894,27 +909,25 @@ function renderFlow() {
   const gifts = S.posts.filter((p) => p.kind === 'gift' && isRoot(p)).sort((a, b) => a.id - b.id);
   const drip = S.posts.filter((p) => p.kind === 'drip' && isRoot(p)).sort((a, b) => offMin(a, ids) - offMin(b, ids) || a.pos - b.pos || a.id - b.id);
   const dates = S.posts.filter((p) => p.kind === 'date').sort((a, b) => (a.run_at || 9e12) - (b.run_at || 9e12));
-  let h = pathTop() + '@@ATTN@@' + runBox();
-  const entryTab = tab === 'entry';
-  if (entryTab) {
-  h += '<div class="grp">Карта пути</div><p class="small muted" style="margin:-2px 2px 8px">Слева — шаги входа, правее — посты и развилки. Нажми на кнопку, чтобы выбрать, куда она ведёт. Нажми на заголовок — править текст.</p>' + mapHtml() +
-    '<div class="btns two" style="margin:2px 0 4px"><button class="btn ghost" type="button" id="mapNewPost">＋ Пост-ответ</button><button class="btn ghost" type="button" id="mapNewFork">＋ Развилка по треку</button></div>';
-  h += '<details class="box" id="flowDet" style="margin-top:12px"' + (view.flowClosed ? '' : ' open') + '><summary><b>Порядок и включение шагов входа</b></summary><p class="small muted" style="margin:8px 2px">Нажми на шаг, чтобы править текст. ⋮⋮ меняет порядок.</p>' + entryBox() + '</details>';
-  } else {
-  h += '<div class="btns two" style="margin:0 0 4px"><button class="btn" type="button" id="newPost">＋ Пост</button><button class="btn ghost" type="button" data-newk="date">＋ Анонс на дату</button></div>';
-  }
-  const sec = (title, note, list, kind) => '<div class="grp">' + title + '</div>' + (note ? '<p class="small muted" style="margin:-2px 2px 10px">' + note + '</p>' : '') +
+  const pv = view.pv || 'list';
+  let h = pathBar() + inboxHtml() + pathTop() + '@@ATTN@@' + runBox();
+  h += '<div class="btns two" style="margin:0 0 4px"><button class="btn" type="button" id="newPost">＋ Добавить в путь</button><button class="btn ghost" type="button" data-newk="date">＋ Анонс на дату</button></div>';
+  const sec = (title, note, list, kind, help) => '<div class="grp">' + title + (help ? qh(help) : '') + '</div>' + (note ? '<p class="small muted" style="margin:-2px 2px 10px">' + note + '</p>' : '') +
     (list.length ? list.map((p) => '<div class="tree">' + node(p, 0, []) + '</div>').join('') : '<p class="small muted dash">Пока пусто.</p>') +
-    (kind ? '<div class="btns two" style="margin:8px 0 4px"><button type="button" class="btn ghost" data-newk="' + kind + '">＋ Новый пост</button><button type="button" class="btn ghost" data-pickk="' + kind + '">📋 Из существующих</button></div>' + (kind === 'fb' ? '<button type="button" class="btn ghost" data-fbback="1" style="margin:0 0 4px">📤 Отправить тем, кто уже оставил отзыв</button>' : '') : '');
-  if (!entryTab) {
-    h += sec('🕒 Анонсы на дату', 'Уходят один раз всем подходящим, кто уже в боте в этот момент.', dates, 'date');
-    h += sec('🎁 Подарки после теста', 'Уходят сразу после теста.', gifts, 'gift');
-    h += sec('💬 Бонус за отзыв', 'Уходит сразу после отзыва о кабинете.', S.posts.filter((p) => p.kind === 'fb').sort((a, b) => a.pos - b.pos || a.id - b.id), 'fb');
+    (kind ? '<div class="btns two" style="margin:8px 0 4px"><button type="button" class="btn ghost" data-newk="' + kind + '">＋ Новый пост</button><button type="button" class="btn ghost" data-pickk="' + kind + '">📋 Из существующих</button></div>' + (kind === 'fb' ? '<button type="button" class="btn ghost" data-fbback="1" style="width:100%">Отправить бонус тем, кто уже оставил отзыв</button>' : '') : '');
+  if (pv === 'map') {
+    h += '<div class="grp">Карта пути' + qh('map') + '</div><p class="small muted" style="margin:-2px 2px 8px">Слева — шаги входа, правее — посты и развилки. Нажми на кнопку, чтобы выбрать, куда она ведёт.</p>' + mapHtml() +
+      '<div class="btns two" style="margin:2px 0 4px"><button class="btn ghost" type="button" id="mapNewPost">＋ Пост-ответ</button><button class="btn ghost" type="button" id="mapNewFork">＋ Развилка по треку</button></div>';
+  } else {
+    h += '<div class="pstage"><div class="grp">① Вход · за 2–3 минуты' + qh('entry') + '</div><p class="small muted" style="margin:-2px 2px 8px">Нажми на шаг — откроется текст. ⋮⋮ меняет порядок, «＋ пост после» вставляет своё сообщение.</p>' + entryBox() + '</div>';
+    h += '<div class="pstage">' + sec('② 🎁 Подарок после теста', 'Приходит сразу после теста, ещё во время входа.', gifts, 'gift', 'gift') + '</div>';
+    h += '<div class="pstage"><div class="grp">③ Лента по дням' + qh('days') + '</div><p class="small muted" style="margin:-2px 2px 8px">День 0 — сразу после входа. Тяни пост за ⋮⋮ на другой день.</p>' + daysHtml() +
+      '<div class="btns two" style="margin:8px 0 4px"><button type="button" class="btn ghost" data-newk="drip">＋ Новый пост</button><button type="button" class="btn ghost" data-pickk="drip">📋 Из существующих</button></div></div>';
+    h += '<div class="pstage">' + sec('④ 💬 По событию: после отзыва', 'Бонус уходит сразу после отзыва о кабинете, в любой день.', S.posts.filter((p) => p.kind === 'fb').sort((a, b) => a.pos - b.pos || a.id - b.id), 'fb', 'fb') + '</div>';
+    h += '<div class="pstage">' + sec('⑤ 🕒 На дату', 'Один раз всем подходящим, кто уже в боте в этот момент.', dates, 'date', 'date') + '</div>';
   }
-  [...gifts, ...dates, ...S.posts.filter((p) => p.kind === 'fb')].forEach((p) => node(p, 0, [])); // цепочки подарков, дат и бонусов не считаем потерянными
-  drip.forEach((p) => node(p, 0, [])); // обходим цепочки, чтобы не считать посты-ответы потерянными
-  if (!entryTab) h += '<div class="grp">Лента по дням</div><p class="small muted" style="margin:-2px 2px 8px">Тяни пост за ⋮⋮ на другой день.</p>' + daysHtml() +
-    '<div class="btns two" style="margin:8px 0 4px"><button type="button" class="btn ghost" data-newk="drip">＋ Новый пост</button><button type="button" class="btn ghost" data-pickk="drip">📋 Из существующих</button></div>';
+  [...gifts, ...dates, ...S.posts.filter((p) => p.kind === 'fb')].forEach((p) => node(p, 0, []));
+  drip.forEach((p) => node(p, 0, []));
   const stepPosts = new Set((S.msgs || []).map((m) => m.post).filter(Boolean));
   const lost = S.posts.filter((p) => p.kind === 'node' && !shown.has(p.id) && !stepPosts.has(p.id));
   if (false) h += sec('🔘 Посты-ответы без кнопки', 'На них пока не ведёт ни одна кнопка и они не стоят на шаге входа — человек их не получит. Привяжи кнопкой («＋ кнопка» → «Пост») или перетащи на шаг входа выше.', lost);
@@ -928,12 +941,103 @@ function renderFlow() {
   document.querySelectorAll('[data-fbback]').forEach((el) => el.onclick = () => { haptic(); fbBackfill(); });
   document.querySelectorAll('[data-pickk]').forEach((el) => el.onclick = () => { haptic(); pickExisting(el.dataset.pickk); });
   if ($('flowDet')) $('flowDet').ontoggle = () => { view.flowClosed = !$('flowDet').open; };
-  bindEntry(); bindMap(); bindView(); bindRun(); bindDays();
+  bindEntry(); bindMap(); bindView(); bindRun(); bindDays(); bindPathBar();
   document.querySelectorAll('[data-ftrk]').forEach((b) => b.onclick = () => { view.track = b.dataset.ftrk; haptic(); renderFeed(); });
   document.querySelectorAll('.fn,.ref').forEach((el) => el.onclick = () => openPost(+el.dataset.id));
   document.querySelectorAll('[data-add]').forEach((el) => el.onclick = () => openPost(+el.dataset.add, { focus: 'buttons' }));
 }
 
+
+
+// ---------- шапка пути: подсказки, архив, вид ----------
+const HELP = {
+  path: 'Всё, что бот присылает ученику, сверху вниз: сначала вход, потом лента по дням. Нажми на сообщение, чтобы править, «＋» — чтобы вставить новое.',
+  entry: 'Первые минуты в боте: приветствие, согласия, имя, контакт, выбор трека. Шаги с 🔒 нельзя двигать — так требует закон о данных.',
+  gift: 'Подарок приходит сразу после теста. Подарок «всем» получат все, а «мини-курс» или «материалы» — только выбравшие этот трек.',
+  days: 'День 0 — сразу после входа, день 1 — на следующий день и так далее. Время — по Москве. Если человек пришёл позже, бот считает дни от его входа.',
+  fb: 'Это не по дням, а по событию: бонус уходит в момент, когда человек оставил отзыв о кабинете.',
+  date: 'Пост на конкретную дату уходит один раз всем, кто в этот момент уже в боте. После даты его можно убрать в архив.',
+  map: 'Та же цепочка, но с линиями: видно, какая кнопка куда ведёт. Нажми на кнопку в карточке, чтобы поменять, куда она ведёт.',
+  inbox: 'Посты, которые ты создала в боте через /new. Они уже сохранены, но здесь видно, куда их ещё нужно поставить.',
+  undo: 'Отменяет последнюю правку: текст, кнопки, порядок, архив. Можно нажимать несколько раз подряд — до 30 шагов назад.',
+  archive: 'Убранные посты. Ученики их не получают, но ничего не удалено: можно вернуть на место или черновиком.',
+};
+const qh = (k) => '<button type="button" class="qh" data-q="' + k + '" aria-label="Подсказка">?</button>';
+function bindHelp() {
+  document.querySelectorAll('[data-q]').forEach((b) => b.onclick = (e) => {
+    e.stopPropagation(); e.preventDefault();
+    const pop = $('qpop'); const t = HELP[b.dataset.q]; if (!t) return;
+    if (pop.dataset.k === b.dataset.q && pop.classList.contains('on')) { pop.classList.remove('on'); return; }
+    pop.textContent = t; pop.dataset.k = b.dataset.q; pop.classList.add('on');
+    const r = b.getBoundingClientRect(), w = Math.min(300, innerWidth - 24);
+    pop.style.width = w + 'px'; pop.style.left = Math.max(12, Math.min(innerWidth - w - 12, r.left - 20)) + 'px'; pop.style.top = (r.bottom + 8) + 'px';
+  });
+}
+document.addEventListener('click', (e) => { const pop = document.getElementById('qpop'); if (pop && !e.target.closest('#qpop,[data-q]')) pop.classList.remove('on'); });
+document.addEventListener('scroll', () => { const pop = document.getElementById('qpop'); if (pop) pop.classList.remove('on'); }, { passive: true });
+function pathBar() {
+  const pv = view.pv || 'list';
+  return '<div class="pbar"><div class="seg sm" style="flex:none"><button type="button" data-pv="list" class="' + (pv === 'list' ? 'on' : '') + '">Список</button><button type="button" data-pv="map" class="' + (pv === 'map' ? 'on' : '') + '">Карта</button></div>' + qh('path') +
+    '<span style="flex:1"></span><button type="button" class="chip" id="archBtn">🗄 Архив</button>' + qh('archive') + '</div>';
+}
+const KIND_WHEN = (p) => p.kind === 'node' ? (p.fork ? 'развилка' : 'ответ на кнопку') : p.kind === 'drip' ? 'лента · день ' + (p.day || 0) : p.kind === 'date' ? 'на дату' : p.kind === 'gift' ? 'подарок после теста' : 'бонус за отзыв';
+function inboxHtml() {
+  const list = S.posts.filter((p) => p.inbox);
+  if (!list.length) return '';
+  return '<div class="inbox"><div class="inbox-h"><b>✉️ Новые из бота · ' + list.length + '</b>' + qh('inbox') + '</div>' + list.map((p) =>
+    '<div class="inbox-r"><span style="min-width:0"><span class="small muted">' + esc(KIND_WHEN(p)) + (p.status !== 'active' ? ' · ' + (p.status === 'draft' ? 'черновик' : 'пауза') : '') + '</span><br><b>' + esc(postName(p).slice(0, 50)) + '</b></span>' +
+    (p.kind === 'node' && !p.fork ? '<button type="button" class="btn sm" data-ibplace="' + p.id + '">Поставить в путь</button>' : '<button type="button" class="btn ghost sm" data-ibshow="' + p.id + '">Показать</button>') +
+    '<button type="button" class="chip" data-ibok="' + p.id + '" aria-label="Убрать из новых">✓</button></div>').join('') + '</div>';
+}
+function bindPathBar() {
+  document.querySelectorAll('[data-pv]').forEach((b) => b.onclick = () => { view.pv = b.dataset.pv; haptic(); render(); });
+  if ($('archBtn')) $('archBtn').onclick = () => { haptic(); openArchive(); };
+  const clear = (id) => api('/post/' + id, { inbox: 0 }).catch(() => {});
+  document.querySelectorAll('[data-ibok]').forEach((b) => b.onclick = async () => { await clear(+b.dataset.ibok); await reload(); });
+  document.querySelectorAll('[data-ibshow]').forEach((b) => b.onclick = async () => { const id = +b.dataset.ibshow; await clear(id); await reload(); openPost(id); });
+  document.querySelectorAll('[data-ibplace]').forEach((b) => b.onclick = () => placeInbox(+b.dataset.ibplace));
+  bindHelp();
+}
+// пост-ответ из бота: поставить отдельным шагом входа или открыть карту и привязать к кнопке
+function placeInbox(id) {
+  const p = S.posts.find((x) => x.id === id); if (!p) return;
+  const fl = S.flow || { order: Object.keys(ENTRY), off: [] };
+  const steps = [['hello', '👋 Приветствие'], ...fl.order.filter((k) => !/^post:/.test(k) && ENTRY[k]).map((k) => [k, ENTRY[k][0]])];
+  sheet('<span class="pill">Новый из бота</span><h2>' + esc(postName(p).slice(0, 60)) + '</h2><p class="small muted" style="margin:0 0 8px">Куда его поставить?</p>' +
+    '<div class="kinds"><button type="button" class="kind" id="plMap"><b>🔘 Ответ на кнопку</b><span>открою карту: выбери кнопку, которая на него ведёт</span></button></div>' +
+    '<div class="grp" style="margin-top:12px">Или отдельным шагом входа, после…</div><div class="kinds">' + steps.map(([k, t]) => '<button type="button" class="kind" data-plafter="' + k + '"><b>' + esc(t) + '</b></button>').join('') + '</div>' +
+    '<div class="btns"><button type="button" class="btn ghost" id="plX">Закрыть</button></div>');
+  $('plX').onclick = closeSheet;
+  $('plMap').onclick = async () => { await api('/post/' + id, { inbox: 0 }).catch(() => {}); closeSheet(); view.pv = 'map'; await reload(); toast('Нажми на кнопку в карточке и выбери «' + postName(p).slice(0, 30) + '»'); };
+  document.querySelectorAll('[data-plafter]').forEach((el) => el.onclick = async () => {
+    const k = el.dataset.plafter, o = fl.order.filter((x) => x !== 'post:' + id);
+    const at = k === 'hello' ? 1 : o.indexOf(k) + 1;
+    o.splice(at < 1 ? 1 : at, 0, 'post:' + id);
+    closeSheet();
+    try { await api('/post/' + id, { inbox: 0, status: p.text || (p.files && p.files.length) ? 'active' : p.status }); } catch (e) {}
+    await saveFlow(o, fl.off);
+    await reload();
+  });
+}
+async function openArchive() {
+  let r; try { r = await api('/archive'); } catch (e) { toast(e.message); return; }
+  const list = r.posts;
+  sheet('<span class="pill">Архив' + '</span><h2>Убранные посты' + qh('archive') + '</h2><p class="small muted" style="margin:0 0 8px">Ученики их не получают. Ничего не удаляется: можно вернуть на место с тем же днём, временем и кнопками.</p>' +
+    (list.length ? list.map((p) => '<div class="box" style="margin:8px 0"><div class="small muted">' + esc(KIND_WHEN(p)) + (p.sent ? ' · был у ' + p.sent : '') + '</div><b>' + esc(postName(p).slice(0, 60)) + '</b>' +
+      '<div class="btns two" style="margin:8px 0 0"><button type="button" class="btn sm" data-unarch="' + p.id + '">Вернуть на место</button><button type="button" class="btn ghost sm" data-undraft="' + p.id + '">Вернуть черновиком</button></div></div>').join('') : '<p class="small muted">Архив пуст.</p>') +
+    '<div class="btns"><button type="button" class="btn ghost" id="arX">Закрыть</button></div>');
+  bindHelp();
+  $('arX').onclick = closeSheet;
+  const back = async (id, status) => { try { await api('/post/' + id, { status }); toast(status === 'active' ? 'Вернула на место' : 'Вернула черновиком'); } catch (e) { toast(e.message); } await reload(); openArchive(); };
+  document.querySelectorAll('[data-unarch]').forEach((b) => b.onclick = () => back(+b.dataset.unarch, 'active'));
+  document.querySelectorAll('[data-undraft]').forEach((b) => b.onclick = () => back(+b.dataset.undraft, 'draft'));
+}
+async function doUndo() {
+  if (!S.undo) { toast('Отменять нечего'); return; }
+  haptic('medium');
+  try { const r = await api('/undo', {}); if (r.error) { toast(r.error); return; } closeSheet(); await reload(); toast('Отменено: ' + r.undone); }
+  catch (e) { toast(e.message); }
+}
 
 // ---------- карта пути: шаги входа слева, посты и развилки правее, связи — линиями ----------
 const MP = { CW: 178, TH: 46, XH: 40, BH: 44, GX: 58, GY: 14, X0: 4, Y0: 4 };

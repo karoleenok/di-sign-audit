@@ -47,7 +47,7 @@ function postOut(p, sent, clicks) {
   const media = j(p.media, []);
   const f = entitiesToMd(p.text || '', j(p.entities, []));
   return {
-    id: p.id, kind: p.kind, fork: p.fork || null, status: p.status, title: p.title || '', text: (p.text || '').slice(0, 400),
+    id: p.id, kind: p.kind, fork: p.fork || null, inbox: !!p.inbox, status: p.status, title: p.title || '', text: (p.text || '').slice(0, 400),
     md: f.md, rich: f.rich, once: !!p.once, files: media, track: p.track || 'all',
     day: p.day, time: p.send_time, mode: p.mode || 'day', delay: p.delay_min || 0, after: p.after_id || null, run_at: p.run_at, audience: p.audience, catchup: !!p.catchup, pos: p.pos || 0,
     media: media.map((m) => m.type), buttons: j(p.buttons, []).flat().map((b) => b.text), rows: j(p.buttons, []),
@@ -125,6 +125,57 @@ export async function handlePanelApi(ctx, request, url) {
   }
 
   const body = request.method === 'POST' ? await request.json().catch(() => ({})) : {};
+  // откат на шаг назад: перед каждой правкой запоминаем посты и тексты
+  if (path === '/undo' && request.method === 'POST') return json(await undoLast(ctx));
+  const undoable = request.method === 'POST' && UNDO_RX.test(path);
+  const snap = undoable ? await takeSnap(ctx) : null;
+  const res = await panelRest(ctx, request, url, user, path, body);
+  if (undoable && res.status < 400) await pushUndo(ctx, snap, await undoLabel(ctx, path, body), user);
+  return res;
+}
+
+// какие запросы можно отменить (меняют посты, тексты, порядок, документы)
+const UNDO_RX = /^\/(post\/new|post\/\d+|post\/\d+\/(move|copy|restore)|msg\/[A-Za-z_]+|flow|docs|reorder)$/;
+const SNAP_KEYS = `key LIKE 'msg:%' OR key LIKE 'msgx:%' OR key LIKE 'flow:%' OR key LIKE 'doc:%'`;
+async function takeSnap(ctx) {
+  return JSON.stringify({ posts: await ctx.db.all(`SELECT * FROM posts`), settings: await ctx.db.all(`SELECT key, value FROM settings WHERE ${SNAP_KEYS}`) });
+}
+async function undoLabel(ctx, path, body) {
+  let m = /^\/post\/(\d+)/.exec(path);
+  const nm = async (id) => { const p = await ctx.db.first(`SELECT title, text FROM posts WHERE id = ?`, [id]); return p ? (p.title || (p.text || '').split('\n')[0] || '#' + id).slice(0, 40) : '#' + id; };
+  if (path === '/post/new') return body.fork ? 'новая развилка' : 'новый пост';
+  if (m && /\/move$/.test(path)) return 'перенос «' + await nm(+m[1]) + '»';
+  if (m && /\/copy$/.test(path)) return 'копия «' + await nm(+m[1]) + '»';
+  if (m && /\/restore$/.test(path)) return 'возврат версии «' + await nm(+m[1]) + '»';
+  if (m) return (body.status === 'archived' ? 'в архив «' : body.status ? 'статус «' : body.rows ? 'кнопки «' : 'правка «') + await nm(+m[1]) + '»';
+  m = /^\/msg\/([A-Za-z_]+)$/.exec(path);
+  if (m) { const i = msgInfo(m[1]); return 'текст «' + (i ? i.title : m[1]).slice(0, 40) + '»'; }
+  return path === '/flow' ? 'порядок шагов входа' : path === '/docs' ? 'документы' : 'перенос поста';
+}
+async function pushUndo(ctx, snap, label, user) {
+  await ctx.db.run(`INSERT INTO undo_log (snap, label, by_id, by_name, at) VALUES (?, ?, ?, ?, ?)`, [snap, label, user.id, user.first_name || '', ctx.now]);
+  await ctx.db.run(`DELETE FROM undo_log WHERE id NOT IN (SELECT id FROM undo_log ORDER BY id DESC LIMIT 30)`);
+}
+export async function lastUndo(ctx) {
+  const r = await ctx.db.first(`SELECT label, by_name, at FROM undo_log ORDER BY id DESC LIMIT 1`);
+  return r ? { label: r.label, by: r.by_name, at: r.at } : null;
+}
+async function undoLast(ctx) {
+  const r = await ctx.db.first(`SELECT * FROM undo_log ORDER BY id DESC LIMIT 1`);
+  if (!r) return { error: 'Отменять нечего' };
+  const s = JSON.parse(r.snap);
+  const cols = s.posts.length ? Object.keys(s.posts[0]) : null;
+  await ctx.db.run(`DELETE FROM posts`);
+  for (const p of s.posts) await ctx.db.run(`INSERT INTO posts (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`, cols.map((c) => p[c]));
+  await ctx.db.run(`DELETE FROM settings WHERE ${SNAP_KEYS}`);
+  for (const x of s.settings) await ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?)`, [x.key, x.value]);
+  ctx._msgs = null; ctx._msgx = null;
+  await ctx.db.run(`DELETE FROM undo_log WHERE id = ?`, [r.id]);
+  return { ok: true, undone: r.label, next: await lastUndo(ctx) };
+}
+
+async function panelRest(ctx, request, url, user, path, body) {
+  let mm;
 
   if (path === '/state') {
     const posts = await ctx.db.all(`SELECT * FROM posts WHERE status != 'archived' ORDER BY day, send_time, pos, id`);
@@ -138,11 +189,19 @@ export async function handlePanelApi(ctx, request, url) {
       msgs: await listMsgs(ctx),
       docs: await loadDocs(ctx), docNames: DOCS, tracks: TRACKS, flow: await loadFlow(ctx), flowOptional: FLOW_OPTIONAL,
       backup: await lastBackup(ctx),
+      undo: await lastUndo(ctx),
       leadCount: ((await ctx.db.first(`SELECT COUNT(*) AS n FROM users WHERE tg_id IN (SELECT tg_id FROM leads) OR fb_at IS NOT NULL`)) || {}).n || 0,
       fbCount: ((await ctx.db.first(`SELECT COUNT(*) AS n FROM users WHERE fb_at IS NOT NULL`)) || {}).n || 0,
       people: { all: people.n || 0, active: people.active || 0 },
       run: await activeRun(ctx.db, user.id),
     });
+  }
+
+  // архив: убранные посты, их можно вернуть
+  if (path === '/archive') {
+    const rows = await ctx.db.all(`SELECT * FROM posts WHERE status = 'archived' ORDER BY id DESC`);
+    const sent = Object.fromEntries((await ctx.db.all(`SELECT post_id, COUNT(*) AS n FROM deliveries GROUP BY post_id`)).map((r) => [r.post_id, r.n]));
+    return json({ posts: rows.map((p) => postOut(p, sent[p.id], 0)) });
   }
 
   // правка одного поста: день, время, кому, статус, название, дата, догонять
@@ -188,6 +247,7 @@ export async function handlePanelApi(ctx, request, url) {
       if (r.error) return json({ error: r.error }, 400);
       put('buttons', r.rows.length ? JSON.stringify(r.rows) : null);
     }
+    if (p.inbox) put('inbox', 0); // любое действие с постом в панели — он больше не «новый из бота»
     if (body.once !== undefined) put('once', body.once ? 1 : 0);
     if (body.track !== undefined) { if (!TRACKS[body.track]) return json({ error: 'Неизвестный трек' }, 400); put('track', body.track); }
     if (body.md !== undefined) {

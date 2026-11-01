@@ -302,6 +302,7 @@ export async function onAdminCallback(ctx, cq) {
       [p.title || null, p.kind, 'all', null, p.day ?? null, p.send_time || '11:00', p.run_at || null, p.catchup ? 1 : 0, on ? 'active' : 'draft', p.text, p.entities, p.media, p.buttons, id, ctx.now, p.track || 'all'],
     );
     const row = await ctx.db.first(`SELECT MAX(id) AS id FROM posts WHERE created_by = ?`, [id]);
+    await ctx.db.run(`UPDATE posts SET inbox = 1 WHERE id = ?`, [row.id]); // панель покажет его в «новых из бота»
     await clearState(ctx, id);
     return showPost(ctx, id, row.id, on ? 'Сохранено и включено ✅' : 'Сохранено черновиком 📝');
   }
