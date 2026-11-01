@@ -1053,10 +1053,21 @@ step('несколько постов сразу, автоархив анонс�
   pp.set('hash', crypto.createHmac('sha256', secret).update(dcs).digest('hex'));
   const call = async (path, body) => { const req = new Request('https://bot.test/api/panel' + path, { method: body ? 'POST' : 'GET', headers: { 'x-init-data': pp.toString(), 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }); return (await handlePanelApi(C(), req, new URL(req.url))).json(); };
   const tar = (await call('/post/new', { kind: 'node', title: 'Тарифы', md: 'ТАРИФЫ: куратор и наставник', status: 'active' })).post;
+  // приветствие с кнопками «на экскурсию» и «тарифы», как у владелицы
+  await call('/msg/hello/extra', { links: [[{ text: 'на экскурсию', url: 'https://example.com/tour' }, { text: 'тарифы', go: tar.id }]] }).catch(() => {});
+  const { saveMsgExtra, linksOf } = await import('../src/msgs.js');
+  await saveMsgExtra(C(), 'hello', { links: [[{ text: 'на экскурсию', url: 'https://example.com/tour' }, { text: 'тарифы', go: tar.id }]] });
+  // её порядок входа: трек и тест выключены
+  await call('/flow', { order: ['consentPd', 'consentAds', 'askName', 'askContact', 'fbOffer', 'askTrack', 'testOffer'], off: ['askTrack', 'testOffer'] });
   const sc = await call('/path/scaffold', { apply: true });
-  assert.ok(sc.ok && sc.applied && sc.tariffs === tar.id, 'заготовка собрана, тарифы найдены');
+  assert.ok(sc.ok && sc.applied && sc.tariffs === tar.id && sc.movedHello === 2, 'заготовка собрана, тарифы найдены, кнопки приветствия переехали');
+  assert.equal((await linksOf(C(), 'hello')).flat().length, 0, 'приветствие стало чистым');
+  const flow = JSON.parse((await C().db.first(`SELECT value FROM settings WHERE key = 'flow:off'`)).value);
+  assert.deepEqual(flow.sort(), ['askTrack', 'testOffer'], 'её выключатели сохранены');
   const forkRow = await C().db.first('SELECT * FROM posts WHERE id = ?', [sc.ids.fork]);
   assert.equal(forkRow.who, 'new');
+  const fb0 = JSON.parse(forkRow.buttons).flat();
+  assert.ok(fb0.some((b) => /экскурс/.test(b.text) && b.go === sc.ids.tour) && fb0.some((b) => b.go === tar.id) && fb0.some((b) => b.url === 'https://example.com/test'), 'на развилке: экскурсия, тарифы, аудит');
   const mrow = await C().db.first('SELECT buttons FROM posts WHERE id = ?', [sc.ids.menu]);
   const mb = JSON.parse(mrow.buttons).flat();
   assert.ok(mb.some((b) => b.fb) && mb.some((b) => b.go === tar.id) && mb.some((b) => b.url === 'https://example.com/test'), 'в меню: отзыв, тарифы, аудит');
@@ -1064,10 +1075,11 @@ step('несколько постов сразу, автоархив анонс�
   await msg(7700, '/start'); await cb(7700, 'c:pd');
   { const c0 = calls.length; await cb(7700, 'c:ads:1');
     const out = sentTo(7700, c0);
-    assert.ok(out.some((c) => /два пути/.test(c.body.text || '')), 'после согласий — развилка');
-    assert.ok(!out.some((c) => /обращаться|ты с нами|Хочешь помочь нам/.test(c.body.text || '')), 'ни имени, ни отзыва, ни расписания'); }
-  let f = last(7700)[0].body.reply_markup.inline_keyboard.flat();
-  assert.deepEqual(f.map((b) => b.text), ['🧭 Экскурсия по прототипу', '📝 Пройти аудит']);
+    assert.ok(out.some((c) => /с чего начнём/.test(c.body.text || '')), 'после согласий — развилка');
+    assert.ok(out.some((c) => /обращаться/.test(c.body.text || '')), 'дальше обычный вход: имя'); }
+  const forkMsg = calls.slice().reverse().find((c) => c.body.chat_id === 7700 && /с чего начнём/.test(c.body.text || ''));
+  let f = forkMsg.body.reply_markup.inline_keyboard.flat();
+  assert.deepEqual(f.map((b) => b.text), ['на экскурсию', 'тарифы', '📝 Пройти аудит']);
   await cb(7700, f[0].callback_data);
   assert.match(lastText(7700), /прототип кабинета/, 'экскурсия');
   const tb = last(7700)[0].body.reply_markup.inline_keyboard.flat();
@@ -1076,31 +1088,50 @@ step('несколько постов сразу, автоархив анонс�
   const mk = last(7700)[0].body.reply_markup.inline_keyboard.flat();
   await cb(7700, mk.find((b) => /тариф/i.test(b.text)).callback_data);
   assert.match(lastText(7700), /ТАРИФЫ/, 'тарифы по кнопке');
+  // вход доходит до конца: имя, контакт; отзыв без аудита не предлагают, финал приходит после контакта
+  { const c0 = calls.length;
+    await cb(7700, 'n:ok'); await cb(7700, 'ct:email'); await msg(7700, 'z7700@mail.ru');
+    const out = sentTo(7700, c0);
+    assert.ok(!out.some((c) => /Хочешь помочь нам/.test(c.body.text || '')), 'отзыв о кабинете без аудита не предлагают');
+    assert.match(lastText(7700), /ты с нами/, 'финальное сообщение после контакта'); }
   await cb(7700, mk.find((b) => /отзыв/i.test(b.text)).callback_data);
   assert.match(lastText(7700), /понравилось/, 'кнопка отзыва задаёт первый вопрос');
   await msg(7700, 'всё круто'); await msg(7700, 'добавьте больше примеров');
   let u7 = await C().db.first('SELECT * FROM users WHERE tg_id = 7700');
   assert.ok(u7.fb_at && u7.fb_like === 'всё круто', 'отзыв записан');
   assert.equal(u7.track, null, 'трек вслепую не спрашивали');
-  { const c0 = calls.length; await cb(7700, mk.find((b) => /отзыв/i.test(b.text)).callback_data);
-    assert.match(lastText(7700), /уже оставил/, 'второй раз отзыв не просим'); }
-  // 7701: из аудита — развилки нет, подарок, трек, отзыв
+  await cb(7700, mk.find((b) => /отзыв/i.test(b.text)).callback_data);
+  assert.match(lastText(7700), /уже оставил/, 'второй раз отзыв не просим');
+  // 7701: из аудита — развилки нет, имя, контакт, подарок, предложение отзыва
+  await call('/post/new', { kind: 'gift', md: 'ПОДАРОК ПОСЛЕ АУДИТА', status: 'active' });
   await msg(7701, '/start audit_P_start'); await cb(7701, 'c:pd');
   { const c0 = calls.length; await cb(7701, 'c:ads:1');
     const out = sentTo(7701, c0);
-    assert.ok(!out.some((c) => /два пути/.test(c.body.text || '')), 'из аудита развилки нет');
-    assert.ok(out.some((c) => /Что тебе ближе/.test(c.body.text || '')), 'трек спрашиваем (из аудита он не выбран)'); }
-  await call('/post/new', { kind: 'gift', md: 'ПОДАРОК ПОСЛЕ АУДИТА', status: 'active' });
-  { const c0 = calls.length; await cb(7701, 'tr:mat');
-    assert.ok(sentTo(7701, c0).some((c) => /ПОДАРОК ПОСЛЕ АУДИТА/.test(c.body.text || '')), 'после выбора трека — подарок'); }
-  assert.match(lastText(7701), /Хочешь помочь нам/, 'после подарка — отзыв о кабинете');
-  await cb(7701, 'fb:no');
+    assert.ok(!out.some((c) => /с чего начнём/.test(c.body.text || '')), 'из аудита развилки нет'); }
+  await cb(7701, 'n:ok'); await cb(7701, 'ct:email'); await msg(7701, 'z7701@mail.ru');
+  assert.match(lastText(7701), /Хочешь помочь нам/, 'из аудита отзыв о кабинете предлагают');
+  { const c0 = calls.length; await cb(7701, 'fb:no');
+    assert.ok(sentTo(7701, c0).some((c) => /ПОДАРОК ПОСЛЕ АУДИТА/.test(c.body.text || '')), 'подарок'); }
   assert.match(lastText(7701), /ты с нами/, 'в конце расписание');
-  // откат вернёт прежний вход (первый откат убирает подарок, второй — всю заготовку)
-  await call('/undo', {}); await call('/undo', {});
+  // 7702: нажала «оставить заявку» до согласия — сначала согласие, имя и телефон спрашиваем только после него
+  const lp = (await call('/post/new', { kind: 'node', md: 'ЗАЯВКА', status: 'active', rows: [[{ text: 'Оставить заявку', lead: true }]] })).post;
+  await msg(7702, '/start');
+  { const c0 = calls.length; await cb(7702, 'ld:p:' + lp.id);
+    const out = sentTo(7702, c0);
+    assert.ok(out.some((c) => /согласие на обработку/.test(c.body.text || '')), 'вместо вопроса про имя — согласие');
+    assert.ok(!out.some((c) => /обращаться|номер/.test(c.body.text || '')), 'имя и телефон до согласия не спрашиваем');
+    const c1 = calls.length; await cb(7702, 'c:pd');
+    assert.ok(sentTo(7702, c1).some((c) => /имя|обращаться|Чтобы записать/.test(c.body.text || '')), 'после согласия спрашиваем имя для заявки'); }
+  // ссылка не должна слипаться с текстом
+  { const { fill } = await import('../src/msgs.js');
+    assert.equal(fill('{кабинет}Хочешь помочь?', [], { кабинет: 'https://x.ru/k/' }).text, 'https://x.ru/k/\nХочешь помочь?', 'ссылка отделена переносом');
+    assert.equal(fill('Ссылка: {кабинет}', [], { кабинет: 'https://x.ru/k/' }).text, 'Ссылка: https://x.ru/k/', 'в конце строки ничего не добавляем'); }
+  // откат вернёт прежний вход (первый откат убирает заявочный пост, затем подарок, затем заготовку)
+  await call('/undo', {}); await call('/undo', {}); await call('/undo', {});
   assert.ok(!(await C().db.first('SELECT id FROM posts WHERE id = ?', [sc.ids.fork])), 'откат убрал заготовку');
   assert.ok(!/post:/.test((await C().db.first(`SELECT value FROM settings WHERE key = 'flow:order'`) || {}).value || ''), 'и порядок входа');
+  assert.equal((await linksOf(C(), 'hello')).flat().length, 2, 'и кнопки приветствия вернулись');
 }
-step('новый вход из соцсетей: развилка, экскурсия, меню; из аудита без развилки');
+step('новый вход из соцсетей: развилка, экскурсия, меню; заявка не раньше согласия; ссылка не слипается');
 
 console.log('\nВсе сценарии прошли. Запросов к фейковому Telegram:', calls.length);

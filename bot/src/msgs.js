@@ -260,7 +260,9 @@ export function fill(text, entities, vars) {
   let m;
   while ((m = re.exec(text))) if (vars && Object.prototype.hasOwnProperty.call(vars, m[1].toLowerCase())) hits.push([m.index, m[0].length, String(vars[m[1].toLowerCase()] ?? '')]);
   for (let k = hits.length - 1; k >= 0; k--) {
-    const [i, len, val] = hits[k];
+    let [i, len, val] = hits[k];
+    // ссылка сразу перед буквой («{кабинет}Хочешь…») сливается с текстом в одну кривую ссылку: отделяем переносом
+    if (/^https?:\/\//i.test(val) && /[^\s.,;:!?)\]»”"'—–-]/.test(t.charAt(i + len))) val += '\n';
     const d = val.length - len;
     t = t.slice(0, i) + val + t.slice(i + len);
     ents = ents.map((e) => {

@@ -9,7 +9,7 @@ import { mdToEntities, entitiesToMd } from './fmt.js';
 import { runPreview, runFullPath, startFastRun, stopRuns, stepRuns, activeRun } from './testrun.js';
 import { onStart, docVars, consentView, backfillFb, loadFlow, normFlow, FLOW_OPTIONAL } from './users.js';
 import { MSK, DAY } from './time.js';
-import { saveMsgExtra, saveBtnExtra, setMsgOff } from './msgs.js';
+import { saveMsgExtra, saveBtnExtra, setMsgOff, linksOf } from './msgs.js';
 import { listMsgs, saveMsg, resetMsg, btn, say, setMsgMedia, canMedia, msgInfo, loadMsgs } from './msgs.js';
 
 const enc = new TextEncoder();
@@ -472,22 +472,40 @@ async function panelRest(ctx, request, url, user, path, body) {
       return row;
     };
     const setRows = (id, rows) => ctx.db.run(`UPDATE posts SET buttons = ? WHERE id = ?`, [JSON.stringify(rows.filter((r) => r.length)), id]);
-    const tariffs = (await ctx.db.all(`SELECT id, title, text FROM posts WHERE status != 'archived' ORDER BY id DESC`)).find((x) => /тариф/i.test((x.title || '') + ' ' + (x.text || '')));
-    const fork = await mk('🧭 Соцсети · развилка', 'у нас есть два пути, выбирай, что ближе 🐾\n\nэкскурсия по прототипу — покажу, как устроено наше обучение и кабинет\nаудит — 3 минуты, и ты получишь личный план и подарок');
+    const allP = (await ctx.db.all(`SELECT id, title, text FROM posts WHERE status != 'archived' ORDER BY id DESC`)).filter((x) => !/^🧭/.test(x.title || ''));
+    const tariffs = allP.find((x) => /тариф/i.test(x.title || '')) || allP.find((x) => /тариф/i.test(x.text || ''));
+    // кнопки приветствия (например «на экскурсию» и «тарифы») переезжают на развилку: до согласия их нажимать нельзя
+    const hello = await linksOf(ctx, 'hello');
+    const fork = await mk('🧭 Соцсети · развилка', 'а теперь выбирай, с чего начнём 🐾\n\nэкскурсия по прототипу — покажу, как устроено наше обучение и кабинет\nаудит — 3 минуты, и ты получишь личный план и подарок');
     const tour = await mk('🧭 Соцсети · экскурсия', 'вот прототип кабинета Di Sign University\n\nпосмотри, как всё устроено, а потом вернись сюда — покажу, что делать дальше');
     const menu = await mk('🧭 Соцсети · что дальше', 'ну как тебе? 🐾\n\nвыбирай, что дальше:\n\nаудит — получишь конкретный план по развитию и крутые бонусы\nтарифы — посмотри, какие бывают форматы\nотзыв — ответь на 2 вопроса и получи плюшку');
-    await setRows(fork.id, [[{ text: '🧭 Экскурсия по прототипу', go: tour.id }], test ? [{ text: '📝 Пройти аудит', url: test }] : []]);
-    await setRows(tour.id, [[{ text: '🔗 Открыть кабинет', url: kab }], [{ text: 'Посмотрел(а) →', go: menu.id }]]);
-    await setRows(menu.id, [test ? [{ text: '📝 Пройти аудит и забрать бонусы', url: test }] : [], tariffs ? [{ text: '💳 Посмотреть тарифы', go: tariffs.id }] : [], [{ text: '💬 Оставить отзыв и получить плюшку', fb: true }]]);
+    let tourUrl = kab;
+    const tariffTarget0 = (hello.flat().find((b) => /тариф/i.test(b.text || '') && b.go) || {}).go || (tariffs ? tariffs.id : null);
+    let forkRows = hello.map((row) => row.map((b) => {
+      if (/экскурс/i.test(b.text || '')) { if (b.url) tourUrl = b.url; return { text: b.text, go: tour.id }; }
+      return b;
+    }));
+    if (!forkRows.flat().length) forkRows = [[{ text: '🧭 Экскурсия по прототипу', go: tour.id }], tariffTarget0 ? [{ text: '💳 Тарифы', go: tariffTarget0 }] : []];
+    if (test && !forkRows.flat().some((b) => b.url === test)) forkRows.push([{ text: '📝 Пройти аудит', url: test }]);
+    const tariffTarget = (hello.flat().find((b) => /тариф/i.test(b.text || '') && b.go) || {}).go || (tariffs ? tariffs.id : null);
+    await setRows(fork.id, forkRows);
+    await setRows(tour.id, [[{ text: '🔗 Открыть кабинет', url: tourUrl }], [{ text: 'Посмотрел(а) →', go: menu.id }]]);
+    await setRows(menu.id, [test ? [{ text: '📝 Пройти аудит и забрать бонусы', url: test }] : [], tariffTarget ? [{ text: '💳 Посмотреть тарифы', go: tariffTarget }] : [], [{ text: '💬 Оставить отзыв и получить плюшку', fb: true }]]);
     await ctx.db.run(`UPDATE posts SET who = 'new' WHERE id = ?`, [fork.id]);
-    let applied = false;
+    let applied = false, movedHello = 0;
     if (body.apply) {
-      const f = normFlow(['consentPd', 'consentAds', 'post:' + fork.id, 'askTrack', 'testOffer', 'fbOffer', 'askName', 'askContact'], ['askName', 'askContact', 'testOffer']);
+      // порядок и выключатели входа остаются как у тебя; добавляется только развилка после согласий
+      const cur = await loadFlow(ctx);
+      const o = cur.order.filter((k) => !/^post:/.test(k) || !cur.off.includes(k));
+      const at = o.indexOf('consentAds') >= 0 ? o.indexOf('consentAds') + 1 : Math.min(2, o.length);
+      o.splice(at, 0, 'post:' + fork.id);
+      const f = normFlow(o, cur.off);
       const put = (k, v) => ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [k, JSON.stringify(v)]);
       await put('flow:order', f.order); await put('flow:off', f.off);
       applied = true;
+      if (hello.flat().length) { await saveMsgExtra(ctx, 'hello', { links: [] }); movedHello = hello.flat().length; }
     }
-    return json({ ok: true, applied, ids: { fork: fork.id, tour: tour.id, menu: menu.id }, tariffs: tariffs ? tariffs.id : null, noTest: !test });
+    return json({ ok: true, applied, movedHello, ids: { fork: fork.id, tour: tour.id, menu: menu.id }, tariffs: tariffTarget, noTest: !test });
   }
 
   // ссылки на документы (политика, согласие, оферта) и данные владельца

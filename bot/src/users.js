@@ -297,8 +297,8 @@ export async function nextStep(ctx, u) {
   }
   if (!u.sched_at) {
     const key = u.track === 'course' ? 'schedCourse' : 'schedMat';
-    // без аудита и без выбранного трека не пишем «материалы будут приходить…»: человек ещё выбирает, куда пойти
-    if (!off.includes('sched') && (!ctx.social || u.zone || u.track)) { await pauseFor(ctx, id, key); await say(ctx, id, key, {}); }
+    // «получили твои данные, заявка отправлена» пишем только тому, кто правда оставил контакт
+    if (!off.includes('sched') && (u.contact_at || u.phone || u.email)) { await pauseFor(ctx, id, key); await say(ctx, id, key, {}); }
     // вход пройден — отсюда считается лента
     await ctx.db.run(`UPDATE users SET sched_at = ?, status = 'active', joined_at = COALESCE(joined_at, ?) WHERE tg_id = ?`, [ctx.now, ctx.now, id]);
   } else if (u.status !== 'active') {
@@ -445,6 +445,9 @@ async function finishLead(ctx, id, first) {
   await ctx.db.run(`UPDATE leads SET done = 1 WHERE id = ?`, [lead.id]);
   await notifyLead(ctx, u, lead.source);
   await say(ctx, id, 'leadThanks', {});
+  // заявку оставили в середине входа — продолжаем вход
+  const u2 = await getUser(ctx, id);
+  if (u2 && !u2.sched_at && u2.consent_pd_at) await nextStep(ctx, u2);
   return true;
 }
 
@@ -523,6 +526,8 @@ export async function onUserCallback(ctx, cq) {
     await answer('consentThanks');
     if (!u.consent_pd_at) { await ctx.db.run(`UPDATE users SET consent_pd_at = ? WHERE tg_id = ?`, [ctx.now, id]); await logConsent(ctx, id, 'pd', true); }
     await done();
+    // заявка ждала согласия — теперь можно спросить имя и телефон
+    if (await finishLead(ctx, id, true)) return;
     return nextStep(ctx, await getUser(ctx, id));
   }
   if (d.startsWith('lv:')) {
@@ -646,6 +651,13 @@ export async function onUserCallback(ctx, cq) {
       if (mp) { const p = await ctx.db.first(`SELECT title, text FROM posts WHERE id = ?`, [+mp[1]]); if (p) src = 'пост «' + String(p.title || p.text || '#' + mp[1]).split('\n')[0].slice(0, 50) + '»'; }
       else if (ms) src = 'шаг входа «' + ms[1] + '»';
       await ctx.db.run(`INSERT INTO leads (tg_id, source, created_at, done) VALUES (?, ?, ?, 0)`, [id, src, ctx.now]);
+    }
+    // имя и телефон собираем только после согласия на данные: заявка ждёт, а человеку показываем согласие
+    if (!u.consent_pd_at) {
+      await cleanAll(ctx, id);
+      const { vars, extra } = await consentView(ctx);
+      await tech(ctx, id, say(ctx, id, 'consentPd', vars, extra));
+      return;
     }
     await finishLead(ctx, id, true);
     return;

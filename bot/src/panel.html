@@ -1050,12 +1050,12 @@ function inboxHtml() {
 }
 function scaffoldHtml() {
   if (S.posts.some((p) => /^🧭 Соцсети/.test(p.title || ''))) return '';
-  return '<div class="box" id="scaffoldBox"><h3>🧭 Вход для людей из соцсетей</h3><p class="small muted" style="margin:0 0 8px">Человек из соцсетей ещё не видел ни аудит, ни кабинет. Соберу заготовку: развилка «экскурсия по прототипу / аудит», экскурсия, а после неё меню: аудит, тарифы, отзыв с плюшкой. Кто пришёл из аудита, идёт как раньше, без развилки. Имя и контакт будут спрашиваться только при заявке.</p><button type="button" class="btn" id="scaffoldBtn">Собрать заготовку</button></div>';
+  return '<div class="box" id="scaffoldBox"><h3>🧭 Вход для людей из соцсетей</h3><p class="small muted" style="margin:0 0 8px">Человек из соцсетей ещё не видел ни аудит, ни кабинет. Соберу заготовку: развилка после согласий (кнопки из твоего приветствия плюс «пройти аудит»), экскурсия и меню после неё: аудит, тарифы, отзыв с плюшкой. Кто пришёл из аудита, идёт как раньше, без развилки. Порядок шагов входа и твои выключатели не трогаю.</p><button type="button" class="btn" id="scaffoldBtn">Собрать заготовку</button></div>';
 }
 function bindPathBar() {
   if ($('scaffoldBtn')) $('scaffoldBtn').onclick = () => {
     haptic();
-    sheet('<span class="pill">Новый вход</span><h2>Собрать и включить?</h2><p class="small muted">Создам 3 поста-заготовки (развилка, экскурсия, меню) и поменяю порядок входа: уберу имя и контакт, добавлю развилку первым шагом для людей без аудита. Тексты потом правишь в панели. Откатить можно стрелкой ↶ сверху.</p><div class="btns"><button class="btn" id="scOk" type="button">Собрать и включить</button><button class="btn ghost" id="scX" type="button">Отмена</button></div>');
+    sheet('<span class="pill">Новый вход</span><h2>Собрать и включить?</h2><p class="small muted">Создам 3 поста-заготовки (развилка, экскурсия, меню), поставлю развилку в вход после согласий (её видят только люди без аудита) и перенесу на неё кнопки из приветствия, чтобы до согласия ничего нельзя было нажать. Тексты потом правишь в панели. Откатить можно стрелкой ↶ сверху.</p><div class="btns"><button class="btn" id="scOk" type="button">Собрать и включить</button><button class="btn ghost" id="scX" type="button">Отмена</button></div>');
     $('scX').onclick = () => closeSheet();
     $('scOk').onclick = async () => {
       try { const r = await api('/path/scaffold', { apply: true }); closeSheet(); await reload(); toast(r.tariffs ? 'Готово. Проверь тексты трёх постов «🧭 Соцсети»' : 'Готово, но поста с тарифами не нашла: в меню будет без кнопки «тарифы»'); }
