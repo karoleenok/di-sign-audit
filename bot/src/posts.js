@@ -243,3 +243,9 @@ export async function snapPost(ctx, pid, byId, byName) {
   await ctx.db.run(`INSERT INTO post_versions (post_id, text, entities, media, by_id, by_name, at) VALUES (?, ?, ?, ?, ?, ?, ?)`, [pid, p.text, p.entities, p.media, byId || null, byName || null, ctx.now]);
   await ctx.db.run(`DELETE FROM post_versions WHERE post_id = ? AND id NOT IN (SELECT id FROM post_versions WHERE post_id = ? ORDER BY id DESC LIMIT 10)`, [pid, pid]);
 }
+
+// анонсы на прошедшие даты через неделю сами уходят в архив (их можно вернуть)
+export async function archiveOldDates(ctx) {
+  const r = await ctx.db.run(`UPDATE posts SET status = 'archived' WHERE kind = 'date' AND status IN ('active', 'paused') AND COALESCE(catchup, 0) = 0 AND run_at IS NOT NULL AND run_at < ?`, [ctx.now - 7 * 86400]);
+  return r.changes || 0;
+}

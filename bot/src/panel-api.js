@@ -135,7 +135,7 @@ export async function handlePanelApi(ctx, request, url) {
 }
 
 // какие запросы можно отменить (меняют посты, тексты, порядок, документы)
-const UNDO_RX = /^\/(post\/new|post\/\d+|post\/\d+\/(move|copy|restore)|msg\/[A-Za-z_]+|flow|docs|reorder)$/;
+const UNDO_RX = /^\/(bulk|post\/new|post\/\d+|post\/\d+\/(move|copy|restore)|msg\/[A-Za-z_]+|flow|docs|reorder)$/;
 const SNAP_KEYS = `key LIKE 'msg:%' OR key LIKE 'msgx:%' OR key LIKE 'flow:%' OR key LIKE 'doc:%'`;
 async function takeSnap(ctx) {
   return JSON.stringify({ posts: await ctx.db.all(`SELECT * FROM posts`), settings: await ctx.db.all(`SELECT key, value FROM settings WHERE ${SNAP_KEYS}`) });
@@ -150,6 +150,7 @@ async function undoLabel(ctx, path, body) {
   if (m) return (body.status === 'archived' ? 'в архив «' : body.status ? 'статус «' : body.rows ? 'кнопки «' : 'правка «') + await nm(+m[1]) + '»';
   m = /^\/msg\/([A-Za-z_]+)$/.exec(path);
   if (m) { const i = msgInfo(m[1]); return 'текст «' + (i ? i.title : m[1]).slice(0, 40) + '»'; }
+  if (path === '/bulk') return ({ active: 'включить', paused: 'на паузу', archived: 'в архив', copy: 'дублировать' }[body.action] || 'действие') + ': постов ' + ((body.ids || []).length);
   return path === '/flow' ? 'порядок шагов входа' : path === '/docs' ? 'документы' : 'перенос поста';
 }
 async function pushUndo(ctx, snap, label, user) {
@@ -195,6 +196,30 @@ async function panelRest(ctx, request, url, user, path, body) {
       people: { all: people.n || 0, active: people.active || 0 },
       run: await activeRun(ctx.db, user.id),
     });
+  }
+
+  // несколько постов сразу: включить, на паузу, в архив, дублировать — одним шагом отката
+  if (path === '/bulk' && request.method === 'POST') {
+    const ids = (Array.isArray(body.ids) ? body.ids : []).map((x) => parseInt(x, 10)).filter(Boolean).slice(0, 100);
+    if (!ids.length) return json({ error: 'Ничего не выбрано' }, 400);
+    const act = body.action;
+    let done = 0, skipped = 0;
+    for (const id of ids) {
+      const p = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [id]);
+      if (!p) { skipped++; continue; }
+      if (act === 'active' || act === 'paused' || act === 'archived') {
+        if (act === 'active' && !p.fork && !(p.text || '').trim() && !j(p.media, []).length) { skipped++; continue; }
+        if (act === 'active' && p.kind === 'date' && !p.run_at) { skipped++; continue; }
+        await ctx.db.run(`UPDATE posts SET status = ?, inbox = 0 WHERE id = ?`, [act, id]); done++;
+      } else if (act === 'copy') {
+        await ctx.db.run(
+          `INSERT INTO posts (title, kind, audience, track, day, send_time, run_at, catchup, status, text, entities, media, buttons, created_by, created_at, mode, delay_min, after_id, once, fork)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [(p.title ? p.title + ' (копия)' : null), p.kind, p.audience || 'all', p.track || 'all', p.day, p.send_time || '11:00', p.run_at, p.catchup || 0, p.text, p.entities, p.media, p.buttons, user.id, ctx.now, p.mode || 'day', p.delay_min || 0, p.after_id, p.once || 0, p.fork || null]);
+        done++;
+      } else return json({ error: 'Неизвестное действие' }, 400);
+    }
+    return json({ ok: true, done, skipped });
   }
 
   // архив: убранные посты, их можно вернуть

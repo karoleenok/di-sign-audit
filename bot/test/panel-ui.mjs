@@ -367,6 +367,28 @@ await page.click('[data-pv="list"]'); await page.waitForTimeout(200);
 }
 step('откат стрелкой, архив, подсказки, новые из бота');
 
+// 8г. выбрать несколько и «как ученик» → где это в пути
+{
+  await page.click('#selBtn'); await page.waitForSelector('#bulkBar');
+  const ids = await page.$$eval('.card[data-id]', (els) => els.slice(0, 2).map((e) => +e.dataset.id));
+  for (const id of ids) await page.click('.card[data-id="' + id + '"] .ttl');
+  assert.match(await page.textContent('#bulkBar'), /Выбрано: 2/, 'выбрано два поста');
+  assert.ok(!(await page.isVisible('.sheet.on')), 'в режиме выбора пост не открывается');
+  await page.screenshot({ path: OUT + '/panel-19-select.png' });
+  await page.click('[data-bulk="paused"]'); await page.waitForTimeout(500);
+  const st = await db.all(`SELECT status FROM posts WHERE id IN (${ids.join(',')})`);
+  assert.ok(st.every((x) => x.status === 'paused'), 'оба на паузе');
+  assert.equal(await page.$('#bulkBar'), null, 'панель выбора закрылась');
+  await page.click('#undoBtn'); await page.waitForTimeout(500);
+  assert.ok((await db.all(`SELECT status FROM posts WHERE id IN (${ids.join(',')})`)).every((x) => x.status === 'active'), 'один откат вернул оба');
+  // как ученик → где это в пути
+  await page.click('[data-pmode="stud"]'); await page.waitForTimeout(200);
+  await page.click('[data-stnext]'); await page.click('[data-stnext]'); await page.waitForTimeout(200);
+  await page.click('.jump >> nth=-1'); await page.waitForTimeout(400);
+  assert.ok(await page.$('.flash'), 'шаг подсвечен на линии пути');
+}
+step('выбрать несколько, откат пачки, «где это в пути»');
+
 // 9. открыть не из Telegram
 INIT = '';
 const p2 = await b.newPage(); await p2.route('**/telegram-web-app.js', (r) => r.fulfill({ contentType: 'application/javascript', body: stub('') }));

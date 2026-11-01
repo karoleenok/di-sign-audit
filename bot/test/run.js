@@ -1006,5 +1006,39 @@ step('история версий текста поста');
   assert.ok(!(await call('/state')).posts.find((p) => p.id === ib.id).inbox, 'отметка снята');
 }
 step('откат на шаг назад, архив, новые из бота');
+// несколько постов сразу и автоархив старых анонсов
+{
+  const { handlePanelApi } = await import('../src/panel-api.js');
+  const { archiveOldDates } = await import('../src/posts.js');
+  const crypto = await import('node:crypto');
+  const pp = new URLSearchParams({ auth_date: String(NOW), user: JSON.stringify({ id: 100, first_name: 'Каролина' }) });
+  const dcs = [...pp.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, v]) => `${k}=${v}`).join('\n');
+  const secret = crypto.createHmac('sha256', 'WebAppData').update(env.BOT_TOKEN).digest();
+  pp.set('hash', crypto.createHmac('sha256', secret).update(dcs).digest('hex'));
+  const call = async (path, body) => { const req = new Request('https://bot.test/api/panel' + path, { method: body ? 'POST' : 'GET', headers: { 'x-init-data': pp.toString(), 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }); const r = await handlePanelApi(C(), req, new URL(req.url)); return r.json(); };
+  const a1 = (await call('/post/new', { kind: 'drip', md: 'ПАЧКА 1', status: 'active', day: 5 })).post;
+  const a2 = (await call('/post/new', { kind: 'drip', md: 'ПАЧКА 2', status: 'active', day: 6 })).post;
+  const empty = (await call('/post/new', { kind: 'node', md: '', status: 'draft' })).post;
+  let r = await call('/bulk', { ids: [a1.id, a2.id], action: 'paused' });
+  assert.equal(r.done, 2);
+  assert.deepEqual((await C().db.all(`SELECT status FROM posts WHERE id IN (?, ?)`, [a1.id, a2.id])).map((x) => x.status), ['paused', 'paused'], 'обе на паузе');
+  r = await call('/bulk', { ids: [a1.id, empty.id], action: 'active' });
+  assert.deepEqual([r.done, r.skipped], [1, 1], 'пустой пост не включается');
+  const n0 = (await C().db.first(`SELECT COUNT(*) AS n FROM posts`)).n;
+  await call('/bulk', { ids: [a1.id, a2.id], action: 'copy' });
+  assert.equal((await C().db.first(`SELECT COUNT(*) AS n FROM posts`)).n, n0 + 2, 'две копии');
+  assert.match((await call('/state')).undo.label, /дублировать: постов 2/);
+  await call('/undo', {});
+  assert.equal((await C().db.first(`SELECT COUNT(*) AS n FROM posts`)).n, n0, 'один откат убирает обе копии');
+  // старый анонс уходит в архив, свежий и «догонять» остаются
+  const ctx1 = C();
+  await ctx1.db.run(`INSERT INTO posts (kind, audience, status, text, entities, media, created_by, created_at, run_at, catchup) VALUES ('date','all','active','СТАРЫЙ АНОНС','[]','[]',100,?,?,0)`, [NOW, NOW - 8 * 86400]);
+  await ctx1.db.run(`INSERT INTO posts (kind, audience, status, text, entities, media, created_by, created_at, run_at, catchup) VALUES ('date','all','active','СТАРЫЙ ДОГОНЯТЬ','[]','[]',100,?,?,1)`, [NOW, NOW - 8 * 86400]);
+  await ctx1.db.run(`INSERT INTO posts (kind, audience, status, text, entities, media, created_by, created_at, run_at, catchup) VALUES ('date','all','active','СВЕЖИЙ АНОНС','[]','[]',100,?,?,0)`, [NOW, NOW - 2 * 86400]);
+  await archiveOldDates(ctx1);
+  const st = Object.fromEntries((await ctx1.db.all(`SELECT text, status FROM posts WHERE kind = 'date' AND text IN ('СТАРЫЙ АНОНС','СТАРЫЙ ДОГОНЯТЬ','СВЕЖИЙ АНОНС')`)).map((x) => [x.text, x.status]));
+  assert.deepEqual(st, { 'СТАРЫЙ АНОНС': 'archived', 'СТАРЫЙ ДОГОНЯТЬ': 'active', 'СВЕЖИЙ АНОНС': 'active' }, 'автоархив только прошедших больше недели');
+}
+step('несколько постов сразу, автоархив анонсов');
 
 console.log('\nВсе сценарии прошли. Запросов к фейковому Telegram:', calls.length);

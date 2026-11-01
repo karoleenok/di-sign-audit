@@ -231,6 +231,13 @@ textarea{min-height:120px;resize:vertical;line-height:1.45}
 .inbox{background:#f4c9f6;border-radius:16px;padding:10px 12px;margin:10px 0;display:flex;flex-direction:column;gap:8px}.inbox-h{display:flex;align-items:center}.inbox-r{background:var(--card);border-radius:12px;padding:8px 10px;display:flex;align-items:center;gap:8px}.inbox-r>span{flex:1}
 .btn.sm{padding:8px 12px;font-size:13px;min-height:40px;width:auto;flex:none}
 .pstage{margin-top:10px}
+.jump{display:block;margin:2px 0 8px auto;border:0;background:transparent;color:var(--soft);font-size:12px;cursor:pointer;min-height:32px}
+.flash{animation:flash 2.2s ease}@keyframes flash{0%,40%{box-shadow:0 0 0 3px #7B3F6E}100%{box-shadow:0 0 0 0 transparent}}
+body.selmode .card[data-id],body.selmode .fn[data-id]{position:relative;outline:1.5px dashed var(--faint);outline-offset:2px;cursor:pointer}
+body.selmode .card[data-id].picked,body.selmode .fn[data-id].picked{outline:2.5px solid #7B3F6E;background:#f6eef4}
+body.selmode .card[data-id].picked::before,body.selmode .fn[data-id].picked::before{content:'✓';position:absolute;right:8px;top:8px;width:22px;height:22px;border-radius:50%;background:#7B3F6E;color:#fff;font-size:13px;display:flex;align-items:center;justify-content:center;z-index:2}
+.bulk{position:fixed;left:12px;right:12px;bottom:14px;z-index:70;max-width:616px;margin:0 auto;background:var(--ink);color:var(--bg);border-radius:16px;padding:10px 12px;box-shadow:0 10px 30px rgba(44,13,2,.3);display:flex;flex-direction:column;gap:8px}
+.bulk-h{display:flex;justify-content:space-between;align-items:center}.bulk-a{display:flex;gap:6px;flex-wrap:wrap}.bulk .btn{background:var(--bg);color:var(--ink)}.bulk .btn.ghost{background:transparent;color:var(--bg);border:1px solid rgba(255,251,247,.4)}.bulk .btn:disabled{opacity:.4}.bulk .chip{background:transparent;color:var(--bg);border-color:rgba(255,251,247,.4)}
 </style>
 </head>
 <body>
@@ -387,6 +394,7 @@ function render() {
     '</div></div><div id="body"></div>';
   $('tabs').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; tab = b.dataset.t; haptic(); render(); window.scrollTo(0, 0); };
   if (tab === 'entry' || tab === 'feed' || tab === 'flow') tab = 'path';
+  if (tab !== 'path' && view.selMode) { view.selMode = false; sel.clear(); document.body.classList.remove('selmode'); }
   ({ home: renderHome, path: renderFlow, reviews: renderReviews, texts: renderTexts })[tab]();
   if ($('undoBtn')) $('undoBtn').onclick = doUndo;
   bindHelp();
@@ -846,7 +854,7 @@ function studentSeq() {
   const t = view.track === 'mat' ? 'mat' : 'course';
   const fl = S.flow || { order: Object.keys(ENTRY), off: [] };
   const seq = [];
-  const addMsg = (key) => { const m = mOf(key); if (!m) return; const st = FLOW.find((x) => x.key === key); seq.push({ text: m.text, btns: ((st && st.btns) || []).map(mOf).filter(Boolean).map((b) => b.text).concat((m.links || []).flat().map((l) => l.text)) }); };
+  const addMsg = (key) => { const m = mOf(key); if (!m) return; const st = FLOW.find((x) => x.key === key); seq.push({ key, text: m.text, btns: ((st && st.btns) || []).map(mOf).filter(Boolean).map((b) => b.text).concat((m.links || []).flat().map((l) => l.text)) }); };
   addMsg(fromAudit ? 'helloTest' : 'hello');
   fl.order.forEach((k) => {
     if (fl.off.includes(k)) return;
@@ -869,6 +877,7 @@ function studentHtml() {
     if (x.note) h += '<div class="stdiv">' + x.note + '</div>';
     if (x.post) { const p = x.post; h += '<div class="' + cls + '">' + mediaStrip(p, 3) + plainT(p.text) + '</div>' + (p.buttons.length ? '<div class="kbd">' + p.buttons.map((b) => '<span>' + esc(b) + '</span>').join('') + '</div>' : ''); }
     else h += '<div class="' + cls + '">' + plainT(x.text) + '</div>' + (x.btns.length ? '<div class="kbd">' + x.btns.map((b) => '<span>' + esc(b) + '</span>').join('') + '</div>' : '');
+    h += '<button type="button" class="jump" data-jump="' + (x.post ? 'p:' + x.post.id : 'k:' + x.key) + '">↪ где это в пути</button>';
   }
   if (!n) h += '<div class="stdiv">нажми «Дальше», чтобы увидеть первое сообщение</div>';
   return h + '</div><div class="btns two"><button class="btn ghost" type="button" data-strest="1">Сначала</button><button class="btn" type="button" data-stnext="1">' + (n >= seq.length ? 'Конец пути' : 'Дальше ▸ ' + n + '/' + seq.length) + '</button></div>';
@@ -899,6 +908,8 @@ function renderFlow() {
     document.querySelectorAll('[data-rsrc]').forEach((b) => b.addEventListener('click', () => { view.step = 0; }));
     document.querySelectorAll('[data-stnext]').forEach((b) => b.onclick = () => { view.step = (view.step || 0) + 1; renderFeed(); });
     document.querySelectorAll('[data-strest]').forEach((b) => b.onclick = () => { view.step = 0; renderFeed(); });
+    document.querySelectorAll('[data-jump]').forEach((b) => b.onclick = () => jumpTo(b.dataset.jump));
+    bindHelp();
     setTimeout(() => loadThumbs($('body')), 0);
     return;
   }
@@ -931,7 +942,8 @@ function renderFlow() {
   const stepPosts = new Set((S.msgs || []).map((m) => m.post).filter(Boolean));
   const lost = S.posts.filter((p) => p.kind === 'node' && !shown.has(p.id) && !stepPosts.has(p.id));
   if (false) h += sec('🔘 Посты-ответы без кнопки', 'На них пока не ведёт ни одна кнопка и они не стоят на шаге входа — человек их не получит. Привяжи кнопкой («＋ кнопка» → «Пост») или перетащи на шаг входа выше.', lost);
-  $('body').innerHTML = h.replace('@@ATTN@@', attentionHtml(lost.length));
+  if (!view.selMode) document.body.classList.remove('selmode');
+  $('body').innerHTML = h.replace('@@ATTN@@', attentionHtml(lost.length)) + bulkBar();
   if ($('newPost')) $('newPost').onclick = () => openNew();
   document.querySelectorAll('[data-pmode]').forEach((b) => b.onclick = () => { view.mode = b.dataset.pmode; view.step = 0; haptic(); renderFeed(); });
   document.querySelectorAll('[data-attn-post]').forEach((b) => b.onclick = () => openPost(+b.dataset.attnPost));
@@ -941,7 +953,7 @@ function renderFlow() {
   document.querySelectorAll('[data-fbback]').forEach((el) => el.onclick = () => { haptic(); fbBackfill(); });
   document.querySelectorAll('[data-pickk]').forEach((el) => el.onclick = () => { haptic(); pickExisting(el.dataset.pickk); });
   if ($('flowDet')) $('flowDet').ontoggle = () => { view.flowClosed = !$('flowDet').open; };
-  bindEntry(); bindMap(); bindView(); bindRun(); bindDays(); bindPathBar();
+  bindEntry(); bindMap(); bindView(); bindRun(); bindDays(); bindPathBar(); bindSel();
   document.querySelectorAll('[data-ftrk]').forEach((b) => b.onclick = () => { view.track = b.dataset.ftrk; haptic(); renderFeed(); });
   document.querySelectorAll('.fn,.ref').forEach((el) => el.onclick = () => openPost(+el.dataset.id));
   document.querySelectorAll('[data-add]').forEach((el) => el.onclick = () => openPost(+el.dataset.add, { focus: 'buttons' }));
@@ -949,6 +961,49 @@ function renderFlow() {
 
 
 
+
+// из режима «как ученик»: показать это сообщение на линии пути и подсветить
+function jumpTo(ref) {
+  view.mode = 'build'; view.pv = 'list'; haptic(); renderFeed();
+  const [t, v] = ref.split(':');
+  const key = t === 'k' ? ({ helloTest: 'hello', schedMat: 'schedCourse' }[v] || v) : null;
+  const el = t === 'k' ? document.querySelector('#flowList .stp[data-k="' + key + '"]') : document.querySelector('.card[data-id="' + v + '"], .fn[data-id="' + v + '"]');
+  if (!el) { toast('Это сообщение не на линии: открою его'); if (t === 'p') openPost(+v); else openMsg(key); return; }
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 2200);
+}
+// выбор нескольких постов: включить, пауза, архив, дублировать — одним шагом отката
+const sel = new Set();
+function bulkBar() {
+  if (!view.selMode) return '';
+  return '<div class="bulk" id="bulkBar"><div class="bulk-h"><b>Выбрано: ' + sel.size + '</b><button type="button" class="chip" id="selDone">Готово</button></div>' +
+    '<div class="bulk-a"><button type="button" class="btn sm" data-bulk="active"' + (sel.size ? '' : ' disabled') + '>Включить</button><button type="button" class="btn ghost sm" data-bulk="paused"' + (sel.size ? '' : ' disabled') + '>Пауза</button><button type="button" class="btn ghost sm" data-bulk="copy"' + (sel.size ? '' : ' disabled') + '>⧉ Копия</button><button type="button" class="btn ghost sm" data-bulk="archived"' + (sel.size ? '' : ' disabled') + '>🗄 В архив</button></div></div>';
+}
+function bindSel() {
+  if ($('selBtn')) $('selBtn').onclick = () => { view.selMode = !view.selMode; sel.clear(); haptic(); render(); };
+  if (!view.selMode) return;
+  document.body.classList.add('selmode');
+  document.querySelectorAll('.card[data-id], .fn[data-id]').forEach((el) => { if (sel.has(+el.dataset.id)) el.classList.add('picked'); });
+  if ($('selDone')) $('selDone').onclick = () => { view.selMode = false; sel.clear(); document.body.classList.remove('selmode'); render(); };
+  document.querySelectorAll('[data-bulk]').forEach((b) => b.onclick = async () => {
+    const action = b.dataset.bulk;
+    try {
+      const r = await api('/bulk', { ids: [...sel], action });
+      toast(({ active: 'Включено', paused: 'На паузе', copy: 'Копии — в черновиках', archived: 'В архиве' }[action]) + ': ' + r.done + (r.skipped ? ' · пропущено ' + r.skipped + ' (пустые)' : ''));
+      sel.clear(); view.selMode = false; document.body.classList.remove('selmode'); await reload();
+    } catch (e) { toast(e.message); }
+  });
+}
+document.addEventListener('click', (e) => {
+  if (!view.selMode) return;
+  const el = e.target.closest('.card[data-id], .fn[data-id]');
+  if (!el || e.target.closest('#bulkBar')) return;
+  e.preventDefault(); e.stopPropagation();
+  const id = +el.dataset.id;
+  if (sel.has(id)) sel.delete(id); else sel.add(id);
+  document.querySelectorAll('[data-id="' + id + '"]').forEach((x) => x.classList.toggle('picked', sel.has(id)));
+  const bb = $('bulkBar'); if (bb) { bb.outerHTML = bulkBar(); bindSel(); }
+}, true);
 // ---------- шапка пути: подсказки, архив, вид ----------
 const HELP = {
   path: 'Всё, что бот присылает ученику, сверху вниз: сначала вход, потом лента по дням. Нажми на сообщение, чтобы править, «＋» — чтобы вставить новое.',
@@ -960,6 +1015,7 @@ const HELP = {
   map: 'Та же цепочка, но с линиями: видно, какая кнопка куда ведёт. Нажми на кнопку в карточке, чтобы поменять, куда она ведёт.',
   inbox: 'Посты, которые ты создала в боте через /new. Они уже сохранены, но здесь видно, куда их ещё нужно поставить.',
   undo: 'Отменяет последнюю правку: текст, кнопки, порядок, архив. Можно нажимать несколько раз подряд — до 30 шагов назад.',
+  select: 'Включи «выбрать» и нажимай на посты: можно разом включить, поставить на паузу, сделать копии или убрать в архив. Одно действие — один шаг отката.',
   archive: 'Убранные посты. Ученики их не получают, но ничего не удалено: можно вернуть на место или черновиком.',
 };
 const qh = (k) => '<button type="button" class="qh" data-q="' + k + '" aria-label="Подсказка">?</button>';
@@ -978,7 +1034,7 @@ document.addEventListener('scroll', () => { const pop = document.getElementById(
 function pathBar() {
   const pv = view.pv || 'list';
   return '<div class="pbar"><div class="seg sm" style="flex:none"><button type="button" data-pv="list" class="' + (pv === 'list' ? 'on' : '') + '">Список</button><button type="button" data-pv="map" class="' + (pv === 'map' ? 'on' : '') + '">Карта</button></div>' + qh('path') +
-    '<span style="flex:1"></span><button type="button" class="chip" id="archBtn">🗄 Архив</button>' + qh('archive') + '</div>';
+    '<span style="flex:1"></span>' + (pv === 'list' ? '<button type="button" class="chip' + (view.selMode ? ' on' : '') + '" id="selBtn">☐ Выбрать</button>' : '') + '<button type="button" class="chip" id="archBtn">🗄 Архив</button>' + qh('archive') + '</div>';
 }
 const KIND_WHEN = (p) => p.kind === 'node' ? (p.fork ? 'развилка' : 'ответ на кнопку') : p.kind === 'drip' ? 'лента · день ' + (p.day || 0) : p.kind === 'date' ? 'на дату' : p.kind === 'gift' ? 'подарок после теста' : 'бонус за отзыв';
 function inboxHtml() {
