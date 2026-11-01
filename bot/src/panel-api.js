@@ -220,7 +220,7 @@ export async function handlePanelApi(ctx, request, url) {
     const active = await ctx.db.all(`SELECT id, title FROM posts WHERE kind = 'fb' AND status = 'active'`);
     const by = {};
     for (const d of dl) (by[d.tg_id] = by[d.tg_id] || []).push({ post_id: d.post_id, sent_at: d.sent_at });
-    const leads = await ctx.db.all(`SELECT l.id, l.tg_id, l.source, l.created_at, u.first_name, u.username, u.contact_name, u.phone, u.email, u.track FROM leads l LEFT JOIN users u ON u.tg_id = l.tg_id ORDER BY l.id DESC LIMIT 200`);
+    const leads = await ctx.db.all(`SELECT l.id, l.tg_id, l.source, l.created_at, l.done, u.first_name, u.username, u.contact_name, u.phone, u.email, u.track FROM leads l LEFT JOIN users u ON u.tg_id = l.tg_id ORDER BY l.id DESC LIMIT 200`);
     return json({
       leads,
       active: active.length,

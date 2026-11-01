@@ -435,7 +435,7 @@ async function renderReviews() {
   if ((d.leads || []).length) h += '<div class="grp">📝 Заявки на предзапись · ' + d.leads.length + '</div>' + d.leads.map((l) => {
     const name = l.contact_name || l.first_name || 'без имени';
     const c = [l.username ? '<a href="https://t.me/' + esc(l.username) + '" target="_blank" rel="noopener">@' + esc(l.username) + '</a>' : '', l.phone ? esc(l.phone) : '', l.email ? esc(l.email) : ''].filter(Boolean).join(' · ') || 'контактов нет';
-    return '<div class="box" style="margin:8px 0"><b>' + esc(name) + '</b> <span class="small muted">' + fmt(l.created_at) + (l.track ? ' · ' + (trk[l.track] || '') : '') + '</span><div class="small" style="margin-top:4px">' + c + '</div><div class="small muted" style="margin-top:2px">' + esc(l.source || '') + '</div></div>';
+    return '<div class="box" style="margin:8px 0"><b>' + esc(name) + '</b> <span class="small muted">' + fmt(l.created_at) + (l.track ? ' · ' + (trk[l.track] || '') : '') + '</span>' + (l.done ? '' : ' <span class="tag warn-t">ждём имя и контакт</span>') + '<div class="small" style="margin-top:4px">' + c + '</div><div class="small muted" style="margin-top:2px">' + esc(l.source || '') + '</div></div>';
   }).join('');
   h += d.reviews.map((u) => {
     const name = u.contact_name || u.first_name || 'без имени';

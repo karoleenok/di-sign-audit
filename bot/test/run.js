@@ -719,6 +719,12 @@ step('кнопка «файл»: у шага и у поста по нажати�
     const c0 = calls.length;
     await cb(Y, 'ld:p:' + lp.id);
     assert.equal((await db.first(`SELECT COUNT(*) AS n FROM leads WHERE tg_id = ?`, [Y])).n, 1, 'заявка записана');
+    assert.equal((await db.first(`SELECT done FROM leads WHERE tg_id = ?`, [Y])).done, 0, 'без имени и контакта заявка не считается принятой');
+    assert.ok(!calls.slice(c0).some((c) => c.body.chat_id === 100 && /Новая заявка/.test(c.body.text || '')), 'админу карточка пока не ушла');
+    assert.ok(calls.slice(c0).some((c) => c.body.chat_id === Y && /имя и способ связи/.test(c.body.text || '')), 'человека просят оставить имя и контакт');
+    await cb(Y, 'n:ok');
+    if ((await db.first(`SELECT done FROM leads WHERE tg_id = ?`, [Y])).done === 0) { await cb(Y, 'ct:phone'); await msg(Y, '+79991234567'); }
+    assert.equal((await db.first(`SELECT done FROM leads WHERE tg_id = ?`, [Y])).done, 1, 'после имени и контакта заявка принята');
     assert.ok(calls.slice(c0).some((c) => c.body.chat_id === Y && /Заявка принята/.test(c.body.text || '')), 'человеку «заявка принята»');
     assert.ok(calls.slice(c0).some((c) => c.body.chat_id === 100 && /Новая заявка/.test(c.body.text || '')), 'админу пришла карточка');
     await cb(Y, 'ld:p:' + lp.id);

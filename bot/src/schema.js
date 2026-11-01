@@ -115,6 +115,10 @@ export const MIGRATIONS = [
       tg_id INTEGER NOT NULL, source TEXT, created_at INTEGER NOT NULL
     )`,
   ],
+  // v8: заявка считается принятой, когда человек оставил имя и способ связи (done = 1)
+  [
+    `ALTER TABLE leads ADD COLUMN done INTEGER NOT NULL DEFAULT 1`,
+  ],
 ];
 
 // Обновить базу при первом запуске после выкладки новой версии (один раз на процесс)

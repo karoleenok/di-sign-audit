@@ -324,7 +324,7 @@ export async function onUserText(ctx, msg, state) {
     await ctx.db.run(`UPDATE users SET contact_name = ? WHERE tg_id = ?`, [txt.replace(/\s+/g, ' ').slice(0, 60), id]);
     await setUState(ctx, id, null);
     await cleanAll(ctx, id);
-    return nextStep(ctx, await getUser(ctx, id));
+    return afterData(ctx, id);
   }
   if (state === 'u:phone') {
     let phone = null;
@@ -338,7 +338,7 @@ export async function onUserText(ctx, msg, state) {
     const m = await ctx.tg.call('sendMessage', { chat_id: id, text: (await msgText(ctx, 'contactSaved')).text, reply_markup: removeKb, disable_notification: true }).catch(() => null);
     if (m) await tech(ctx, id, Promise.resolve(m));
     await cleanAll(ctx, id);
-    return nextStep(ctx, await getUser(ctx, id));
+    return afterData(ctx, id);
   }
   if (state === 'u:email') {
     const e = txt.toLowerCase();
@@ -346,7 +346,7 @@ export async function onUserText(ctx, msg, state) {
     await ctx.db.run(`UPDATE users SET email = ?, contact_at = ? WHERE tg_id = ?`, [e, ctx.now, id]);
     await setUState(ctx, id, null);
     await cleanAll(ctx, id);
-    return nextStep(ctx, await getUser(ctx, id));
+    return afterData(ctx, id);
   }
   if (state === 'u:fb1') {
     if (!txt) return;
@@ -407,6 +407,32 @@ export async function backfillFb(ctx, since, dry, only) {
     }
   }
   return { people, sent, failed, posts: posts.length };
+}
+
+// после имени / контакта: если есть заявка без данных — доводим её до конца, иначе идём дальше по входу
+async function afterData(ctx, id) {
+  if (await finishLead(ctx, id, false)) return;
+  return nextStep(ctx, await getUser(ctx, id));
+}
+// заявка принимается, когда есть имя и хотя бы один способ связи: @ник, телефон или почта
+async function finishLead(ctx, id, first) {
+  const lead = await ctx.db.first(`SELECT id, source FROM leads WHERE tg_id = ? AND done = 0 ORDER BY id DESC LIMIT 1`, [id]);
+  if (!lead) return false;
+  const u = await getUser(ctx, id);
+  if (!u.contact_name || !(u.username || u.phone || u.email)) {
+    if (first) { await say(ctx, id, 'leadNeed', {}); }
+    if (!u.contact_name) {
+      await setUState(ctx, id, 'u:name');
+      await tech(ctx, id, say(ctx, id, 'askName', { имя: u.first_name || 'друг' }, { reply_markup: kb([[{ text: await btn(ctx, 'nameOk'), callback_data: 'n:ok' }]]) }));
+    } else {
+      await askContact(ctx, u);
+    }
+    return true;
+  }
+  await ctx.db.run(`UPDATE leads SET done = 1 WHERE id = ?`, [lead.id]);
+  await notifyLead(ctx, u, lead.source);
+  await say(ctx, id, 'leadThanks', {});
+  return true;
 }
 
 // новая заявка — админам в бот
@@ -536,7 +562,7 @@ export async function onUserCallback(ctx, cq) {
     await answer();
     await ctx.db.run(`UPDATE users SET contact_name = COALESCE(contact_name, ?) WHERE tg_id = ?`, [u.first_name || 'друг', id]);
     await setUState(ctx, id, null); await done();
-    return nextStep(ctx, await getUser(ctx, id));
+    return afterData(ctx, id);
   }
   if (d.startsWith('ct:')) {
     const how = d.slice(3);
@@ -544,7 +570,7 @@ export async function onUserCallback(ctx, cq) {
       await answer('contactSaved');
       await ctx.db.run(`UPDATE users SET contact_at = ?, username = COALESCE(?, username) WHERE tg_id = ?`, [ctx.now, cq.from.username || null, id]);
       await done();
-      return nextStep(ctx, await getUser(ctx, id));
+      return afterData(ctx, id);
     }
     await answer(); await done();
     if (how === 'phone') {
@@ -573,16 +599,18 @@ export async function onUserCallback(ctx, cq) {
     return nextStep(ctx, await getUser(ctx, id));
   }
   if (d.startsWith('ld:')) {
-    // «Оставить заявку»: один раз на человека, админам уходит карточка
+    // «Оставить заявку»: один раз на человека. Заявка принимается, когда есть имя и способ связи
     await answer();
-    if (await ctx.db.first(`SELECT id FROM leads WHERE tg_id = ?`, [id])) { await say(ctx, id, 'leadAgain', {}); return; }
-    let src = 'кнопка';
-    const mp = /^ld:p:(\d+)$/.exec(d), ms = /^ld:s:(\w+)$/.exec(d);
-    if (mp) { const p = await ctx.db.first(`SELECT title, text FROM posts WHERE id = ?`, [+mp[1]]); if (p) src = 'пост «' + String(p.title || p.text || '#' + mp[1]).split('\n')[0].slice(0, 50) + '»'; }
-    else if (ms) src = 'шаг входа «' + ms[1] + '»';
-    await ctx.db.run(`INSERT INTO leads (tg_id, source, created_at) VALUES (?, ?, ?)`, [id, src, ctx.now]);
-    await notifyLead(ctx, u, src);
-    await say(ctx, id, 'leadThanks', {});
+    const had = await ctx.db.first(`SELECT id, done FROM leads WHERE tg_id = ?`, [id]);
+    if (had && had.done) { await say(ctx, id, 'leadAgain', {}); return; }
+    if (!had) {
+      let src = 'кнопка';
+      const mp = /^ld:p:(\d+)$/.exec(d), ms = /^ld:s:(\w+)$/.exec(d);
+      if (mp) { const p = await ctx.db.first(`SELECT title, text FROM posts WHERE id = ?`, [+mp[1]]); if (p) src = 'пост «' + String(p.title || p.text || '#' + mp[1]).split('\n')[0].slice(0, 50) + '»'; }
+      else if (ms) src = 'шаг входа «' + ms[1] + '»';
+      await ctx.db.run(`INSERT INTO leads (tg_id, source, created_at, done) VALUES (?, ?, ?, 0)`, [id, src, ctx.now]);
+    }
+    await finishLead(ctx, id, true);
     return;
   }
   if (d.startsWith('buy:')) {
