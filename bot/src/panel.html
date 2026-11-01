@@ -1315,11 +1315,23 @@ function openPost(id, opt) {
 }
 async function reload() { try { S = await api('/state'); render(); } catch (e) { toast(e.message); } }
 
+function nextAfter(key) {
+  const f = S.flow || { order: [], off: [] }, o = f.order || [], i = o.indexOf(key);
+  const nm = (k) => { if (/^post:/.test(k)) { const p = (S.posts || []).find((x) => 'post:' + x.id === k); return '🔁 пост «' + (p ? postName(p) : k) + '»'; } return ENTRY[k] ? '«' + ENTRY[k][0].replace(/^\S+\s/, '') + '»' : '«' + k + '»'; };
+  for (let j = i + 1; j < o.length; j++) if (i >= 0 && !(f.off || []).includes(o[j])) return nm(o[j]);
+  return 'расписание и лента';
+}
+const BTN_WHERE = {
+  consentAdsNo: () => 'вход заканчивается, рассылки не будет',
+  testBtn: () => 'открывает тест; после него бот продолжит сам',
+  fbYes: (n) => 'два вопроса об отзыве → «спасибо» и бонус → ' + n,
+  consentPdBtn: (n) => 'согласие записано → ' + n,
+};
 function builtinBtns(key) {
   const st = FLOW.find((x) => x.key === key);
   const bs = ((st && st.btns) || []).map((b) => mOf(b)).filter(Boolean);
   return bs.length ? '<p class="small muted" style="margin:0 2px 6px">Встроенные кнопки шага. Менять можно текст; убрать или перенаправить нельзя — на них держится путь ученика (что бот делает после нажатия).</p>' +
-    bs.map((b) => '<div class="bcard" style="margin-bottom:6px"><div class="small muted" style="margin-bottom:4px">🔘 ' + esc(b.title) + '</div><input type="text" maxlength="64" data-bk="' + b.key + '" data-orig="' + esc(b.text) + '" value="' + esc(b.text) + '"></div>').join('') : '';
+    bs.map((b) => '<div class="bcard" style="margin-bottom:6px"><div class="small muted" style="margin-bottom:4px">🔘 ' + esc(b.title) + '</div><input type="text" maxlength="64" data-bk="' + b.key + '" data-orig="' + esc(b.text) + '" value="' + esc(b.text) + '"><div class="small" style="margin:6px 2px 0;color:var(--accent,#7a4b3a)">→ после нажатия: ' + esc((BTN_WHERE[b.key] || ((n) => 'дальше ' + n))(nextAfter(key))) + '</div></div>').join('') : '';
 }
 function openMsg(key) {
   const m = S.msgs.find((x) => x.key === key); if (!m) return;
