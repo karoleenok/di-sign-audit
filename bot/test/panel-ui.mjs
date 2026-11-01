@@ -389,6 +389,26 @@ step('откат стрелкой, архив, подсказки, новые и
 }
 step('выбрать несколько, откат пачки, «где это в пути»');
 
+// 8д. заготовка пути из соцсетей одной кнопкой, кнопка «Отзыв», «только без аудита», откат
+{
+  await page.reload(); await page.waitForSelector('.hm'); await page.click('#tabs button[data-t="path"]'); await page.waitForSelector('#scaffoldBtn');
+  await page.screenshot({ path: OUT + '/panel-20-scaffold.png', fullPage: true });
+  await page.click('#scaffoldBtn'); await page.waitForSelector('#scOk'); await page.click('#scOk'); await page.waitForTimeout(800);
+  const sc = await db.all(`SELECT id, title, who FROM posts WHERE title LIKE '🧭 Соцсети%' ORDER BY id`);
+  assert.equal(sc.length, 3, 'три поста-заготовки');
+  assert.equal(sc[0].who, 'new', 'развилка только для пришедших без аудита');
+  assert.match((await db.first(`SELECT value FROM settings WHERE key = 'flow:order'`)).value, new RegExp('post:' + sc[0].id), 'развилка стоит в порядке входа');
+  assert.equal(await page.$('#scaffoldBox'), null, 'после сборки коробка пропала');
+  // редактор развилки: «кому» и тип кнопки «Отзыв»
+  await page.click('.stp[data-k="post:' + sc[0].id + '"]'); await page.waitForSelector('#fWho');
+  assert.ok(await page.$('#bEd [data-type="fb"]'), 'у кнопки есть тип «Отзыв»');
+  await page.screenshot({ path: OUT + '/panel-21-who.png' });
+  await page.evaluate(() => document.querySelector('#sheetBg').click()); await page.waitForTimeout(200);
+  await page.click('#undoBtn'); await page.waitForTimeout(600);
+  assert.equal((await db.all(`SELECT id FROM posts WHERE title LIKE '🧭 Соцсети%'`)).length, 0, 'стрелка убрала заготовку');
+}
+step('заготовка входа из соцсетей, кнопка отзыва, откат');
+
 // 9. открыть не из Telegram
 INIT = '';
 const p2 = await b.newPage(); await p2.route('**/telegram-web-app.js', (r) => r.fulfill({ contentType: 'application/javascript', body: stub('') }));

@@ -68,6 +68,7 @@ export const MSG = {
   fbQ1: ['fb', 'Вопрос 1', 'Что в кабинете понравилось больше всего?', []],
   fbQ2: ['fb', 'Вопрос 2', 'А что хотелось бы улучшить или добавить?', []],
   fbThanks: ['fb', 'Спасибо за отзыв', 'Спасибо! Это правда помогает нам 🐾 Лови бонус 👇', []],
+  fbAlready: ['fb', 'Если отзыв уже оставлен', 'Ты уже оставил(а) отзыв — спасибо, бонус у тебя 🐾', []],
   fbNoBonus: ['fb', 'Если бонус ещё не загружен', 'Бонус скоро появится здесь 🎁', []],
 
   askTrack: ['track', 'Мини-курс или материалы', 'Что тебе ближе?', []],
@@ -149,12 +150,13 @@ export function cleanRows(rows) {
       const text = String((b && b.text) || '').trim().slice(0, 60);
       let link = String((b && b.url) || '').trim();
       const go = parseInt(b && b.go, 10) || null;
-      if (!text && !link && !go && !(b && (b.doc || b.pay || b.file || b.lead))) continue;
+      if (!text && !link && !go && !(b && (b.doc || b.pay || b.file || b.lead || b.fb))) continue;
       if (!text) throw new Error('У кнопки нет текста');
       if (go) { r.push({ text, go }); continue; }
       if (b.file) { const f = cleanFile(b.file); if (!f) throw new Error(`У кнопки «${text}» не выбран файл`); r.push(f.type === 'link' ? { text, url: f.url, file: f } : { text, file: f }); continue; }
       if (b.doc) { if (!['policy', 'consent', 'offer'].includes(b.doc)) throw new Error('Неизвестный документ'); r.push({ text, doc: b.doc }); continue; }
       if (b.lead) { r.push({ text, lead: true }); continue; }
+      if (b.fb) { r.push({ text, fb: true }); continue; }
       if (b.pay) { r.push({ text, pay: ['curator', 'mentor'].includes(b.pay) ? b.pay : 'curator' }); continue; }
       if (/^t\.me\//i.test(link)) link = 'https://' + link;
       if (!/^https?:\/\/\S+$/i.test(link)) throw new Error(`Ссылка у кнопки «${text}» должна начинаться с https://`);
@@ -173,6 +175,7 @@ export async function linkRows(ctx, key) {
   return rows.map((row, ri) => row.map((b, bi) => {
     if (b.go) return { text: b.text, callback_data: `gm:${key}:${ri}-${bi}` };
     if (b.lead) return { text: b.text, callback_data: `ld:s:${key}` };
+    if (b.fb) return { text: b.text, callback_data: 'fb:p' };
     if (b.pay) return { text: b.text, callback_data: `gp:${key}` };
     if (b.file && b.file.type !== 'link') return { text: b.text, callback_data: `fm:${key}:${ri}-${bi}` };
     if (b.doc) return docs[b.doc] ? { text: b.text, url: docs[b.doc] } : null;

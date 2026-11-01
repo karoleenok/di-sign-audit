@@ -130,6 +130,8 @@ export const MIGRATIONS = [
     )`,
     `CREATE INDEX IF NOT EXISTS post_versions_post ON post_versions (post_id, id)`,
   ],
+  // кому шаг входа: all — всем, new — только тем, кто пришёл без аудита
+  [`ALTER TABLE posts ADD COLUMN who TEXT`],
   // откат на шаг назад; посты из бота (/new) — во «входящих», пока их не поставили в путь
   [
     `CREATE TABLE IF NOT EXISTS undo_log (id INTEGER PRIMARY KEY AUTOINCREMENT, snap TEXT NOT NULL, label TEXT, by_id INTEGER, by_name TEXT, at INTEGER NOT NULL)`,

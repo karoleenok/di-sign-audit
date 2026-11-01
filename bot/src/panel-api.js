@@ -47,7 +47,7 @@ function postOut(p, sent, clicks) {
   const media = j(p.media, []);
   const f = entitiesToMd(p.text || '', j(p.entities, []));
   return {
-    id: p.id, kind: p.kind, fork: p.fork || null, inbox: !!p.inbox, status: p.status, title: p.title || '', text: (p.text || '').slice(0, 400),
+    id: p.id, kind: p.kind, fork: p.fork || null, who: p.who === 'new' ? 'new' : 'all', inbox: !!p.inbox, status: p.status, title: p.title || '', text: (p.text || '').slice(0, 400),
     md: f.md, rich: f.rich, once: !!p.once, files: media, track: p.track || 'all',
     day: p.day, time: p.send_time, mode: p.mode || 'day', delay: p.delay_min || 0, after: p.after_id || null, run_at: p.run_at, audience: p.audience, catchup: !!p.catchup, pos: p.pos || 0,
     media: media.map((m) => m.type), buttons: j(p.buttons, []).flat().map((b) => b.text), rows: j(p.buttons, []),
@@ -135,7 +135,7 @@ export async function handlePanelApi(ctx, request, url) {
 }
 
 // какие запросы можно отменить (меняют посты, тексты, порядок, документы)
-const UNDO_RX = /^\/(bulk|post\/new|post\/\d+|post\/\d+\/(move|copy|restore)|msg\/[A-Za-z_]+|flow|docs|reorder)$/;
+const UNDO_RX = /^\/(bulk|post\/new|post\/\d+|post\/\d+\/(move|copy|restore)|msg\/[A-Za-z_]+|flow|docs|reorder|path\/scaffold)$/;
 const SNAP_KEYS = `key LIKE 'msg:%' OR key LIKE 'msgx:%' OR key LIKE 'flow:%' OR key LIKE 'doc:%'`;
 async function takeSnap(ctx) {
   return JSON.stringify({ posts: await ctx.db.all(`SELECT * FROM posts`), settings: await ctx.db.all(`SELECT key, value FROM settings WHERE ${SNAP_KEYS}`) });
@@ -151,7 +151,7 @@ async function undoLabel(ctx, path, body) {
   m = /^\/msg\/([A-Za-z_]+)$/.exec(path);
   if (m) { const i = msgInfo(m[1]); return 'текст «' + (i ? i.title : m[1]).slice(0, 40) + '»'; }
   if (path === '/bulk') return ({ active: 'включить', paused: 'на паузу', archived: 'в архив', copy: 'дублировать' }[body.action] || 'действие') + ': постов ' + ((body.ids || []).length);
-  return path === '/flow' ? 'порядок шагов входа' : path === '/docs' ? 'документы' : 'перенос поста';
+  return path === '/path/scaffold' ? 'новый путь из соцсетей' : path === '/flow' ? 'порядок шагов входа' : path === '/docs' ? 'документы' : 'перенос поста';
 }
 async function pushUndo(ctx, snap, label, user) {
   await ctx.db.run(`INSERT INTO undo_log (snap, label, by_id, by_name, at) VALUES (?, ?, ?, ?, ?)`, [snap, label, user.id, user.first_name || '', ctx.now]);
@@ -274,6 +274,7 @@ async function panelRest(ctx, request, url, user, path, body) {
     }
     if (p.inbox) put('inbox', 0); // любое действие с постом в панели — он больше не «новый из бота»
     if (body.once !== undefined) put('once', body.once ? 1 : 0);
+    if (body.who !== undefined) put('who', body.who === 'new' ? 'new' : null);
     if (body.track !== undefined) { if (!TRACKS[body.track]) return json({ error: 'Неизвестный трек' }, 400); put('track', body.track); }
     if (body.md !== undefined) {
       const f = mdToEntities(body.md);
@@ -431,6 +432,7 @@ async function panelRest(ctx, request, url, user, path, body) {
     const row = await ctx.db.first(`SELECT * FROM posts WHERE created_by = ? ORDER BY id DESC LIMIT 1`, [user.id]);
     if (fork) await ctx.db.run(`UPDATE posts SET fork = 'track', status = 'active' WHERE id = ?`, [row.id]);
     if (TRACKS[body.track] && body.track !== 'all') await ctx.db.run(`UPDATE posts SET track = ? WHERE id = ?`, [body.track, row.id]);
+    if (body.who === 'new' && kind === 'node' && !fork) await ctx.db.run(`UPDATE posts SET who = 'new' WHERE id = ?`, [row.id]);
     if (body.rows) {
       const r = await cleanButtons(ctx, body.rows, row.id);
       if (r.error) { await ctx.db.run(`UPDATE posts SET status = 'draft' WHERE id = ?`, [row.id]); return json({ error: r.error, post: postOut(row) }, 400); }
@@ -454,6 +456,38 @@ async function panelRest(ctx, request, url, user, path, body) {
     await put('flow:order', f.order);
     await put('flow:off', f.off);
     return json({ ok: true, flow: f });
+  }
+
+  // заготовка нового пути из соцсетей: развилка → экскурсия → меню (аудит / тарифы / отзыв); тексты потом правятся в панели
+  if (path === '/path/scaffold' && request.method === 'POST') {
+    const kab = ctx.env.KABINET_URL || 'https://karoleenok.github.io/di-sign-audit/kabinet/';
+    const test = ctx.env.TEST_URL || '';
+    const mk = async (title, md, rows) => {
+      const f = mdToEntities(md);
+      await ctx.db.run(
+        `INSERT INTO posts (title, kind, audience, track, status, text, entities, media, buttons, created_by, created_at, mode, delay_min, once)
+         VALUES (?, 'node', 'all', 'all', 'active', ?, ?, '[]', NULL, ?, ?, 'day', 0, 0)`,
+        [title, f.text, JSON.stringify(f.entities), user.id, ctx.now]);
+      const row = await ctx.db.first(`SELECT * FROM posts WHERE created_by = ? ORDER BY id DESC LIMIT 1`, [user.id]);
+      return row;
+    };
+    const setRows = (id, rows) => ctx.db.run(`UPDATE posts SET buttons = ? WHERE id = ?`, [JSON.stringify(rows.filter((r) => r.length)), id]);
+    const tariffs = (await ctx.db.all(`SELECT id, title, text FROM posts WHERE status != 'archived' ORDER BY id DESC`)).find((x) => /тариф/i.test((x.title || '') + ' ' + (x.text || '')));
+    const fork = await mk('🧭 Соцсети · развилка', 'у нас есть два пути, выбирай, что ближе 🐾\n\nэкскурсия по прототипу — покажу, как устроено наше обучение и кабинет\nаудит — 3 минуты, и ты получишь личный план и подарок');
+    const tour = await mk('🧭 Соцсети · экскурсия', 'вот прототип кабинета Di Sign University\n\nпосмотри, как всё устроено, а потом вернись сюда — покажу, что делать дальше');
+    const menu = await mk('🧭 Соцсети · что дальше', 'ну как тебе? 🐾\n\nвыбирай, что дальше:\n\nаудит — получишь конкретный план по развитию и крутые бонусы\nтарифы — посмотри, какие бывают форматы\nотзыв — ответь на 2 вопроса и получи плюшку');
+    await setRows(fork.id, [[{ text: '🧭 Экскурсия по прототипу', go: tour.id }], test ? [{ text: '📝 Пройти аудит', url: test }] : []]);
+    await setRows(tour.id, [[{ text: '🔗 Открыть кабинет', url: kab }], [{ text: 'Посмотрел(а) →', go: menu.id }]]);
+    await setRows(menu.id, [test ? [{ text: '📝 Пройти аудит и забрать бонусы', url: test }] : [], tariffs ? [{ text: '💳 Посмотреть тарифы', go: tariffs.id }] : [], [{ text: '💬 Оставить отзыв и получить плюшку', fb: true }]]);
+    await ctx.db.run(`UPDATE posts SET who = 'new' WHERE id = ?`, [fork.id]);
+    let applied = false;
+    if (body.apply) {
+      const f = normFlow(['consentPd', 'consentAds', 'post:' + fork.id, 'askTrack', 'testOffer', 'fbOffer', 'askName', 'askContact'], ['askName', 'askContact', 'testOffer']);
+      const put = (k, v) => ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [k, JSON.stringify(v)]);
+      await put('flow:order', f.order); await put('flow:off', f.off);
+      applied = true;
+    }
+    return json({ ok: true, applied, ids: { fork: fork.id, tour: tour.id, menu: menu.id }, tariffs: tariffs ? tariffs.id : null, noTest: !test });
   }
 
   // ссылки на документы (политика, согласие, оферта) и данные владельца
@@ -597,7 +631,7 @@ export async function cleanButtons(ctx, rowsIn, selfId) {
       const text = String(b.text || '').trim().slice(0, 60);
       let link = String(b.url || '').trim();
       const go = parseInt(b.go, 10) || null;
-      if (!text && !link && !go && !b.doc && !b.pay && !b.file && !b.lead) continue;
+      if (!text && !link && !go && !b.doc && !b.pay && !b.file && !b.lead && !b.fb) continue;
       if (!text) return { error: 'У кнопки нет текста' };
       if (go) {
         if (go === selfId) return { error: `Кнопка «${text}» ведёт на этот же пост` };
@@ -608,6 +642,7 @@ export async function cleanButtons(ctx, rowsIn, selfId) {
       if (b.file) { const f = cleanFile(b.file); if (!f) return { error: `У кнопки «${text}» не выбран файл` }; r.push(f.type === 'link' ? { text, url: f.url, file: f } : { text, file: f }); continue; }
       if (b.doc) { if (!DOCS[b.doc]) return { error: 'Неизвестный документ' }; r.push({ text, doc: b.doc }); continue; }
       if (b.lead) { r.push({ text, lead: true }); continue; }
+      if (b.fb) { r.push({ text, fb: true }); continue; }
       if (b.pay) { const pay = ['curator', 'mentor'].includes(b.pay) ? b.pay : 'curator'; r.push({ text, pay }); continue; }
       if (/^t\.me\//i.test(link)) link = 'https://' + link;
       if (!/^https?:\/\/\S+$/i.test(link)) return { error: `Ссылка у кнопки «${text}» должна начинаться с https://` };

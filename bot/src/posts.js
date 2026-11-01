@@ -9,6 +9,7 @@ const j = (s, d) => { try { return s ? JSON.parse(s) : d; } catch { return d; } 
 //   go  — открыть другой пост этого бота (пост-ответ, развилка)
 //   doc — документ: политика, согласие, оферта (ссылка из настроек панели)
 //   file — файл: по нажатию бот присылает его в чат ({type, file_id, name})
+//   fb — «оставить отзыв»: бот задаёт два вопроса и присылает бонус за отзыв (один раз на человека)
 //   lead — «оставить заявку»: бот сохраняет заявку, пишет админам и благодарит человека
 //   pay — оплата тарифа (продамус подключим позже — пока кнопка отвечает «скоро»)
 export const TRACKS = { all: 'всем', course: 'мини-курс', mat: 'материалы' };
@@ -20,6 +21,7 @@ export function keyboard(post, uid, publicUrl, docs) {
     if (b.go) return { text: b.text, callback_data: post.id ? `go:${post.id}:${ri}-${bi}` : 'go:x' };
     if (b.pay) return { text: b.text, callback_data: post.id ? `buy:${post.id}:${ri}-${bi}` : 'buy:x' };
     if (b.lead) return { text: b.text, callback_data: post.id ? `ld:p:${post.id}` : 'ld:x' };
+    if (b.fb) return { text: b.text, callback_data: 'fb:p' };
     if (b.file && b.file.type !== 'link') return { text: b.text, callback_data: post.id ? `fl:${post.id}:${ri}-${bi}` : 'fl:x' };
     if (b.doc) { const u = docs && docs[b.doc]; return u ? { text: b.text, url: u } : null; }
     return { text: b.text, url: publicUrl && post.id ? `${publicUrl}/r/${post.id}/${ri}-${bi}/${uid || 0}` : b.url };

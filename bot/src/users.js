@@ -204,6 +204,7 @@ const STEP_RUN = {
   },
   async fbOffer(ctx, u) {
     if (u.fb_at || u.fb_skip) return false;
+    if (ctx.social && !u.zone) return false; // новый вход из соцсетей: кабинет видел только пришедший из аудита; остальным отзыв предлагает меню после экскурсии
     const id = u.tg_id;
     await pauseFor(ctx, id, 'fbOffer');
     await tech(ctx, id, say(ctx, id, 'fbOffer', { кабинет: ctx.env.KABINET_URL || 'https://karoleenok.github.io/di-sign-audit/kabinet/' }, {
@@ -213,6 +214,7 @@ const STEP_RUN = {
   },
   async askTrack(ctx, u) {
     if (u.track) return false;
+    if (ctx.social && !u.zone) return false; // новый вход из соцсетей: без аудита выбор «мини-курс или материалы» вслепую
     const id = u.tg_id;
     await pauseFor(ctx, id, 'askTrack');
     await tech(ctx, id, say(ctx, id, 'askTrack', {}, {
@@ -269,6 +271,7 @@ export async function previewStep(ctx, id, k, u = {}) {
 async function runPostStep(ctx, u, pid) {
   const p = await ctx.db.first(`SELECT * FROM posts WHERE id = ? AND kind = 'node' AND status = 'active'`, [pid]);
   if (!p) return;
+  if (p.who === 'new' && u.zone) return; // «только без аудита»: тем, кто прошёл аудит, этот шаг не показываем
   if (await ctx.db.first(`SELECT 1 AS x FROM deliveries WHERE post_id = ? AND tg_id = ?`, [pid, u.tg_id])) return;
   let ok = true;
   const rp = await resolveFork(ctx, u.tg_id, p);
@@ -278,6 +281,12 @@ async function runPostStep(ctx, u, pid) {
 export async function nextStep(ctx, u) {
   const id = u.tg_id;
   const { order, off } = await loadFlow(ctx);
+  // включён ли новый вход из соцсетей: в пути есть пост-развилка «только без аудита»
+  ctx.social = false;
+  for (const k of order) if (isPostStep(k) && !off.includes(k)) {
+    const sp = await ctx.db.first(`SELECT 1 AS x FROM posts WHERE id = ? AND who = 'new' AND status = 'active'`, [+k.slice(5)]);
+    if (sp) { ctx.social = true; break; }
+  }
   for (const k of order) {
     if (off.includes(k)) {
       if (k === 'testOffer' && u.zone) await sendGift(ctx, u, (await delayOf(ctx, 'noGift')) * 1000); // подарок после теста не теряем
@@ -288,7 +297,8 @@ export async function nextStep(ctx, u) {
   }
   if (!u.sched_at) {
     const key = u.track === 'course' ? 'schedCourse' : 'schedMat';
-    if (!off.includes('sched')) { await pauseFor(ctx, id, key); await say(ctx, id, key, {}); }
+    // без аудита и без выбранного трека не пишем «материалы будут приходить…»: человек ещё выбирает, куда пойти
+    if (!off.includes('sched') && (!ctx.social || u.zone || u.track)) { await pauseFor(ctx, id, key); await say(ctx, id, key, {}); }
     // вход пройден — отсюда считается лента
     await ctx.db.run(`UPDATE users SET sched_at = ?, status = 'active', joined_at = COALESCE(joined_at, ?) WHERE tg_id = ?`, [ctx.now, ctx.now, id]);
   } else if (u.status !== 'active') {
@@ -598,6 +608,14 @@ export async function onUserCallback(ctx, cq) {
     }
     await setUState(ctx, id, 'u:email');
     return tech(ctx, id, say(ctx, id, 'askEmail'));
+  }
+  if (d === 'fb:p') {
+    // кнопка «оставить отзыв» под постом: сам пост остаётся на месте
+    await answer();
+    if (u.fb_at) return say(ctx, id, 'fbAlready', {});
+    await setUState(ctx, id, 'u:fb1');
+    await pauseFor(ctx, id, 'fbQ1');
+    return tech(ctx, id, say(ctx, id, 'fbQ1'));
   }
   if (d === 'fb:yes') {
     await answer(); await done();

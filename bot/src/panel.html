@@ -748,7 +748,7 @@ function pickBtnFile(done) {
 }
 // редактор кнопок шага: ссылка / пост / документ / оплата (как у постов)
 function stepBtnEditor(el, rowsIn) {
-  let rows = rowsIn.map((row) => row.map((b) => Object.assign({ t: b.go ? 'go' : b.doc ? 'doc' : b.pay ? 'pay' : b.lead ? 'lead' : b.file ? 'file' : 'url' }, b)));
+  let rows = rowsIn.map((row) => row.map((b) => Object.assign({ t: b.go ? 'go' : b.doc ? 'doc' : b.pay ? 'pay' : b.lead ? 'lead' : b.fb ? 'fb' : b.file ? 'file' : 'url' }, b)));
   const sync = () => { el.querySelectorAll('[data-f]').forEach((i) => { const r = +i.dataset.r, k = +i.dataset.i; if (rows[r] && rows[r][k]) rows[r][k][i.dataset.f] = i.value; }); };
   const optPosts = (cur) => '<option value="">— выбери пост —</option>' + ['node', 'drip', 'date', 'gift'].map((k) => { const l = S.posts.filter((x) => x.kind === k); return l.length ? '<optgroup label="' + KIND[k] + '">' + l.map((x) => '<option value="' + x.id + '"' + (+cur === x.id ? ' selected' : '') + '>' + esc(postName(x).slice(0, 44)) + '</option>').join('') + '</optgroup>' : ''; }).join('');
   const field = (b, r, i) => {
@@ -756,6 +756,7 @@ function stepBtnEditor(el, rowsIn) {
     if (b.t === 'go') return '<select ' + a + ' data-f="go">' + optPosts(b.go) + '</select>';
     if (b.t === 'doc') return '<select ' + a + ' data-f="doc">' + Object.keys(S.docNames).map((k) => '<option value="' + k + '"' + (b.doc === k ? ' selected' : '') + '>' + esc(S.docNames[k]) + (S.docs[k] ? '' : ' — ссылка не задана') + '</option>').join('') + '</select>';
     if (b.t === 'file') return '<div class="small" style="margin:4px 2px">' + (b.file ? '📎 ' + esc(b.file.name || b.file.type) : 'файл не выбран') + '</div><button type="button" class="chip" data-pick="' + r + ':' + i + '">' + (b.file ? 'заменить файл' : '＋ выбрать файл') + '</button><p class="small muted" style="margin:4px 2px 0">По нажатию откроется страница с предпросмотром (картинка, видео, pdf, аудио) и кнопкой «Скачать». Файл до 1 ГБ.</p>';
+    if (b.t === 'fb') return '<div class="small muted" style="margin:4px 2px">Человек нажимает — бот задаёт 2 вопроса про кабинет и присылает бонус за отзыв (посты «💬 Бонус за отзыв»). Один раз на человека.</div>';
     if (b.t === 'lead') return '<div class="small muted" style="margin:4px 2px">Человек нажимает — заявка сохраняется, тебе приходит карточка, ему «Заявка принята» (текст — во вкладке «Тексты»).</div>';
     if (b.t === 'pay') return '<select ' + a + ' data-f="pay">' + Object.keys(TARIFF).map((k) => '<option value="' + k + '"' + (b.pay === k ? ' selected' : '') + '>' + TARIFF[k] + '</option>').join('') + '</select>';
     return '<input type="text" placeholder="https://ссылка" inputmode="url" ' + a + ' data-f="url" value="' + esc(b.url || '') + '">';
@@ -764,7 +765,7 @@ function stepBtnEditor(el, rowsIn) {
     el.innerHTML = (rows.length ? rows.map((row, r) => '<div class="brow"><div class="row" style="justify-content:space-between;margin-bottom:6px"><span class="small muted">Ряд ' + (r + 1) + '</span><span>' +
       (r > 0 ? '<button type="button" class="chip" data-up="' + r + '">↑</button> ' : '') + (r < rows.length - 1 ? '<button type="button" class="chip" data-down="' + r + '">↓</button>' : '') + '</span></div>' +
       row.map((b, i) => '<div class="bcard"><div style="display:grid;grid-template-columns:1fr auto;gap:6px"><input type="text" placeholder="Текст кнопки" maxlength="60" data-r="' + r + '" data-i="' + i + '" data-f="text" value="' + esc(b.text || '') + '"><button type="button" class="chip" data-del="' + r + ':' + i + '">✕</button></div>' +
-        '<div class="btype">' + [['url', '🔗 Ссылка'], ['go', '➡️ Пост'], ['doc', '📄 Документ'], ['pay', '💳 Оплата'], ['lead', '📝 Заявка'], ['file', '📎 Файл']].map(([k, t]) => '<button type="button" data-type="' + k + '" data-r="' + r + '" data-i="' + i + '" class="' + (b.t === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>' + field(b, r, i) + '</div>').join('') +
+        '<div class="btype">' + [['url', '🔗 Ссылка'], ['go', '➡️ Пост'], ['doc', '📄 Документ'], ['pay', '💳 Оплата'], ['lead', '📝 Заявка'], ['fb', '💬 Отзыв'], ['file', '📎 Файл']].map(([k, t]) => '<button type="button" data-type="' + k + '" data-r="' + r + '" data-i="' + i + '" class="' + (b.t === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>' + field(b, r, i) + '</div>').join('') +
       (row.length < 4 ? '<button type="button" class="chip" data-add="' + r + '">＋ кнопка рядом</button>' : '') + '</div>').join('') : '<p class="small muted" style="margin:2px">Своих кнопок нет.</p>') +
       '<button type="button" class="btn ghost" data-newrow="1" style="margin-top:6px">＋ Кнопка</button>';
   };
@@ -782,7 +783,7 @@ function stepBtnEditor(el, rowsIn) {
     haptic(); draw();
   });
   draw();
-  return () => { sync(); return rows.map((row) => row.map((b) => b.t === 'go' ? { text: b.text, go: +b.go || null } : b.t === 'doc' ? { text: b.text, doc: b.doc } : b.t === 'lead' ? { text: b.text, lead: true } : b.t === 'pay' ? { text: b.text, pay: b.pay } : b.t === 'file' ? { text: b.text, file: b.file || null } : { text: b.text, url: b.url })); };
+  return () => { sync(); return rows.map((row) => row.map((b) => b.t === 'go' ? { text: b.text, go: +b.go || null } : b.t === 'doc' ? { text: b.text, doc: b.doc } : b.t === 'lead' ? { text: b.text, lead: true } : b.t === 'fb' ? { text: b.text, fb: true } : b.t === 'pay' ? { text: b.text, pay: b.pay } : b.t === 'file' ? { text: b.text, file: b.file || null } : { text: b.text, url: b.url })); };
 }
 
 function bindCards() {
@@ -838,6 +839,7 @@ function makeNode(shown) {
       if (b.go) { const t = ids[+b.go]; kids += '<div class="fb"><span class="fb-l">🔘 ' + esc(b.text) + (p.once ? ' <i class="muted small">выбор</i>' : '') + '</span>' + (t ? node(t, depth + 1, np) : '<span class="tag no">пост в архиве</span>') + '</div>'; }
       else if (b.doc) kids += '<div class="fb"><span class="fb-l">📄 ' + esc(b.text) + '</span><span class="fb-r">' + esc(S.docNames[b.doc] || '') + (S.docs[b.doc] ? '' : ' · <b class="warn-t">ссылка не задана</b>') + '</span></div>';
       else if (b.lead) kids += '<div class="fb"><span class="fb-l">📝 ' + esc(b.text) + '</span><span class="fb-r">заявка</span></div>';
+      else if (b.fb) kids += '<div class="fb"><span class="fb-l">💬 ' + esc(b.text) + '</span><span class="fb-r">отзыв и бонус</span></div>';
       else if (b.pay) kids += '<div class="fb"><span class="fb-l">💳 ' + esc(b.text) + '</span><span class="fb-r">' + esc(TARIFF[b.pay] || 'оплата') + ' · подключим позже</span></div>';
       else kids += '<div class="fb"><span class="fb-l">🔗 ' + esc(b.text) + '</span><span class="fb-r">' + esc(domainOf(b.url)) + '</span></div>';
     }));
@@ -921,7 +923,7 @@ function renderFlow() {
   const drip = S.posts.filter((p) => p.kind === 'drip' && isRoot(p)).sort((a, b) => offMin(a, ids) - offMin(b, ids) || a.pos - b.pos || a.id - b.id);
   const dates = S.posts.filter((p) => p.kind === 'date').sort((a, b) => (a.run_at || 9e12) - (b.run_at || 9e12));
   const pv = view.pv || 'list';
-  let h = pathBar() + inboxHtml() + pathTop() + '@@ATTN@@' + runBox();
+  let h = pathBar() + inboxHtml() + scaffoldHtml() + pathTop() + '@@ATTN@@' + runBox();
   h += '<div class="btns two" style="margin:0 0 4px"><button class="btn" type="button" id="newPost">＋ Добавить в путь</button><button class="btn ghost" type="button" data-newk="date">＋ Анонс на дату</button></div>';
   const sec = (title, note, list, kind, help) => '<div class="grp">' + title + (help ? qh(help) : '') + '</div>' + (note ? '<p class="small muted" style="margin:-2px 2px 10px">' + note + '</p>' : '') +
     (list.length ? list.map((p) => '<div class="tree">' + node(p, 0, []) + '</div>').join('') : '<p class="small muted dash">Пока пусто.</p>') +
@@ -1045,7 +1047,20 @@ function inboxHtml() {
     (p.kind === 'node' && !p.fork ? '<button type="button" class="btn sm" data-ibplace="' + p.id + '">Поставить в путь</button>' : '<button type="button" class="btn ghost sm" data-ibshow="' + p.id + '">Показать</button>') +
     '<button type="button" class="chip" data-ibok="' + p.id + '" aria-label="Убрать из новых">✓</button></div>').join('') + '</div>';
 }
+function scaffoldHtml() {
+  if (S.posts.some((p) => /^🧭 Соцсети/.test(p.title || ''))) return '';
+  return '<div class="box" id="scaffoldBox"><h3>🧭 Вход для людей из соцсетей</h3><p class="small muted" style="margin:0 0 8px">Человек из соцсетей ещё не видел ни аудит, ни кабинет. Соберу заготовку: развилка «экскурсия по прототипу / аудит», экскурсия, а после неё меню: аудит, тарифы, отзыв с плюшкой. Кто пришёл из аудита, идёт как раньше, без развилки. Имя и контакт будут спрашиваться только при заявке.</p><button type="button" class="btn" id="scaffoldBtn">Собрать заготовку</button></div>';
+}
 function bindPathBar() {
+  if ($('scaffoldBtn')) $('scaffoldBtn').onclick = () => {
+    haptic();
+    sheet('<span class="pill">Новый вход</span><h2>Собрать и включить?</h2><p class="small muted">Создам 3 поста-заготовки (развилка, экскурсия, меню) и поменяю порядок входа: уберу имя и контакт, добавлю развилку первым шагом для людей без аудита. Тексты потом правишь в панели. Откатить можно стрелкой ↶ сверху.</p><div class="btns"><button class="btn" id="scOk" type="button">Собрать и включить</button><button class="btn ghost" id="scX" type="button">Отмена</button></div>');
+    $('scX').onclick = () => closeSheet();
+    $('scOk').onclick = async () => {
+      try { const r = await api('/path/scaffold', { apply: true }); closeSheet(); await reload(); toast(r.tariffs ? 'Готово. Проверь тексты трёх постов «🧭 Соцсети»' : 'Готово, но поста с тарифами не нашла: в меню будет без кнопки «тарифы»'); }
+      catch (e) { toast(e.message || 'Не получилось'); }
+    };
+  };
   document.querySelectorAll('[data-pv]').forEach((b) => b.onclick = () => { view.pv = b.dataset.pv; haptic(); render(); });
   if ($('archBtn')) $('archBtn').onclick = () => { haptic(); openArchive(); };
   const clear = (id) => api('/post/' + id, { inbox: 0 }).catch(() => {});
@@ -1120,7 +1135,7 @@ function mapModel() {
   });
   const fromFeed = new Set();
   S.posts.filter((p) => p.kind !== 'node').forEach((p) => (p.rows || []).flat().forEach((b) => { if (b.go) fromFeed.add('p' + b.go); }));
-  let needLead = false;
+  let needLead = false, needFb = false;
   posts.forEach((p) => {
     const id = 'p' + p.id;
     if (p.fork) {
@@ -1134,11 +1149,13 @@ function mapModel() {
       buttons: flat.map(({ r, c, b }) => {
         let to = '', note = '';
         if (b.go) to = 'p' + b.go; else if (b.lead) { to = 'lead'; needLead = true; }
+        else if (b.fb) { to = 'fb'; needFb = true; }
         else if (b.doc) note = '📄 ' + (S.docNames[b.doc] || 'документ'); else if (b.pay) note = '💳 оплата'; else if (b.file) note = '📎 файл'; else note = '🔗 ' + domainOf(b.url);
         return { label: b.text, r, c, to, note };
       }) });
   });
   if (needLead) add({ id: 'lead', kind: 'term', title: 'Заявка на предзапись', tag: 'Результат', buttons: [] });
+  if (needFb) add({ id: 'fb', kind: 'term', title: 'Отзыв и бонус', tag: 'Результат', buttons: [] });
   const ids = new Set(nodes.map((n) => n.id));
   nodes.forEach((n) => {
     n.buttons.forEach((b, i) => { if (b.to && ids.has(b.to)) edges.push({ from: n.id, i, to: b.to, c: n.kind === 'fork' ? MC[b.lane] : MC.post }); });
@@ -1177,7 +1194,7 @@ function mapHtml() {
     svg += '<path d="M' + x1 + ' ' + y1 + ' H' + xm + ' V' + y2 + ' H' + (x2 - 5) + '" stroke="' + e.c + '" fill="none" stroke-width="2" stroke-linejoin="round"/><path d="M' + (x2 - 1) + ' ' + y2 + ' l-7 -4.5 v9z" fill="' + e.c + '"/>';
   });
   svg += '</svg>';
-  const tgt = (to) => to === 'lead' ? 'заявка' : (nodes.find((n) => n.id === to) || {}).title || '—';
+  const tgt = (to) => to === 'lead' ? 'заявка' : to === 'fb' ? 'отзыв и бонус' : (nodes.find((n) => n.id === to) || {}).title || '—';
   let cards = '';
   nodes.forEach((n) => {
     const g = geo[n.id];
@@ -1203,7 +1220,7 @@ function mapPick(ref) {
   let cur = '', label = '', canText = false, canDel = false, selfId = 0;
   if (kind === 'e') { const m = mOf(a); label = m ? m.text : ''; cur = m && m.post ? 'p' + m.post : ''; }
   else if (kind === 'f') { selfId = +a; const p = S.posts.find((x) => x.id === +a); const bb = ((p && p.rows) || []).flat().find((x) => x.branch === b); cur = bb && bb.go ? 'p' + bb.go : ''; label = b === 'course' ? 'Мини-курс' : 'Материалы'; }
-  else if (kind === 'r') { selfId = +a; const p = S.posts.find((x) => x.id === +a); const bb = p && p.rows[+b] && p.rows[+b][+c]; label = bb ? bb.text : ''; cur = bb ? (bb.go ? 'p' + bb.go : bb.lead ? 'lead' : '') : ''; canText = true; canDel = true; }
+  else if (kind === 'r') { selfId = +a; const p = S.posts.find((x) => x.id === +a); const bb = p && p.rows[+b] && p.rows[+b][+c]; label = bb ? bb.text : ''; cur = bb ? (bb.go ? 'p' + bb.go : bb.lead ? 'lead' : bb.fb ? 'fb' : '') : ''; canText = true; canDel = true; }
   else if (kind === 'n') { selfId = +a; label = ''; canText = true; }
   const opt = (id, t, sub, on) => '<button type="button" class="kind' + (on ? ' on' : '') + '" data-pk="' + esc(id) + '"><b>' + esc(t) + '</b><span>' + esc(sub) + '</span></button>';
   let h = '<span class="pill">Кнопка</span><h2>' + (kind === 'n' ? 'Новая кнопка' : kind === 'f' ? esc(label) : '«' + esc(label) + '»') + '</h2>';
@@ -1215,6 +1232,7 @@ function mapPick(ref) {
   if (kind !== 'f') h += opt('new:fork', '＋ Развилка по треку', 'мини-курс и материалы получат каждый свой пост', false);
   if (kind === 'r' || kind === 'n') {
     h += opt('lead', 'Заявка на предзапись', 'имя и телефон, админам уходит карточка', cur === 'lead');
+    h += opt('fb', 'Отзыв и бонус', '2 вопроса про кабинет, потом бонус за отзыв', cur === 'fb');
     h += opt('url', 'Ссылка', 'открыть сайт', false);
     ['policy', 'consent', 'offer'].forEach((d) => { h += opt('doc:' + d, 'Документ: ' + (S.docNames[d] || d), S.docs[d] ? 'ссылка задана' : 'ссылка не задана', false); });
   }
@@ -1249,6 +1267,7 @@ function mapPick(ref) {
     if (!needText()) return;
     if (pk.startsWith('new:')) return save(async () => { const np = await mkPost(pk); await link(np.id); mapNew = np; }, '').then(() => { const np = mapNew; mapNew = null; if (np && !np.fork) { openPost(np.id); toast('Напиши текст ответа и включи пост'); } else if (np) toast('Теперь выбери, куда ведёт каждая ветка'); });
     if (pk === 'lead') return save(() => setRow({ text: txt(), lead: true }), 'Кнопка ведёт на заявку');
+    if (pk === 'fb') return save(() => setRow({ text: txt(), fb: true }), 'Кнопка ведёт на отзыв');
     if (pk.startsWith('doc:')) return save(() => setRow({ text: txt(), doc: pk.slice(4) }), 'Сохранено');
     if (pk === 'url') {
       sheet('<span class="pill">Ссылка</span><h2>Куда открыть?</h2><input id="mpUrl" placeholder="https://..." inputmode="url"><div class="btns"><button class="btn" id="mpUrlOk" type="button">Сохранить</button><button class="btn ghost" id="mpUrlX" type="button">Назад</button></div>');
@@ -1524,7 +1543,7 @@ function openPost(id, opt) {
   opt = opt || {};
   const p = opt.draft || S.posts.find((x) => x.id === id); if (!p) return;
   const isNew = !p.id;
-  const st = { track: p.track || 'all', day: p.day ?? 1, time: p.time || '11:00', audience: p.audience, status: p.status, catchup: p.catchup, run_at: p.run_at, mode: p.mode || 'day', delay: p.delay || 0, after: p.after, once: !!p.once, files: JSON.parse(JSON.stringify(p.files || [])), editRich: false };
+  const st = { who: p.who === 'new' ? 'new' : 'all', track: p.track || 'all', day: p.day ?? 1, time: p.time || '11:00', audience: p.audience, status: p.status, catchup: p.catchup, run_at: p.run_at, mode: p.mode || 'day', delay: p.delay || 0, after: p.after, once: !!p.once, files: JSON.parse(JSON.stringify(p.files || [])), editRich: false };
   const unitOf = (m) => (m >= 1440 && m % 1440 === 0 ? 1440 : m >= 60 && m % 60 === 0 ? 60 : 1);
   const unitSel = (sid, m) => '<select id="' + sid + '" style="width:auto;flex:none">' + [[1, 'минут'], [60, 'часов'], [1440, 'дней']].map(([v, t]) => '<option value="' + v + '"' + (unitOf(m) === v ? ' selected' : '') + '>' + t + '</option>').join('') + '</select>';
   const others = S.posts.filter((x) => ['drip', 'node', 'gift'].includes(x.kind) && x.id !== p.id);
@@ -1560,6 +1579,8 @@ function openPost(id, opt) {
     '<div class="toggle" id="onceWrap"><span><b>Кнопки-выбор</b><br><span class="small muted">После нажатия под постом остаётся только выбранный вариант с ✓ — человек не нажмёт второй</span></span><label class="sw"><input type="checkbox" id="fOnce" ' + (st.once ? 'checked' : '') + '><span></span></label></div>';
   if (p.kind !== 'node' && p.kind !== 'fb') h += '<label class="f">Трек из аудита</label>' + segHtml('fTrack', [['all', 'Всем'], ['course', '🎓 Мини-курс'], ['mat', '📚 Материалы']], st.track) +
     '<p class="small muted" style="margin:6px 2px 0">Мини-курс или материалы — что человек выбрал в аудите или в боте.</p>';
+  if (p.kind === 'node' && !p.fork) h += '<label class="f">Кому в начале пути</label>' + segHtml('fWho', [['all', 'Всем'], ['new', '🌱 Только без аудита']], st.who) +
+    '<p class="small muted" style="margin:6px 2px 0">Если пост стоит шагом входа: «только без аудита» — его увидят люди, пришедшие не из теста (например, из соцсетей). Кто прошёл аудит, этот шаг пропустит.</p>';
   h += '<label class="f">Статус</label>' + segHtml('fSt', [['active', '✅ Включён'], ['paused', '⏸ Пауза'], ['draft', '📝 Черновик']], st.status);
   if (!isNew && p.kind === 'drip') h += '<div class="box" style="margin-top:14px"><h3>Пост для шага входа</h3><p class="small muted" style="margin:0 0 8px">Уберёт пост из ленты по дням и положит в блок «Свои посты для шагов»: его можно будет поставить вместо шаблонного сообщения на любом шаге входа.</p><button class="btn ghost" id="bToStep" type="button">↔ Перевести в пост для шага</button></div>';
   if (!isNew && p.kind === 'node') {
@@ -1638,10 +1659,11 @@ function openPost(id, opt) {
   if ($('dMinus')) { $('dMinus').onclick = () => { st.day = Math.max(0, st.day - 1); haptic(); upd(); }; $('dPlus').onclick = () => { st.day = Math.min(365, st.day + 1); haptic(); upd(); }; $('fTime').oninput = upd; upd(); }
   if ($('fAud')) segBind('fAud', (v) => st.audience = v);
   if ($('fTrack')) segBind('fTrack', (v) => st.track = v);
+  if ($('fWho')) segBind('fWho', (v) => st.who = v);
   segBind('fSt', (v) => st.status = v);
 
   // кнопки: ссылка / пост / документ / оплата
-  let rows = JSON.parse(JSON.stringify(p.rows || [])).map((row) => row.map((b) => Object.assign({ t: b.go ? 'go' : b.doc ? 'doc' : b.pay ? 'pay' : b.lead ? 'lead' : b.file ? 'file' : 'url' }, b)));
+  let rows = JSON.parse(JSON.stringify(p.rows || [])).map((row) => row.map((b) => Object.assign({ t: b.go ? 'go' : b.doc ? 'doc' : b.pay ? 'pay' : b.lead ? 'lead' : b.fb ? 'fb' : b.file ? 'file' : 'url' }, b)));
   const targets = S.posts.filter((x) => x.id !== p.id);
   const optPosts = (cur) => '<option value="">— выбери пост —</option><option value="new"' + (cur === 'new' ? ' selected' : '') + '>＋ Новый пост-ответ (создам пустой)</option>' +
     ['node', 'drip', 'date', 'gift'].map((k) => { const l = targets.filter((x) => x.kind === k); return l.length ? '<optgroup label="' + KIND[k] + '">' + l.map((x) => '<option value="' + x.id + '"' + (+cur === x.id ? ' selected' : '') + '>' + esc(postName(x).slice(0, 44)) + (x.status !== 'active' ? ' · ' + (x.status === 'draft' ? 'черновик' : 'пауза') : '') + '</option>').join('') + '</optgroup>' : ''; }).join('');
@@ -1650,6 +1672,7 @@ function openPost(id, opt) {
     if (b.t === 'go') return '<select ' + a + ' data-f="go">' + optPosts(b.go) + '</select>';
     if (b.t === 'doc') return '<select ' + a + ' data-f="doc">' + Object.keys(S.docNames).map((k) => '<option value="' + k + '"' + (b.doc === k ? ' selected' : '') + '>' + esc(S.docNames[k]) + (S.docs[k] ? '' : ' — ссылка не задана') + '</option>').join('') + '</select>';
     if (b.t === 'file') return '<div class="small" style="margin:4px 2px">' + (b.file ? '📎 ' + esc(b.file.name || b.file.type) : 'файл не выбран') + '</div><button type="button" class="chip" data-pick="' + r + ':' + i + '">' + (b.file ? 'заменить файл' : '＋ выбрать файл') + '</button><p class="small muted" style="margin:4px 2px 0">По нажатию бот пришлёт этот файл в чат (до 50 МБ).</p>';
+    if (b.t === 'fb') return '<div class="small muted" style="margin:4px 2px">Человек нажимает — бот задаёт 2 вопроса про кабинет и присылает бонус за отзыв (посты «💬 Бонус за отзыв»). Один раз на человека.</div>';
     if (b.t === 'lead') return '<div class="small muted" style="margin:4px 2px">Человек нажимает — заявка сохраняется, тебе приходит карточка, ему «Заявка принята» (текст — во вкладке «Тексты»).</div>';
     if (b.t === 'pay') return '<select ' + a + ' data-f="pay">' + Object.keys(TARIFF).map((k) => '<option value="' + k + '"' + (b.pay === k ? ' selected' : '') + '>' + TARIFF[k] + '</option>').join('') + '</select><p class="small muted" style="margin:2px">Оплату через продамус подключим позже — пока кнопка отвечает «откроется в день продаж».</p>';
     return '<input type="text" placeholder="https://ссылка" inputmode="url" ' + a + ' data-f="url" value="' + esc(b.url || '') + '">';
@@ -1660,7 +1683,7 @@ function openPost(id, opt) {
       '<div class="brow"><div class="row" style="justify-content:space-between;margin-bottom:6px"><span class="small muted">' + (row.length > 1 ? 'Ряд ' + (r + 1) + ' · кнопки рядом' : 'Ряд ' + (r + 1)) + '</span><span>' +
       (r > 0 ? '<button type="button" class="chip" data-up="' + r + '" aria-label="выше">↑</button> ' : '') + (r < rows.length - 1 ? '<button type="button" class="chip" data-down="' + r + '" aria-label="ниже">↓</button>' : '') + '</span></div>' +
       row.map((b, i) => '<div class="bcard"><div style="display:grid;grid-template-columns:1fr auto;gap:6px"><input type="text" placeholder="Текст кнопки" maxlength="60" data-r="' + r + '" data-i="' + i + '" data-f="text" value="' + esc(b.text || '') + '"><button type="button" class="chip" data-del="' + r + ':' + i + '" aria-label="убрать кнопку">✕</button></div>' +
-        '<div class="btype">' + [['url', '🔗 Ссылка'], ['go', '➡️ Пост'], ['doc', '📄 Документ'], ['pay', '💳 Оплата'], ['lead', '📝 Заявка'], ['file', '📎 Файл']].map(([k, t]) => '<button type="button" data-type="' + k + '" data-r="' + r + '" data-i="' + i + '" class="' + (b.t === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>' + valueField(b, r, i) + '</div>').join('') +
+        '<div class="btype">' + [['url', '🔗 Ссылка'], ['go', '➡️ Пост'], ['doc', '📄 Документ'], ['pay', '💳 Оплата'], ['lead', '📝 Заявка'], ['fb', '💬 Отзыв'], ['file', '📎 Файл']].map(([k, t]) => '<button type="button" data-type="' + k + '" data-r="' + r + '" data-i="' + i + '" class="' + (b.t === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>' + valueField(b, r, i) + '</div>').join('') +
       (row.length < 4 ? '<button type="button" class="chip" data-add="' + r + '">＋ кнопка рядом</button>' : '') + '</div>').join('')
       + '<button type="button" class="addb" id="bClear" data-clear="1">убрать все кнопки</button>'
       : '<p class="small muted" style="margin:2px">Кнопок нет. Кнопка может вести на ссылку, на другой пост бота (развилка), на документ, на оплату тарифа или отдавать файл.</p>';
@@ -1742,11 +1765,12 @@ function openPost(id, opt) {
           b.go = r.post.id; created.push(r.post.id);
         }
       }
-      const outRows = rows.map((row) => row.map((b) => b.t === 'go' ? { text: b.text, go: +b.go || null } : b.t === 'doc' ? { text: b.text, doc: b.doc } : b.t === 'lead' ? { text: b.text, lead: true } : b.t === 'pay' ? { text: b.text, pay: b.pay } : b.t === 'file' ? { text: b.text, file: b.file || null } : { text: b.text, url: b.url }));
+      const outRows = rows.map((row) => row.map((b) => b.t === 'go' ? { text: b.text, go: +b.go || null } : b.t === 'doc' ? { text: b.text, doc: b.doc } : b.t === 'lead' ? { text: b.text, lead: true } : b.t === 'fb' ? { text: b.text, fb: true } : b.t === 'pay' ? { text: b.text, pay: b.pay } : b.t === 'file' ? { text: b.text, file: b.file || null } : { text: b.text, url: b.url }));
       for (const b of outRows.flat()) { if (b.go === null && b.text) throw new Error('У кнопки «' + b.text + '» не выбран пост'); if (b.file === null) throw new Error('У кнопки «' + b.text + '» не выбран файл'); }
       const body = { title: $('fTitle').value.trim(), status: st.status, rows: outRows, once: $('fOnce').checked, files: st.files };
       if (!p.rich || st.editRich) body.md = ta.value;
       if (p.kind !== 'node' && p.kind !== 'fb') { body.audience = 'all'; body.track = st.track; }
+      if (p.kind === 'node' && !p.fork) body.who = st.who;
       if (p.kind === 'drip') {
         body.mode = st.mode; body.catchup = $('fCatch').checked;
         if (st.mode === 'day') { body.day = st.day; body.time = st.day > 0 ? ($('fTime').value || st.time) : '00:00'; }
