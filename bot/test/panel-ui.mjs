@@ -251,9 +251,9 @@ await page.click('#fSt button[data-v="active"]');
 await page.click('#bSave'); await page.waitForTimeout(700);
 assert.equal((await db.first(`SELECT status, text FROM posts WHERE id = ?`, [node.id])).text, 'Отлично! Начнём с базы');
 // дерево: развилка, ответ внутри, документ и оплата
+await page.click('#tabs button[data-t="dates"]'); await page.waitForTimeout(300);
 const tree = await page.textContent('#body');
 assert.ok(/🔘 Начинаю с нуля/.test(tree) && /🔘 по кнопкеНачинаю с нуля/.test(tree) && /Политика обработки данных/.test(tree) && /Тариф с кураторами · подключим позже/.test(tree), 'дерево показывает ветки');
-await page.locator('.grp', { hasText: 'В дату' }).scrollIntoViewIfNeeded();
 await page.screenshot({ path: OUT + '/panel-12-tree.png', fullPage: true });
 step('конструктор: развилка с нуля, пост-ответ из кнопки, документ и оплата, дерево');
 

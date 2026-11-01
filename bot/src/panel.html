@@ -158,6 +158,20 @@ textarea{min-height:120px;resize:vertical;line-height:1.45}
 @media (max-width:360px){ .btype{grid-template-columns:repeat(2,1fr)} }
 
 .row2{display:grid;grid-template-columns:90px 1fr;gap:10px}
+/* новый вид пути: мягкий акцент, строки «придёт», вложенные служебные сообщения */
+:root{--accent:#b99cc4;--lilac:#ebe2ee}
+.chip.on,.chip.sw.on{background:var(--lilac);color:var(--ink);border-color:var(--line)}
+.sumln{font-size:12.5px;color:var(--soft);margin:3px 4px 0;line-height:1.35}
+.card .sumln,.fn .sumln{margin:2px 0 0}
+.stp+.sumln{margin:2px 6px 2px}
+.flowkids{margin:4px 0 6px 14px;padding:4px 0 2px 12px;border-left:1.5px solid var(--line);display:flex;flex-direction:column;gap:6px}
+.flowkids .fbl{font-size:12.5px;color:var(--soft)}
+.flowkids .meta{display:flex;flex-wrap:wrap;gap:6px}
+.svc{display:flex;align-items:center;gap:8px;text-align:left;border:1px solid var(--line);background:var(--bg);border-radius:12px;padding:9px 12px;font-size:13.5px;cursor:pointer;min-height:40px}
+.svc .hd{color:var(--faint);letter-spacing:-2px;font-size:12px}
+.ftabs{margin:6px 0 10px}
+.stp.skipd{opacity:.55}
+.btns.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 </style>
 </head>
 <body>
@@ -256,6 +270,17 @@ function loadThumbs(root) {
   imgs.forEach((i) => io.observe(i));
 }
 
+const whoOf = (p) => p.track === 'course' ? 'тем, кто выбрал мини-курс' : p.track === 'mat' ? 'тем, кто выбрал материалы' : 'всем';
+function comesWhen(p) {
+  if (p.kind === 'gift') return 'после теста';
+  if (p.kind === 'fb') return 'после отзыва о кабинете';
+  if (p.kind === 'node') return 'по кнопке или как шаг входа';
+  if (p.kind === 'date') return fmtRun(p.run_at);
+  if (p.mode === 'timer') return 'через ' + fmtDelay(p.delay) + ' после входа';
+  if (p.mode === 'after') { const par = byIdMap()[p.after]; return 'через ' + fmtDelay(p.delay) + ' после «' + (par ? postName(par).slice(0, 26) : '#' + p.after) + '»'; }
+  return p.day === 0 ? 'сразу после входа' : 'на день ' + p.day + ' в ' + p.time;
+}
+const sumLine = (p) => '<div class="sumln">придёт: ' + esc(whoOf(p)) + ', ' + esc(comesWhen(p)) + '</div>';
 function cardHtml(p, opts) {
   opts = opts || {};
   const off = view.level !== 'all' && !gets(p);
@@ -264,7 +289,7 @@ function cardHtml(p, opts) {
     (opts.drag ? '<div class="handle" aria-label="перетащить">⋮⋮</div>' : '<div style="width:6px"></div>') +
     '<div class="cbody"><div class="ctop">' + (time ? '<span class="time">' + esc(time) + '</span>' : '') +
     '<span class="stat">' + (p.sent ? 'отправлено ' + p.sent : 'ещё не отправлялся') + (p.clicks ? ' · нажатий ' + p.clicks : '') + '</span></div>' +
-    '<div class="ttl">' + esc(postName(p)) + '</div><div class="meta">' + tags(p) + '</div>' + mediaStrip(p) + '</div></div>';
+    '<div class="ttl">' + esc(postName(p)) + '</div>' + sumLine(p) + '<div class="meta">' + tags(p) + '</div>' + mediaStrip(p) + '</div></div>';
 }
 
 // ---------- отрисовка ----------
@@ -278,7 +303,7 @@ function render() {
       : tab === 'texts' ? '<h1>Тексты <i>бота</i></h1><p class="lead">Служебные сообщения: приветствие, согласия, вопросы, команды.</p>'
       : '<h1>Весь путь <i>ученика</i></h1><p class="lead">Вход, лента, даты и бонус — в одном месте.</p>') +
     '<div class="tabs"><div class="seg" id="tabs">' +
-    [['flow','Путь · ' + counts.feed],['dates','Даты · ' + counts.dates],['gifts','Подарки · ' + counts.gifts],['reviews','Отзывы · ' + counts.fb],['texts','Тексты']].map(([k,t]) => '<button data-t="' + k + '" class="' + (tab === k ? 'on' : '') + '">' + t + '</button>').join('') +
+    [['flow','Путь · ' + counts.feed],['dates','Даты · ' + counts.dates],['gifts','Подарки · ' + (counts.gifts + S.posts.filter((p) => p.kind === 'fb').length)],['reviews','CRM'],['texts','Прочее']].map(([k,t]) => '<button data-t="' + k + '" class="' + (tab === k ? 'on' : '') + '">' + t + '</button>').join('') +
     '</div></div><div id="body"></div>';
   $('tabs').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; tab = b.dataset.t; haptic(); render(); window.scrollTo(0, 0); };
   ({ flow: renderFlow, feed: renderFlow, dates: renderDates, gifts: renderGifts, reviews: renderReviews, texts: renderTexts })[tab]();
@@ -286,6 +311,7 @@ function render() {
 }
 
 function viewBox() { return ''; }
+function feedTabs() { const t = view.track || 'all'; return '<div class="seg ftabs" role="tablist" aria-label="Кому придёт">' + [['all', 'Все'], ['course', '🎓 Мини-курс'], ['mat', '📚 Материалы']].map(([k, n]) => '<button type="button" role="tab" data-ftrk="' + k + '" class="' + (t === k ? 'on' : '') + '">' + n + '</button>').join('') + '</div>'; }
 function bindView() {}
 
 function renderFeed() { renderFlow(); }
@@ -295,7 +321,7 @@ function daysHtml() {
   const ids = byIdMap();
   const maxDay = drip.reduce((m, p) => Math.max(m, bucketDay(p, ids)), 0);
   const last = Math.max(7, maxDay + 1);
-  const filtered = (view.hide && view.level !== 'all') ? drip.filter(gets) : drip;
+  const filtered = drip.filter((p) => (view.track || 'all') === 'all' || (p.track || 'all') === 'all' || p.track === view.track);
   let h = '';
   if (!drip.length) h += '<div class="empty">Постов по дням пока нет.<br>Создай первый: «＋ Новый пост» вверху.</div>';
   for (let d = 0; d <= last; d++) {
@@ -384,7 +410,7 @@ function runBox() {
   const r = S.run;
   const src = S.runSrc || 'audit';
   return '<div class="box"><h3>Проверить на себе</h3><p class="small muted" style="margin:0 0 10px">Весь путь придёт тебе в бот: вход, подарок, расписание, посты ленты и бонус за отзыв — с подписью «что и когда». </p>' +
-    '<div class="seg" style="margin-bottom:10px"><button type="button" class="' + (src === 'audit' ? 'on' : '') + '" data-rsrc="audit">после аудита</button><button type="button" class="' + (src === 'site' ? 'on' : '') + '" data-rsrc="site">с сайта, без аудита</button></div>' +
+    '<div class="seg" style="margin-bottom:10px"><button type="button" class="' + (src === 'audit' ? 'on' : '') + '" data-rsrc="audit">из аудита</button><button type="button" class="' + (src === 'site' ? 'on' : '') + '" data-rsrc="site">не из аудита (сайт, инста)</button></div>' +
     '<div class="btns" style="margin-top:0"><button class="btn" id="runPrev" type="button">▶️ Посмотреть весь путь сейчас</button>' +
     (r ? '<div class="note" style="margin:0">⏩ Идёт ускоренный тест (1 день = 1 минута) · уже пришло: ' + r.sent + '</div><button class="btn danger" id="runStop" type="button">⏹ Остановить тест</button>'
        : '<button class="btn ghost" id="runFast" type="button">⏩ Ускоренный тест: 1 день = 1 минута</button>') + '</div></div>';
@@ -400,14 +426,18 @@ function bindRun() {
 function renderDates() {
   const ds = S.posts.filter((p) => p.kind === 'date').sort((a, b) => (a.run_at || 9e12) - (b.run_at || 9e12));
   const now = Date.now() / 1000;
-  let h = viewBox();
+  let h = '<div class="btns" style="margin-top:14px"><button class="btn" type="button" id="newDate">＋ Анонс на дату</button></div>';
   if (!ds.length) h += '<div class="empty">Постов на конкретную дату пока нет.<br>Создай в боте: <b>/new</b> → «В конкретные дату и время». Подходит для эфиров и анонсов.</div>';
+  const nodeD = makeNode(new Set());
   ds.forEach((p) => {
     const past = p.run_at && p.run_at < now;
-    h += '<div style="margin-top:10px">' + cardHtml(p, { time: fmtRun(p.run_at) + (past ? ' · уже ушёл' : '') }) + '</div>';
+    h += '<div style="margin-top:10px" class="tree">' + nodeD(p, 0, []) + (past ? '<p class="small muted" style="margin:4px 4px 0">уже ушёл</p>' : '') + '</div>';
   });
   h += '<div class="note" style="margin-top:18px">Пост на дату уходит один раз всем подходящим, кто уже в боте в этот момент.</div>';
   $('body').innerHTML = h; bindView(); bindCards();
+  $('newDate').onclick = () => { haptic(); openNew({ kind: 'date' }); };
+  document.querySelectorAll('.fn,.ref').forEach((el) => el.onclick = () => openPost(+el.dataset.id));
+  document.querySelectorAll('[data-add]').forEach((el) => el.onclick = () => openPost(+el.dataset.add, { focus: 'buttons' }));
 }
 
 function renderGifts() {
@@ -417,8 +447,14 @@ function renderGifts() {
     const list = gs.filter((p) => (p.track || 'all') === a);
     h += '<div class="grp">' + t + '</div>' + (list.length ? list.map((p) => cardHtml(p)).join('<div style="height:8px"></div>') : '<p class="small muted" style="margin:6px 2px;border:1.5px dashed var(--line);border-radius:16px;padding:12px">Пока нет. Создай в боте: <b>/new</b> → «Подарок после теста».</p>');
   });
+  const fbs = S.posts.filter((p) => p.kind === 'fb').sort((a, b) => a.pos - b.pos || a.id - b.id);
+  h += '<div class="grp">💬 Бонус за отзыв</div><p class="small muted" style="margin:-2px 2px 10px">Уходит сразу после отзыва о кабинете. Если не дошёл, отправь вручную в CRM.</p>' + (fbs.length ? fbs.map((p) => cardHtml(p)).join('<div style="height:8px"></div>') : '<p class="small muted dash">Пока пусто.</p>') +
+    '<div class="btns two" style="margin:8px 0 4px"><button type="button" class="btn ghost" data-newk="fb">＋ Новый пост</button><button type="button" class="btn ghost" data-pickk="fb">📋 Из существующих</button></div><button type="button" class="btn ghost" data-fbback="1" style="margin:0 0 4px">📤 Отправить тем, кто уже оставил отзыв</button>';
   if (!gs.length) h += '<div class="note warn" style="margin-top:16px">Подарков нет — после теста люди получат «Подарок скоро появится здесь 🎁».</div>';
   $('body').innerHTML = h; bindCards();
+  document.querySelectorAll('[data-newk]').forEach((el) => el.onclick = () => { haptic(); openNew({ kind: el.dataset.newk }); });
+  document.querySelectorAll('[data-fbback]').forEach((el) => el.onclick = () => { haptic(); fbBackfill(); });
+  document.querySelectorAll('[data-pickk]').forEach((el) => el.onclick = () => { haptic(); pickExisting(el.dataset.pickk); });
 }
 
 // CRM отзывов
@@ -641,9 +677,8 @@ function whenOf(p) {
   return '📅 ' + (p.mode === 'timer' ? 'через ' + fmtDelay(p.delay) + ' после входа' : p.day === 0 ? 'день 0 · сразу' : 'день ' + p.day + ' · ' + p.time);
 }
 
-function renderFlow() {
+function makeNode(shown) {
   const ids = byIdMap();
-  const shown = new Set();
   const node = (p, depth, path) => {
     const loop = path.includes(p.id);
     if (loop || shown.has(p.id) || depth > 6) {
@@ -666,23 +701,27 @@ function renderFlow() {
     kids += '<button type="button" class="addb" data-add="' + p.id + '">＋ кнопка или следующий пост</button>';
     return h + '<div class="kids">' + kids + '</div>';
   };
+  return node;
+}
+function renderFlow() {
+  const ids = byIdMap();
+  const shown = new Set();
+  const node = makeNode(shown);
   const isRoot = (p) => !(p.kind === 'drip' && p.mode === 'after' && ids[p.after]);
   const gifts = S.posts.filter((p) => p.kind === 'gift' && isRoot(p)).sort((a, b) => a.id - b.id);
   const drip = S.posts.filter((p) => p.kind === 'drip' && isRoot(p)).sort((a, b) => offMin(a, ids) - offMin(b, ids) || a.pos - b.pos || a.id - b.id);
   const dates = S.posts.filter((p) => p.kind === 'date').sort((a, b) => (a.run_at || 9e12) - (b.run_at || 9e12));
-  let h = '<div class="btns" style="margin-top:16px"><button class="btn" type="button" id="newPost">＋ Новый пост</button></div>';
+  let h = runBox();
+  h += '<div class="btns two" style="margin:0 0 4px"><button class="btn" type="button" id="newPost">＋ Пост</button><button class="btn ghost" type="button" data-newk="date">＋ Анонс на дату</button></div>';
+  h += '<div class="grp">Вход</div>' + entryBox();
   h += poolBox();
-  h += entryBox();
-  h += viewBox() + runBox();
   const sec = (title, note, list, kind) => '<div class="grp">' + title + '</div>' + (note ? '<p class="small muted" style="margin:-2px 2px 10px">' + note + '</p>' : '') +
     (list.length ? list.map((p) => '<div class="tree">' + node(p, 0, []) + '</div>').join('') : '<p class="small muted dash">Пока пусто.</p>') +
     (kind ? '<div class="btns two" style="margin:8px 0 4px"><button type="button" class="btn ghost" data-newk="' + kind + '">＋ Новый пост</button><button type="button" class="btn ghost" data-pickk="' + kind + '">📋 Из существующих</button></div>' + (kind === 'fb' ? '<button type="button" class="btn ghost" data-fbback="1" style="margin:0 0 4px">📤 Отправить тем, кто уже оставил отзыв</button>' : '') : '');
-  h += sec('🎁 После теста', 'Подарок уходит сразу после аудит-теста.', gifts, 'gift');
+  [...gifts, ...dates, ...S.posts.filter((p) => p.kind === 'fb')].forEach((p) => node(p, 0, [])); // цепочки подарков, дат и бонусов не считаем потерянными
   drip.forEach((p) => node(p, 0, [])); // обходим цепочки, чтобы не считать посты-ответы потерянными
-  h += '<div class="grp">📅 Лента по дням</div><p class="small muted" style="margin:-2px 2px 10px">Тяни пост за ⋮⋮ на другой день — время подстроится. Нажми на пост, чтобы поменять день, время, кнопки и кому он уходит.</p>' + daysHtml() +
+  h += '<div class="grp">📅 Лента по дням</div><p class="small muted" style="margin:-2px 2px 10px">Тяни пост за ⋮⋮ на другой день — время подстроится. Нажми на пост, чтобы поменять день, время, кнопки и кому он уходит.</p>' + feedTabs() + daysHtml() +
     '<div class="btns two" style="margin:8px 0 4px"><button type="button" class="btn ghost" data-newk="drip">＋ Новый пост</button><button type="button" class="btn ghost" data-pickk="drip">📋 Из существующих</button></div>';
-  h += sec('🕒 В дату', 'Уходит один раз в выбранные дату и время всем, кто уже в боте. Для эфиров и анонсов.', dates, 'date');
-  h += sec('💬 Бонус за отзыв', 'Уходит сразу после отзыва о прототипе кабинета.', S.posts.filter((p) => p.kind === 'fb').sort((a, b) => a.pos - b.pos || a.id - b.id), 'fb');
   const stepPosts = new Set((S.msgs || []).map((m) => m.post).filter(Boolean));
   const lost = S.posts.filter((p) => p.kind === 'node' && !shown.has(p.id) && !stepPosts.has(p.id));
   if (lost.length) h += sec('🔘 Посты-ответы без кнопки', 'На них пока не ведёт ни одна кнопка и они не стоят на шаге входа — человек их не получит. Привяжи кнопкой («＋ кнопка» → «Пост») или перетащи на шаг входа выше.', lost);
@@ -692,6 +731,7 @@ function renderFlow() {
   document.querySelectorAll('[data-fbback]').forEach((el) => el.onclick = () => { haptic(); fbBackfill(); });
   document.querySelectorAll('[data-pickk]').forEach((el) => el.onclick = () => { haptic(); pickExisting(el.dataset.pickk); });
   bindEntry(); bindPool(); bindView(); bindRun(); bindDays();
+  document.querySelectorAll('[data-ftrk]').forEach((b) => b.onclick = () => { view.track = b.dataset.ftrk; haptic(); renderFeed(); });
   document.querySelectorAll('.fn,.ref').forEach((el) => el.onclick = () => openPost(+el.dataset.id));
   document.querySelectorAll('[data-add]').forEach((el) => el.onclick = () => openPost(+el.dataset.add, { focus: 'buttons' }));
 }
@@ -750,6 +790,22 @@ const ENTRY = {
   askTrack: ['🎓 Мини-курс или материалы', () => 'спрашиваем, если не выбрал в аудите'],
   testOffer: ['🧪 Тест → 🎁 подарок', () => 'подарков включено: ' + S.posts.filter((p) => p.kind === 'gift' && p.status === 'active').length + ' · если выключить, подарок всё равно придёт'],
 };
+const WHO = { hello: 'всем, сразу после «Старт»', consentPd: 'всем, первым шагом', consentAds: 'всем', askName: 'всем, у кого ещё нет имени', askContact: 'всем, у кого ещё нет контакта', fbOffer: 'всем, по желанию', askTrack: 'тем, у кого ещё не выбран трек', testOffer: 'тем, кто ещё не проходил тест', schedCourse: 'всем, последним шагом входа' };
+const SKIPS = { askTrack: 'пропускается, если пришёл из аудита: трек уже в ссылке', testOffer: 'не предлагается, если пришёл из аудита: тест пройден, подарок идёт сразу' };
+function entryExtra(k, o) {
+  const fromAudit = (S.runSrc || 'audit') === 'audit';
+  const skip = fromAudit && SKIPS[k] && !o.off;
+  let h = '<div class="sumln">' + (skip ? SKIPS[k] : /^post:/.test(k) ? 'придёт: всем, отдельным шагом' : 'придёт: ' + (WHO[k] || 'всем')) + '</div>';
+  const st = FLOW.find((x) => x.key === k);
+  if (!st || (skip && k === 'askTrack')) return h;
+  const btns = (st.btns || []).map(mOf).filter(Boolean);
+  const alts = (st.alt || []).map(mOf).filter(Boolean);
+  if (!btns.length && !alts.length) return h;
+  h += '<div class="flowkids">';
+  if (btns.length) h += '<div class="fbl">кнопки</div><div class="meta">' + btns.map((m) => '<button type="button" class="chip" data-svc="' + m.key + '">🔘 ' + esc(m.text) + '</button>').join('') + '</div>';
+  if (alts.length) h += '<div class="fbl">служебные сообщения</div>' + alts.map((m) => '<button type="button" class="svc" data-svc="' + m.key + '"><span class="hd" aria-hidden="true">⋮⋮</span><span>' + esc(m.title) + (m.changed ? ' ✎' : '') + '</span></button>').join('');
+  return h + '</div>';
+}
 function entryBox() {
   const d = S.docs || {};
   const ok = (k) => d[k] ? '<span class="ok-t">✓</span>' : '<span class="warn-t">не задана</span>';
@@ -760,7 +816,7 @@ function entryBox() {
     '<b>' + i + '</b><span class="st-t">' + t + (sub ? '<i>' + sub + '</i>' : '') + '</span>' +
     (k !== 'schedCourse' ? '<button type="button" class="chip" data-next="' + k + '" aria-label="что дальше" title="добавить пост после этого шага" style="padding:4px 10px;font-weight:700">＋</button>' : '') +
     (o.mv && !window.Sortable ? '<span class="mv"><button type="button" class="chip" data-up="' + k + '" aria-label="выше">▲</button><button type="button" class="chip" data-down="' + k + '" aria-label="ниже">▼</button></span>' : '') +
-    (o.nx2 ? '' : '') + (o.rm ? '<button type="button" class="chip" data-rm="' + k + '" aria-label="убрать из сценария">✕</button>' : '') + (o.sw ? '<button type="button" class="chip sw' + (o.off ? '' : ' on') + '" data-sw="' + k + '">' + (o.off ? 'выкл' : 'вкл') + '</button>' : '') + '</div>';
+    (o.nx2 ? '' : '') + (o.rm ? '<button type="button" class="chip" data-rm="' + k + '" aria-label="убрать из сценария">✕</button>' : '') + (o.sw ? '<button type="button" class="chip sw' + (o.off ? '' : ' on') + '" data-sw="' + k + '">' + (o.off ? 'выкл' : 'вкл') + '</button>' : '') + '</div>' + entryExtra(k, o);
   const pt = (k) => { const m = S.msgs.find((x) => x.key === k); const p = m && m.post && S.posts.find((x) => x.id === m.post); return p ? ' · 🔁 твой пост «' + esc((p.title || p.text || '#' + p.id).slice(0, 30)) + '»' : ''; };
   let n = 1;
   let h = row('hello', '👋 Приветствие', 'из аудита приходит выбор: мини-курс или материалы' + pt('hello'), n++, {});
@@ -836,6 +892,7 @@ function bindEntry() {
       saveFlow(o, cur().off);
     },
   });
+  list.querySelectorAll('[data-svc]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); openMsg(b.dataset.svc); });
   $('docsBtn').onclick = openDocs;
   $('peopleBtn').onclick = openPeople;
 }
