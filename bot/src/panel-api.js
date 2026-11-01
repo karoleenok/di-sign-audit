@@ -233,6 +233,34 @@ export async function handlePanelApi(ctx, request, url) {
       }),
     });
   }
+  // CRM: все люди одним списком — этап, контакты, заявка, отзыв, бонус
+  if (path === '/crm') {
+    const us = await ctx.db.all(`SELECT tg_id, first_name, username, contact_name, phone, email, level, zone, track, status, source, fb_like, fb_improve, fb_at, fb_skip, consent_pd_at, consent_ads_at, contact_at, created_at, joined_at, sched_at FROM users ORDER BY created_at DESC LIMIT 500`);
+    const ld = await ctx.db.all(`SELECT tg_id, MAX(created_at) AS at, MAX(done) AS done FROM leads GROUP BY tg_id`);
+    const cl = await ctx.db.all(`SELECT tg_id, COUNT(*) AS n FROM clicks GROUP BY tg_id`);
+    const dl = await ctx.db.all(`SELECT d.tg_id, COUNT(*) AS n FROM deliveries d JOIN posts p ON p.id = d.post_id WHERE p.kind = 'fb' AND d.ok = 1 GROUP BY d.tg_id`);
+    const active = (await ctx.db.all(`SELECT id FROM posts WHERE kind = 'fb' AND status = 'active'`)).length;
+    const L = Object.fromEntries(ld.map((x) => [x.tg_id, x])), C = Object.fromEntries(cl.map((x) => [x.tg_id, x.n])), D = Object.fromEntries(dl.map((x) => [x.tg_id, x.n]));
+    const stageOf = (u) => {
+      if (u.status === 'blocked') return ['blocked', 'заблокировал бота'];
+      if (u.status === 'stopped') return ['stopped', 'отписался от рассылки'];
+      if (u.sched_at) return ['feed', 'в ленте'];
+      if (!u.consent_pd_at) return ['entry', 'не дал согласие на данные'];
+      if (!u.consent_ads_at) return ['entry', 'не ответил про рассылку'];
+      if (!u.contact_name) return ['entry', 'ждём имя'];
+      if (!u.contact_at) return ['entry', 'ждём контакт'];
+      if (!u.track) return ['entry', 'выбирает мини-курс или материалы'];
+      return ['entry', 'дописывает вход'];
+    };
+    const people = us.map((u) => {
+      const [stage, stageText] = stageOf(u);
+      const sent = D[u.tg_id] || 0;
+      return { tg_id: u.tg_id, name: u.contact_name || u.first_name || '', username: u.username, phone: u.phone, email: u.email, level: u.level, zone: u.zone, track: u.track, source: u.source, stage, stageText,
+        created_at: u.created_at, done: !!u.sched_at, lead: L[u.tg_id] ? { at: L[u.tg_id].at, done: !!L[u.tg_id].done } : null, clicks: C[u.tg_id] || 0,
+        review: u.fb_at ? { at: u.fb_at, like: u.fb_like, improve: u.fb_improve, bonusSent: sent, bonusPending: Math.max(0, active - sent) } : null, fbSkip: !!u.fb_skip };
+    });
+    return json({ people, activeBonus: active });
+  }
   // отправить бонус одному человеку
   if (path === '/fb/send' && request.method === 'POST') {
     const id = Number(body.tg_id);

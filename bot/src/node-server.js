@@ -21,7 +21,7 @@ import { migrate } from './schema.js';
 import { makeCtx, handleUpdate, tick, setup, clickRedirect, exportAll } from './core.js';
 import { handlePanelApi, panelAdmin } from './panel-api.js';
 import { stepRuns } from './testrun.js';
-import PANEL from './panel-html.js';
+import PANEL, { BUILD } from './panel-html.js';
 import { filePage, mimeOf, kindOf } from './filepage.js';
 
 const env = process.env;
@@ -61,6 +61,7 @@ const server = http.createServer(async (req, res) => {
   };
   try {
     // панель админа (кнопка в боте) и её API
+    if (url.pathname === '/admin/build') return send(200, BUILD, 'text/plain; charset=utf-8', { 'cache-control': 'no-store' });
     if (url.pathname === '/admin' || url.pathname === '/admin/') return send(200, PANEL, 'text/html; charset=utf-8', { 'cache-control': 'no-store' });
     // большие файлы для кнопок: кладём на диск сервера (Telegram принимает от бота не больше 50 МБ)
     if (url.pathname === '/api/panel/bigfile' && req.method === 'POST') {

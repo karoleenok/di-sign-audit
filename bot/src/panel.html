@@ -208,6 +208,9 @@ textarea{min-height:120px;resize:vertical;line-height:1.45}
 .stdiv{text-align:center;font-size:12px;color:var(--soft);padding:6px 0}
 @keyframes stIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.m.new{animation:none}}
+.funnel{display:flex;align-items:center;gap:8px;margin:14px 0 4px}.funnel>div{flex:1;background:#fff;border:1px solid var(--line,rgba(44,13,2,.12));border-radius:16px;padding:10px 12px;text-align:center}.funnel b{display:block;font-size:22px;font-family:inherit}.funnel span{font-size:12px;color:var(--muted,#7a6a62)}.funnel i{color:var(--muted,#7a6a62);font-style:normal}
+.chip.on{background:var(--ink,#2c0d02);color:#fff}.msg.crm .nm{font-weight:600}.cts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.cp{border:0;background:rgba(44,13,2,.06);border-radius:10px;padding:5px 9px;font:inherit;font-size:13px;color:inherit;cursor:pointer}
+.msg.crm a.chip{color:inherit;text-decoration:none}#crmQ{width:100%;box-sizing:border-box;padding:12px 14px;border:1px solid rgba(44,13,2,.15);border-radius:14px;background:#fff;font:inherit;font-size:15px}
 </style>
 </head>
 <body>
@@ -240,7 +243,19 @@ async function api(path, body) {
 function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toast._t); toast._t = setTimeout(() => el.classList.remove('on'), 2200); }
 const haptic = (k) => { try { tg && tg.HapticFeedback.impactOccurred(k || 'light'); } catch (e) {} };
 
+const BUILD = '@@BUILD@@';
+// панель, открытая из старой кнопки, сама подтягивает свежую версию (Telegram любит кэшировать)
+function checkBuild() {
+  if (/@@/.test(BUILD)) return;
+  fetch('/admin/build', { cache: 'no-store' }).then((r) => r.ok ? r.text() : '').then((b) => {
+    b = String(b || '').trim();
+    if (!b || b === BUILD || !/^[0-9a-f]{8}$/.test(b)) return;
+    let n = 0; try { n = +sessionStorage.getItem('rb') || 0; sessionStorage.setItem('rb', String(n + 1)); } catch (e) {}
+    if (n < 2) location.replace('/admin?v=' + b);
+  }).catch(() => {});
+}
 async function load() {
+  checkBuild();
   if (!INIT) { $('gate').querySelector('h1').textContent = 'Открой панель из бота'; $('gateText').textContent = 'Напиши боту команду /admin и нажми «Открыть панель».'; return; }
   try { S = await api('/state'); render(); }
   catch (e) { $('gate').querySelector('h1').textContent = 'Нет доступа'; $('gateText').textContent = e.message; }
@@ -336,11 +351,11 @@ function render() {
   app.innerHTML =
     '<div class="top"><span class="pill">Di Sign University · панель</span><span class="small muted">людей: ' + S.people.all + ' · в рассылке: ' + S.people.active + '</span></div>' +
     (tab === 'flow' ? '<h1>Путь <i>ученика</i></h1><p class="lead" hidden>Вход, подарок, лента по дням, даты и бонус за отзыв — в одном месте. Тяни за ⋮⋮, нажми на пост или шаг — откроется редактор.</p>'
-      : tab === 'reviews' ? '<h1>Отзывы <i>о кабинете</i></h1><p class="lead">Кто что написал, как с ним связаться и ушёл ли ему бонус.</p>'
+      : tab === 'reviews' ? '<h1>Люди <i>в боте</i></h1><p class="lead">Кто где остановился, как с ним связаться и что оставил: заявку или отзыв.</p>'
       : tab === 'texts' ? '<h1>Тексты <i>бота</i></h1><p class="lead">Служебные сообщения: приветствие, согласия, вопросы, команды.</p>'
       : '<h1>Весь путь <i>ученика</i></h1><p class="lead">Вход, лента, даты и бонус — в одном месте.</p>') +
     '<div class="tabs"><div class="seg" id="tabs">' +
-    [['flow','Путь · ' + counts.feed],['dates','Даты · ' + counts.dates],['gifts','Подарки · ' + (counts.gifts + S.posts.filter((p) => p.kind === 'fb').length)],['reviews','CRM'],['texts','Прочее']].map(([k,t]) => '<button data-t="' + k + '" class="' + (tab === k ? 'on' : '') + '">' + t + '</button>').join('') +
+    [['flow','Путь · ' + counts.feed],['dates','Даты · ' + counts.dates],['gifts','Подарки · ' + (counts.gifts + S.posts.filter((p) => p.kind === 'fb').length)],['reviews','Люди'],['texts','Прочее']].map(([k,t]) => '<button data-t="' + k + '" class="' + (tab === k ? 'on' : '') + '">' + t + '</button>').join('') +
     '</div></div><div id="body"></div>';
   $('tabs').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; tab = b.dataset.t; haptic(); render(); window.scrollTo(0, 0); };
   ({ flow: renderFlow, feed: renderFlow, dates: renderDates, gifts: renderGifts, reviews: renderReviews, texts: renderTexts })[tab]();
@@ -491,36 +506,62 @@ function renderGifts() {
   document.querySelectorAll('[data-pickk]').forEach((el) => el.onclick = () => { haptic(); pickExisting(el.dataset.pickk); });
 }
 
-// CRM отзывов
+// Люди (CRM): один список — где человек, как с ним связаться, что он оставил
+const crmView = { f: 'all', q: '', open: null };
+let crmData = null;
 async function renderReviews() {
-  $('body').innerHTML = '<p class="muted" style="margin-top:16px">Загружаю…</p>';
-  let d; try { d = await api('/reviews'); } catch (e) { $('body').innerHTML = '<div class="note warn">' + esc(e.message) + '</div>'; return; }
-  const fmt = (x) => { const dd = new Date((x + 10800) * 1000); return dd.getUTCDate() + '.' + String(dd.getUTCMonth() + 1).padStart(2, '0') + ' в ' + String(dd.getUTCHours()).padStart(2, '0') + ':' + String(dd.getUTCMinutes()).padStart(2, '0'); };
+  if (!crmData) $('body').innerHTML = '<p class="muted" style="margin-top:16px">Загружаю…</p>';
+  try { crmData = await api('/crm'); } catch (e) { $('body').innerHTML = '<div class="note warn">' + esc(e.message) + '</div>'; return; }
+  drawCrm();
+}
+function drawCrm() {
+  const all = crmData.people;
+  const fmt = (x) => { if (!x) return ''; const dd = new Date((x + 10800) * 1000); return dd.getUTCDate() + '.' + String(dd.getUTCMonth() + 1).padStart(2, '0'); };
   const trk = { course: '🎓 мини-курс', mat: '📚 материалы' };
-  const pending = d.reviews.filter((u) => u.bonus.pending > 0 && u.status !== 'blocked').length;
-  let h = '<div class="meta" style="margin:16px 0 10px"><span class="tag">отзывов ' + d.reviews.length + '</span><span class="tag">бонус не отправлен: ' + pending + '</span><span class="tag">постов-бонусов включено: ' + d.active + '</span></div>';
-  if (!d.active) h += '<div class="note warn">Нет включённых постов «бонус за отзыв». Включи пост во вкладке «Сценарий» → «Бонус за отзыв» (статус «активен»), иначе отправлять нечего.</div>';
-  if (pending > 1) h += '<div class="btns" style="margin:0 0 10px"><button class="btn ghost" id="rvAll">📤 Отправить всем без бонуса (' + pending + ')</button></div>';
-  h += '<p class="small muted">Это персональные данные: не пересылай их в чаты.</p>';
-  if ((d.leads || []).length) h += '<div class="grp">📝 Заявки на предзапись · ' + d.leads.length + '</div>' + d.leads.map((l) => {
-    const name = l.contact_name || l.first_name || 'без имени';
-    const c = [l.username ? '<a href="https://t.me/' + esc(l.username) + '" target="_blank" rel="noopener">@' + esc(l.username) + '</a>' : '', l.phone ? esc(l.phone) : '', l.email ? esc(l.email) : ''].filter(Boolean).join(' · ') || 'контактов нет';
-    return '<div class="box" style="margin:8px 0"><b>' + esc(name) + '</b> <span class="small muted">' + fmt(l.created_at) + (l.track ? ' · ' + (trk[l.track] || '') : '') + '</span>' + (l.done ? '' : ' <span class="tag warn-t">ждём имя и контакт</span>') + '<div class="small" style="margin-top:4px">' + c + '</div><div class="small muted" style="margin-top:2px">' + esc(l.source || '') + '</div></div>';
-  }).join('');
-  h += d.reviews.map((u) => {
-    const name = u.contact_name || u.first_name || 'без имени';
-    const links = [u.username ? '<a href="https://t.me/' + esc(u.username) + '" target="_blank" rel="noopener">@' + esc(u.username) + '</a>' : '', u.phone ? esc(u.phone) : '', u.email ? esc(u.email) : ''].filter(Boolean).join(' · ') || 'контакт не оставил';
-    const b = u.bonus; let status;
-    if (u.status === 'blocked') status = '<span class="tag warn-t">заблокировал бота — бонус не отправить</span>';
-    else if (b.pending === 0 && b.sent > 0) status = '<span class="tag ok-t">✓ бонус отправлен ' + fmt(b.last_at) + '</span>';
-    else if (b.sent > 0) status = '<span class="tag">отправлен ' + fmt(b.last_at) + ', есть новые посты: ' + b.pending + '</span><button type="button" class="chip" data-send="' + u.tg_id + '">📤 Отправить остальные</button>';
-    else status = '<span class="tag warn-t">бонус не отправлен</span><button type="button" class="chip" data-send="' + u.tg_id + '">📤 Отправить</button>';
-    return '<div class="msg" style="cursor:default"><div class="t">' + esc(name) + (u.track ? '<span class="tag zone">' + trk[u.track] + '</span>' : '') + '<span class="stat">отзыв ' + fmt(u.fb_at) + '</span></div>' +
-      '<div class="small muted" style="margin-top:2px">' + links + '</div>' +
-      '<div class="preview" style="margin-top:8px">👍 ' + esc(u.fb_like || '—') + '\n\n🛠 ' + esc(u.fb_improve || '—') + '</div>' +
-      '<div class="meta" style="margin-top:8px;align-items:center">' + status + '</div></div>';
-  }).join('') || '<div class="empty">Отзывов пока нет.</div>';
+  const hasContact = (u) => u.username || u.phone || u.email;
+  const F = {
+    all: ['Все', () => true],
+    entry: ['Застряли на входе', (u) => u.stage === 'entry'],
+    feed: ['В ленте', (u) => u.stage === 'feed'],
+    lead: ['Заявки', (u) => !!u.lead],
+    review: ['Отзывы', (u) => !!u.review],
+    nocontact: ['Без контакта', (u) => !hasContact(u) && u.stage !== 'blocked'],
+    gone: ['Ушли', (u) => u.stage === 'stopped' || u.stage === 'blocked'],
+  };
+  const cnt = (k) => all.filter(F[k][1]).length;
+  const q = crmView.q.trim().toLowerCase();
+  const list = all.filter(F[crmView.f][1]).filter((u) => !q || [u.name, u.username, u.phone, u.email].filter(Boolean).join(' ').toLowerCase().includes(q));
+  const pend = all.filter((u) => u.review && u.review.bonusPending > 0 && u.stage !== 'blocked').length;
+  let h = '<div class="funnel"><div><b>' + all.length + '</b><span>пришли</span></div><i>→</i><div><b>' + all.filter((u) => u.done).length + '</b><span>прошли вход</span></div><i>→</i><div><b>' + cnt('feed') + '</b><span>в ленте</span></div></div>' +
+    '<p class="small muted" style="margin:6px 2px 10px">Это персональные данные: не пересылай их в чаты и не скачивай на чужие устройства.</p>' +
+    '<input type="search" id="crmQ" placeholder="Поиск: имя, @ник, телефон, почта" value="' + esc(crmView.q) + '" style="margin-bottom:8px">' +
+    '<div class="meta" id="crmF" style="margin-bottom:10px">' + Object.keys(F).map((k) => '<button type="button" class="chip' + (crmView.f === k ? ' on' : '') + '" data-f="' + k + '">' + F[k][0] + ' · ' + cnt(k) + '</button>').join('') + '</div>';
+  if (crmView.f === 'review' && !crmData.activeBonus) h += '<div class="note warn">Нет включённых постов «бонус за отзыв»: включи пост во вкладке «Подарки», иначе отправлять нечего.</div>';
+  if (crmView.f === 'review' && pend > 1) h += '<div class="btns" style="margin:0 0 10px"><button class="btn ghost" id="rvAll">📤 Отправить бонус всем, кто не получил (' + pend + ')</button></div>';
+  const stTag = (u) => ({ feed: 'ok-t', entry: 'warn-t', stopped: '', blocked: 'warn-t' }[u.stage] || '');
+  h += list.map((u) => {
+    const nm = u.name || 'без имени';
+    const open = crmView.open === u.tg_id;
+    const copy = [u.username ? '@' + u.username : '', u.phone || '', u.email || ''].filter(Boolean);
+    const contacts = copy.length ? copy.map((c) => '<button type="button" class="cp" data-cp="' + esc(c) + '" title="нажми, чтобы скопировать">' + esc(c) + '</button>').join('') : '<span class="muted">контакт не оставил</span>';
+    const tags = '<span class="tag ' + stTag(u) + '">' + esc(u.stageText) + '</span>' + (u.track ? '<span class="tag zone">' + trk[u.track] + '</span>' : '') + (u.zone ? '<span class="tag">из аудита</span>' : u.source ? '<span class="tag">' + esc(u.source) + '</span>' : '') + (u.level ? '<span class="tag">' + esc((S.levels && S.levels[u.level]) || u.level) + '</span>' : '');
+    const marks = (u.lead ? '<span class="tag ' + (u.lead.done ? 'ok-t' : 'warn-t') + '">✋ заявка' + (u.lead.done ? '' : ' (без контакта)') + '</span>' : '') + (u.review ? '<span class="tag">💬 отзыв</span>' : '') + (u.clicks ? '<span class="tag">нажатий: ' + u.clicks + '</span>' : '');
+    let act = '';
+    if (u.username) act += '<a class="chip" href="https://t.me/' + esc(u.username) + '" target="_blank" rel="noopener">✉️ написать</a>';
+    else if (u.stage !== 'blocked') act += '<a class="chip" href="tg://user?id=' + u.tg_id + '">✉️ написать</a>';
+    if (u.review && u.stage !== 'blocked') act += u.review.bonusPending > 0 ? '<button type="button" class="chip" data-send="' + u.tg_id + '">📤 ' + (u.review.bonusSent ? 'Отправить остальные бонусы' : 'Отправить бонус') + '</button>' : '<span class="tag ok-t">✓ бонус отправлен</span>';
+    return '<div class="msg crm" data-id="' + u.tg_id + '" style="cursor:default"><div class="t"><span class="nm">' + esc(nm) + '</span><span class="stat">' + fmt(u.created_at) + '</span></div>' +
+      '<div class="meta" style="margin-top:6px">' + tags + marks + '</div>' +
+      '<div class="cts">' + contacts + '</div>' +
+      (u.review ? '<div class="preview" style="margin-top:8px">👍 ' + esc(u.review.like || '—') + '\n\n🛠 ' + esc(u.review.improve || '—') + '</div>' : '') +
+      (act ? '<div class="meta" style="margin-top:8px">' + act + '</div>' : '') + '</div>';
+  }).join('') || '<div class="empty">' + (all.length ? 'Никого не нашла по этому фильтру.' : 'Пока никого: люди появятся, когда нажмут «Старт» в боте.') + '</div>';
+  const keep = document.activeElement && document.activeElement.id === 'crmQ';
   $('body').innerHTML = h;
+  if (keep) { const el = $('crmQ'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+  $('crmQ').oninput = (e) => { crmView.q = e.target.value; drawCrm(); };
+  $('crmF').onclick = (e) => { const b = e.target.closest('[data-f]'); if (!b) return; crmView.f = b.dataset.f; haptic(); drawCrm(); };
+  document.querySelectorAll('[data-cp]').forEach((el) => el.onclick = () => { const t = el.dataset.cp; (navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast('Скопировано: ' + t)).catch(() => { try { const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); toast('Скопировано: ' + t); } catch (e) { toast(t); } }); });
   const send = async (el, id) => { el.disabled = true; const old = el.textContent; el.textContent = 'Отправляю…'; try { await api('/fb/send', { tg_id: id }); haptic('medium'); toast('Бонус отправлен ✓'); renderReviews(); } catch (e) { toast(e.message); el.disabled = false; el.textContent = old; } };
   document.querySelectorAll('[data-send]').forEach((el) => el.onclick = () => send(el, +el.dataset.send));
   if ($('rvAll')) $('rvAll').onclick = async () => { $('rvAll').disabled = true; $('rvAll').textContent = 'Отправляю…'; try { const r = await api('/fb/backfill', { since: 'all' }); toast('Отправлено: ' + r.people + ' чел.'); renderReviews(); } catch (e) { toast(e.message); } };
