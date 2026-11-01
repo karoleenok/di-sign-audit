@@ -2,8 +2,9 @@
 // Вход: панель присылает initData от Telegram, мы проверяем подпись токеном бота
 // (так подделать вход нельзя) и что человек — админ.
 import { isAdmin, startContentEdit } from './admin.js';
+import { lastBackup } from './backup.js';
 import { AUD, LEVELS } from './texts.js';
-import { sendPost, audienceCount, loadDocs, DOCS, TRACKS, cleanFile } from './posts.js';
+import { sendPost, audienceCount, loadDocs, DOCS, TRACKS, cleanFile, snapPost } from './posts.js';
 import { mdToEntities, entitiesToMd } from './fmt.js';
 import { runPreview, runFullPath, startFastRun, stopRuns, stepRuns, activeRun } from './testrun.js';
 import { onStart, docVars, consentView, backfillFb, loadFlow, normFlow, FLOW_OPTIONAL } from './users.js';
@@ -136,6 +137,7 @@ export async function handlePanelApi(ctx, request, url) {
       posts: posts.map((p) => postOut(p, sent[p.id], clicks[p.id])),
       msgs: await listMsgs(ctx),
       docs: await loadDocs(ctx), docNames: DOCS, tracks: TRACKS, flow: await loadFlow(ctx), flowOptional: FLOW_OPTIONAL,
+      backup: await lastBackup(ctx),
       leadCount: ((await ctx.db.first(`SELECT COUNT(*) AS n FROM users WHERE tg_id IN (SELECT tg_id FROM leads) OR fb_at IS NOT NULL`)) || {}).n || 0,
       fbCount: ((await ctx.db.first(`SELECT COUNT(*) AS n FROM users WHERE fb_at IS NOT NULL`)) || {}).n || 0,
       people: { all: people.n || 0, active: people.active || 0 },
@@ -200,7 +202,10 @@ export async function handlePanelApi(ctx, request, url) {
     }
     if (body.catchup !== undefined) put('catchup', body.catchup ? 1 : 0);
     if (body.run_at !== undefined && p.kind === 'date') { const t = Number(body.run_at); if (!(t > 0)) return json({ error: 'Неверная дата' }, 400); put('run_at', t); }
-    if (set.length) await ctx.db.run(`UPDATE posts SET ${set.join(', ')} WHERE id = ?`, [...val, id]);
+    if (set.length) {
+      if (set.some((x) => /^(text|entities|media) =/.test(x))) await snapPost(ctx, id, user.id, user.first_name);
+      await ctx.db.run(`UPDATE posts SET ${set.join(', ')} WHERE id = ?`, [...val, id]);
+    }
     let np = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [id]);
     if (np.status === 'active' && !np.fork && !(np.text || '').trim() && !j(np.media, []).length) {
       await ctx.db.run(`UPDATE posts SET status = 'draft' WHERE id = ?`, [id]);
@@ -425,6 +430,21 @@ export async function handlePanelApi(ctx, request, url) {
     await stopRuns(ctx, user.id);
     await ctx.tg.call('sendMessage', { chat_id: user.id, text: '⏹ Ускоренный тест остановлен' }).catch(() => {});
     return json({ ok: true });
+  }
+
+  m = /^\/post\/(\d+)\/versions$/.exec(path);
+  if (m && request.method === 'GET') {
+    const rows = await ctx.db.all(`SELECT id, text, entities, media, by_name, at FROM post_versions WHERE post_id = ? ORDER BY id DESC`, [+m[1]]);
+    return json({ versions: rows.map((r) => ({ id: r.id, at: r.at, by: r.by_name || '', md: entitiesToMd(r.text || '', j(r.entities, [])).md, files: j(r.media, []).length })) });
+  }
+  m = /^\/post\/(\d+)\/restore$/.exec(path);
+  if (m && request.method === 'POST') {
+    const v = await ctx.db.first(`SELECT * FROM post_versions WHERE id = ? AND post_id = ?`, [parseInt(body.version, 10) || 0, +m[1]]);
+    if (!v) return json({ error: 'Такой версии нет' }, 404);
+    await snapPost(ctx, +m[1], user.id, user.first_name);
+    await ctx.db.run(`UPDATE posts SET text = ?, entities = ?, media = ? WHERE id = ?`, [v.text, v.entities, v.media, +m[1]]);
+    const np = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [+m[1]]);
+    return json({ ok: true, post: postOut(np) });
   }
 
   m = /^\/post\/(\d+)\/rewrite$/.exec(path);

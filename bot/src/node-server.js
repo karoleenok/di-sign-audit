@@ -21,6 +21,7 @@ import { migrate } from './schema.js';
 import { makeCtx, handleUpdate, tick, setup, clickRedirect, exportAll } from './core.js';
 import { handlePanelApi, panelAdmin } from './panel-api.js';
 import { stepRuns } from './testrun.js';
+import { backupTick, makeBackup } from './backup.js';
 import PANEL, { BUILD } from './panel-html.js';
 import { filePage, mimeOf, kindOf } from './filepage.js';
 
@@ -163,6 +164,7 @@ server.listen(Number(env.PORT) || 8080, () => console.log('bot listening', Numbe
 // расписание раз в минуту
 setInterval(async () => {
   try { await tick(ctxFor(), Number(env.TICK_BUDGET) || 600); await stepRuns(ctxFor(), 10); } catch (e) { console.error('tick', e); }
+  try { await backupTick(ctxFor(), file); } catch (e) { console.error('backup', e); }
 }, 60_000);
 
 // режим без вебхука: сами забираем сообщения у Telegram (через мост, если нужен)

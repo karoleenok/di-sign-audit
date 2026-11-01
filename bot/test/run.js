@@ -937,5 +937,31 @@ step('развилка по треку');
   assert.equal(row.text, 'НОВЫЙ ТЕКСТ', 'содержимое заменено'); assert.ok(row.buttons && /disign\.ru/.test(row.buttons), 'кнопки сохранились');
 }
 step('замена содержимого поста через бота');
+// история версий: правка из панели и из бота сохраняет прежний текст, возврат работает
+{
+  const { handlePanelApi } = await import('../src/panel-api.js');
+  const crypto = await import('node:crypto');
+  const pp = new URLSearchParams({ auth_date: String(NOW), user: JSON.stringify({ id: 100, first_name: 'Админ' }) });
+  const dcs = [...pp.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, v]) => `${k}=${v}`).join('\n');
+  const secret = crypto.createHmac('sha256', 'WebAppData').update(env.BOT_TOKEN).digest();
+  pp.set('hash', crypto.createHmac('sha256', secret).update(dcs).digest('hex'));
+  const call = async (path, body) => { const req = new Request('https://bot.test/api/panel' + path, { method: body ? 'POST' : 'GET', headers: { 'x-init-data': pp.toString(), 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }); const r = await handlePanelApi(C(), req, new URL(req.url)); return r.json(); };
+  const hp = (await call('/post/new', { kind: 'node', md: 'ВЕРСИЯ 1', status: 'active' })).post;
+  assert.equal((await call('/post/' + hp.id + '/versions')).versions.length, 0, 'у нового поста истории нет');
+  await call('/post/' + hp.id, { md: 'ВЕРСИЯ 2' });
+  await call('/post/' + hp.id, { md: 'ВЕРСИЯ 3' });
+  let vs = (await call('/post/' + hp.id + '/versions')).versions;
+  assert.deepEqual(vs.map((v) => v.md), ['ВЕРСИЯ 2', 'ВЕРСИЯ 1'], 'прежние тексты сохранены, свежие сверху');
+  await call('/post/' + hp.id, { title: 'Только название' });
+  assert.equal((await call('/post/' + hp.id + '/versions')).versions.length, 2, 'правка названия историю не плодит');
+  const back = await call('/post/' + hp.id + '/restore', { version: vs[1].id });
+  assert.equal(back.post.md, 'ВЕРСИЯ 1', 'версия возвращена');
+  vs = (await call('/post/' + hp.id + '/versions')).versions;
+  assert.equal(vs[0].md, 'ВЕРСИЯ 3', 'возврат запомнил текущий текст');
+  for (let i = 0; i < 14; i++) await call('/post/' + hp.id, { md: 'Правка ' + i });
+  assert.equal((await call('/post/' + hp.id + '/versions')).versions.length, 10, 'хранится не больше 10 версий');
+  assert.equal((await call('/post/' + hp.id + '/restore', { version: 999999 })).error, 'Такой версии нет');
+}
+step('история версий текста поста');
 
 console.log('\nВсе сценарии прошли. Запросов к фейковому Telegram:', calls.length);

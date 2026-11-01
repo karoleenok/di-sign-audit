@@ -1,5 +1,5 @@
 import { AUD } from './texts.js';
-import { sendPost, postSummary, postLabel, postWhen, audienceCount, loadDocs } from './posts.js';
+import { sendPost, postSummary, postLabel, postWhen, audienceCount, loadDocs, snapPost } from './posts.js';
 import { parseTime, parseWhen, fmtTime, fmtWhen } from './time.js';
 import { GUIDE, GUIDE_MENU } from './guide.js';
 import { MSG, MSG_GROUPS, msgInfo, loadMsgs, saveMsg, resetMsg, setMsgMedia, canMedia, say as sayMsg, msg as msgText, adminCommands } from './msgs.js';
@@ -261,6 +261,8 @@ export async function onAdminCallback(ctx, cq) {
     if (c.extra) await say(ctx, id, `В альбоме максимум 10 вложений — ${c.extra} лишних не войдут.`);
     if (d.target && d.target.startsWith('edit:')) {
       const pid = +d.target.split(':')[1];
+      const who = await ctx.db.first(`SELECT first_name FROM users WHERE tg_id = ?`, [id]);
+      await snapPost(ctx, pid, id, who && who.first_name);
       await ctx.db.run(`UPDATE posts SET text = ?, entities = ?, media = ? WHERE id = ?`, [c.text, c.entities, c.media, pid]);
       await clearState(ctx, id);
       return showPost(ctx, id, pid, 'Содержимое обновлено ✓');

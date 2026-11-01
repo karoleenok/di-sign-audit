@@ -26,8 +26,12 @@ step('вход только по подписи Telegram и только для 
 
 // 2. лента
 await page.goto('http://localhost:8788/admin');
-await page.waitForSelector('#newPost');
+await page.waitForSelector('.hm');
+assert.ok(await page.$('.hm-g'), 'главная: цифры за неделю');
+assert.ok(/копи/.test(await page.textContent('.hm')), 'главная: видно состояние копии базы');
+await page.screenshot({ path: OUT + '/panel-0-home.png', fullPage: true });
 await page.click('#tabs button[data-t="flow"]');
+await page.waitForSelector('#newPost');
 await page.waitForSelector('.card');
 await page.screenshot({ path: OUT + '/panel-1-feed.png', fullPage: true });
 const days = await page.$$eval('.list[data-day]', (ls) => ls.map((l) => [l.dataset.day, l.children.length]));

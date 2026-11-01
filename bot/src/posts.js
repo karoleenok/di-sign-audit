@@ -233,3 +233,13 @@ export async function resolveFork(ctx, id, p) {
   }
   return p && p.fork ? null : p;
 }
+
+// запомнить текущее содержимое поста перед заменой (последние 10, одинаковые подряд не дублируем)
+export async function snapPost(ctx, pid, byId, byName) {
+  const p = await ctx.db.first(`SELECT text, entities, media FROM posts WHERE id = ?`, [pid]);
+  if (!p || (!(p.text || '').trim() && (!p.media || p.media === '[]'))) return;
+  const last = await ctx.db.first(`SELECT text, entities, media FROM post_versions WHERE post_id = ? ORDER BY id DESC LIMIT 1`, [pid]);
+  if (last && last.text === p.text && last.entities === p.entities && last.media === p.media) return;
+  await ctx.db.run(`INSERT INTO post_versions (post_id, text, entities, media, by_id, by_name, at) VALUES (?, ?, ?, ?, ?, ?, ?)`, [pid, p.text, p.entities, p.media, byId || null, byName || null, ctx.now]);
+  await ctx.db.run(`DELETE FROM post_versions WHERE post_id = ? AND id NOT IN (SELECT id FROM post_versions WHERE post_id = ? ORDER BY id DESC LIMIT 10)`, [pid, pid]);
+}

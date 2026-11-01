@@ -121,6 +121,15 @@ export const MIGRATIONS = [
   ],
   // v: развилка по треку (мини-курс / материалы)
   [`ALTER TABLE posts ADD COLUMN fork TEXT`],
+  // история текста постов: прежние версии, чтобы можно было вернуть
+  [
+    `CREATE TABLE IF NOT EXISTS post_versions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      post_id INTEGER NOT NULL, text TEXT, entities TEXT, media TEXT,
+      by_id INTEGER, by_name TEXT, at INTEGER NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS post_versions_post ON post_versions (post_id, id)`,
+  ],
 ];
 
 // Обновить базу при первом запуске после выкладки новой версии (один раз на процесс)
