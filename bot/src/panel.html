@@ -1326,6 +1326,9 @@ function openMsg(key) {
   let h = '<span class="pill">' + (m.button ? 'Кнопка' : m.group === 'profile' ? 'Профиль бота' : 'Сообщение') + '</span><h2>' + esc(m.title) + '</h2>' +
     (m.group === 'profile' ? '<div class="note">' + (m.key === 'botDesc' ? 'Этот текст человек видит в пустом чате до нажатия «Старт».' : m.key === 'botShort' ? 'Виден в профиле бота и когда ссылку на бота пересылают.' : 'Подпись команды в меню «Меню» слева от поля ввода.') + ' Обычный текст до ' + m.limit + ' знаков. Применится в Telegram сразу после сохранения.</div>' : '') +
     (m.emoji ? '<div class="note warn">В этом тексте есть премиум-эмодзи. Если сохранить его отсюда, они станут обычными. Чтобы оставить премиум — меняй в боте: <b>/texts</b>.</div>' : '') +
+    (m.canMedia ? '<label class="f" style="margin-top:10px">Заменить шаблон своим постом</label><select id="mPost"><option value="">— нет, оставить шаблон —</option>' + (S.posts || []).map((p) => '<option value="' + p.id + '"' + (m.post === p.id ? ' selected' : '') + '>#' + p.id + ' · ' + esc((p.title || p.text || 'без названия').slice(0, 40)) + '</option>').join('') + '</select>' +
+      '<div id="postBox"></div>' : '') +
+    '<div id="tplBox">' +
     (m.button ? '<input type="text" id="mText" maxlength="64" value="' + esc(m.text) + '">' : '<textarea id="mText"' + (m.limit ? ' maxlength="' + m.limit + '"' : '') + '>' + esc(m.text) + '</textarea>') +
     (m.limit && !m.button ? '<p class="small muted" style="margin:6px 2px 0" id="mCount"></p>' : '') +
     (m.canMedia ? '<label class="f">Картинка над текстом</label>' + (m.media
@@ -1333,7 +1336,7 @@ function openMsg(key) {
         '<div class="btns two" style="margin-top:8px"><button class="btn ghost" id="mAdd" type="button">Заменить</button><button class="btn ghost" id="mDelImg" type="button">Убрать</button></div>'
       : '<button class="btn ghost" id="mAdd" type="button">＋ Добавить картинку, гифку или видео</button>') +
       '<input type="file" id="mFile" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4" hidden><p class="small muted" style="margin:6px 2px 0">Текст станет подписью под картинкой (до 1024 знаков — длиннее уйдёт следующим сообщением).</p>' : '') +
-    (m.canMedia ? '<label class="f">Подставить свой пост вместо этого шаблона</label><select id="mPost"><option value="">— нет, оставить шаблон —</option>' + (S.posts || []).map((p) => '<option value="' + p.id + '"' + (m.post === p.id ? ' selected' : '') + '>#' + p.id + ' · ' + esc((p.title || p.text || 'без названия').slice(0, 40)) + '</option>').join('') + '</select><p class="small muted" style="margin:6px 2px 0">Ученик получит выбранный пост (текст, картинки и все его кнопки: ссылки, другие посты, документы). Кнопки самого шага — «Даю согласие», «Всё верно» и т.п. — встанут под кнопками поста, чтобы путь не сломался. Пока выбран пост, текст шаблона выше не показывается.</p>' : '') +
+    '</div>' +
     (m.canMedia ? '<label class="f">Пауза перед сообщением</label><div class="row"><input type="text" inputmode="decimal" id="mDelay" style="width:90px" value="' + String(m.delay).replace('.', ',') + '"><span class="muted">сек — столько бот «печатает» (• • •) перед ним' + (m.delay !== m.defDelay ? ' · было ' + String(m.defDelay).replace('.', ',') : '') + '</span></div>' +
       '<label class="f">Кнопки под сообщением</label>' + builtinBtns(m.key) + '<div id="mLinks"></div><p class="small muted" style="margin:6px 2px 0">Кнопка может вести на ссылку, на другой пост бота, на документ, на оплату тарифа или отдавать файл. Встают под встроенными кнопками шага.</p>' : '') +
     (m.vars.length ? '<p class="small muted" style="margin:10px 2px 0">Нажми, чтобы вставить — бот подставит сам:</p><div class="vars" id="mVars">' + m.vars.map((v) => '<button type="button" data-v="{' + v + '}">{' + v + '}</button>').join('') + '</div>' : '') +
@@ -1375,6 +1378,15 @@ function openMsg(key) {
   if ($('mDelImg')) $('mDelImg').onclick = async () => { try { const r = await api('/msg/' + key, { removeMedia: true }); S.msgs = r.msgs; toast('Картинку убрали'); openMsg(key); render(); } catch (e) { toast(e.message); } };
   if ($('mCount')) { const upc = () => { $('mCount').textContent = ta.value.length + ' / ' + m.limit; }; ta.oninput = upc; upc(); }
   if ($('mVars')) $('mVars').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; const s = ta.selectionStart ?? ta.value.length, en = ta.selectionEnd ?? s; ta.value = ta.value.slice(0, s) + b.dataset.v + ta.value.slice(en); ta.focus(); ta.selectionStart = ta.selectionEnd = s + b.dataset.v.length; };
+  if ($('mPost')) {
+    const showPost = () => {
+      const pid = +$('mPost').value, p = (S.posts || []).find((x) => x.id === pid);
+      $('tplBox').style.display = p ? 'none' : '';
+      $('postBox').innerHTML = p ? '<div class="card" style="margin:10px 0"><div class="cbody"><div class="ttl' + (p.title ? ' cap' : '') + '">' + esc(postName(p)) + '</div>' + mediaStrip(p) + (p.text ? '<div class="tx">' + esc(p.text) + '</div>' : '') + chipsOf(p) + '</div></div><p class="small muted" style="margin:0 2px">Ученик получит этот пост целиком: текст, картинки и кнопки. Кнопки шага («Даю согласие» и т.п.) встанут под ними. Текст шаблона не отправляется.</p>' : '';
+      if (p) loadThumbs($('postBox'));
+    };
+    $('mPost').onchange = showPost; showPost();
+  }
   $('mClose').onclick = closeSheet;
   $('mPrev').onclick = async () => { try { await api('/msg/' + key + '/preview', {}); toast('Отправила тебе в бот — так видит ученик (сохранённая версия)'); } catch (e) { toast(e.message); } };
   $('mSave').onclick = async () => {
