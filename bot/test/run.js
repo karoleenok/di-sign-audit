@@ -722,10 +722,13 @@ step('кнопка «файл»: у шага и у поста по нажати�
     assert.equal((await db.first(`SELECT COUNT(*) AS n FROM leads WHERE tg_id = ?`, [Y])).n, 1, 'заявка записана');
     assert.equal((await db.first(`SELECT done FROM leads WHERE tg_id = ?`, [Y])).done, 0, 'без имени и контакта заявка не считается принятой');
     assert.ok(!calls.slice(c0).some((c) => c.body.chat_id === 100 && /Новая заявка/.test(c.body.text || '')), 'админу карточка пока не ушла');
-    assert.ok(calls.slice(c0).some((c) => c.body.chat_id === Y && /имя и способ связи/.test(c.body.text || '')), 'человека просят оставить имя и контакт');
+    assert.ok(calls.slice(c0).some((c) => c.body.chat_id === Y && /имя и номер телефона/.test(c.body.text || '')), 'человека просят оставить имя и телефон');
     await cb(Y, 'n:ok');
-    if ((await db.first(`SELECT done FROM leads WHERE tg_id = ?`, [Y])).done === 0) { await cb(Y, 'ct:phone'); await msg(Y, '+79991234567'); }
-    assert.equal((await db.first(`SELECT done FROM leads WHERE tg_id = ?`, [Y])).done, 1, 'после имени и контакта заявка принята');
+    assert.equal((await db.first(`SELECT done FROM leads WHERE tg_id = ?`, [Y])).done, 0, 'одного имени мало: нужен телефон');
+    await db.run(`UPDATE users SET email = 'y@mail.ru' WHERE tg_id = ?`, [Y]);
+    assert.ok(calls.slice(c0).some((c) => c.body.chat_id === Y && /Отправить телефон|номер/.test(JSON.stringify(c.body))), 'просят именно телефон');
+    await msg(Y, '+79991234567');
+    assert.equal((await db.first(`SELECT done FROM leads WHERE tg_id = ?`, [Y])).done, 1, 'после имени и телефона заявка принята');
     assert.ok(calls.slice(c0).some((c) => c.body.chat_id === Y && /Заявка принята/.test(c.body.text || '')), 'человеку «заявка принята»');
     assert.ok(calls.slice(c0).some((c) => c.body.chat_id === 100 && /Новая заявка/.test(c.body.text || '')), 'админу пришла карточка');
     await cb(Y, 'ld:p:' + lp.id);

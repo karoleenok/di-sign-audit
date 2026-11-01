@@ -413,18 +413,20 @@ async function afterData(ctx, id) {
   if (await finishLead(ctx, id, false)) return;
   return nextStep(ctx, await getUser(ctx, id));
 }
-// заявка принимается, когда есть имя и хотя бы один способ связи: @ник, телефон или почта
+// заявка принимается, когда есть имя и номер телефона
 async function finishLead(ctx, id, first) {
   const lead = await ctx.db.first(`SELECT id, source FROM leads WHERE tg_id = ? AND done = 0 ORDER BY id DESC LIMIT 1`, [id]);
   if (!lead) return false;
   const u = await getUser(ctx, id);
-  if (!u.contact_name || !(u.username || u.phone || u.email)) {
+  if (!u.contact_name || !u.phone) {
     if (first) { await say(ctx, id, 'leadNeed', {}); }
     if (!u.contact_name) {
       await setUState(ctx, id, 'u:name');
       await tech(ctx, id, say(ctx, id, 'askName', { имя: u.first_name || 'друг' }, { reply_markup: kb([[{ text: await btn(ctx, 'nameOk'), callback_data: 'n:ok' }]]) }));
     } else {
-      await askContact(ctx, u);
+      // для заявки нужен именно телефон
+      await setUState(ctx, id, 'u:phone');
+      await tech(ctx, id, say(ctx, id, 'askPhone', {}, { reply_markup: { keyboard: [[{ text: await btn(ctx, 'phoneBtn'), request_contact: true }]], resize_keyboard: true, one_time_keyboard: true } }));
     }
     return true;
   }
@@ -439,7 +441,7 @@ async function notifyLead(ctx, u, src) {
   const ids = new Set([...String(ctx.env.ADMIN_IDS || '').split(/[\s,;]+/).filter(Boolean).map(Number), ...(await ctx.db.all(`SELECT tg_id FROM admins`)).map((r) => r.tg_id)]);
   const who = (u.contact_name || u.first_name || 'без имени') + (u.username ? ' · @' + u.username : '') + (u.phone ? ' · ' + u.phone : '') + (u.email ? ' · ' + u.email : '');
   const trk = u.track === 'course' ? 'мини-курс' : u.track === 'mat' ? 'материалы' : '—';
-  const text = `📝 Новая заявка на предзапись\n${who}\nТрек: ${trk}\nОткуда: ${src}` + (u.username || u.phone || u.email ? '' : `\n\n⚠️ Контактов нет — написать можно только через бота: tg://user?id=${u.tg_id}`);
+  const text = `📝 Новая заявка на предзапись\n${who}\nТрек: ${trk}\nОткуда: ${src}` + (u.phone ? '' : `\n\n⚠️ Телефона нет — написать можно только через бота: tg://user?id=${u.tg_id}`);
   for (const a of ids) if (a !== u.tg_id) await ctx.tg.call('sendMessage', { chat_id: a, text: text.slice(0, 4000), disable_notification: false }).catch(() => {});
 }
 

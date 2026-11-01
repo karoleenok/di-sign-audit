@@ -534,7 +534,7 @@ function drawCrm() {
     const nm = u.name || 'без имени';
     const copy = [u.username ? '@' + u.username : '', u.phone || '', u.email || ''].filter(Boolean);
     const contacts = copy.length ? copy.map((c) => '<button type="button" class="cp" data-cp="' + esc(c) + '" title="нажми, чтобы скопировать">' + esc(c) + '</button>').join('') : '<span class="muted">контакт не оставил</span>';
-    const tags = (u.lead ? '<span class="tag ' + (u.lead.done ? 'ok-t' : 'warn-t') + '">✋ заявка' + (u.lead.done ? '' : ': ждём имя и контакт') + '</span>' : '') + (u.review ? '<span class="tag">💬 отзыв</span>' : '') + (u.track ? '<span class="tag zone">' + trk[u.track] + '</span>' : '') + (u.level ? '<span class="tag">' + esc((S.levels && S.levels[u.level]) || u.level) + '</span>' : '') + (u.zone ? '<span class="tag">из аудита</span>' : '') + (u.stage === 'blocked' ? '<span class="tag warn-t">заблокировал бота</span>' : '');
+    const tags = (u.lead ? '<span class="tag ' + (u.lead.done ? 'ok-t' : 'warn-t') + '">✋ заявка' + (u.lead.done ? '' : ': ждём имя и телефон') + '</span>' : '') + (u.review ? '<span class="tag">💬 отзыв</span>' : '') + (u.track ? '<span class="tag zone">' + trk[u.track] + '</span>' : '') + (u.level ? '<span class="tag">' + esc((S.levels && S.levels[u.level]) || u.level) + '</span>' : '') + (u.zone ? '<span class="tag">из аудита</span>' : '') + (u.stage === 'blocked' ? '<span class="tag warn-t">заблокировал бота</span>' : '');
     let act = '';
     if (u.username) act = '<a class="chip" href="https://t.me/' + esc(u.username) + '" target="_blank" rel="noopener">✉️ написать</a>';
     else if (u.stage !== 'blocked') act = '<a class="chip" href="tg://user?id=' + u.tg_id + '">✉️ написать через Telegram</a>';
