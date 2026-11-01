@@ -921,5 +921,21 @@ step('служебные ответы: вкл/выкл');
   }
 }
 step('развилка по треку');
+// заменить содержимое готового поста через бота (из панели)
+{
+  const { handlePanelApi } = await import('../src/panel-api.js');
+  const crypto = await import('node:crypto');
+  const p = new URLSearchParams({ auth_date: String(NOW), user: JSON.stringify({ id: 100, first_name: 'Админ' }) });
+  const dcs = [...p.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, v]) => `${k}=${v}`).join('\n');
+  const secret = crypto.createHmac('sha256', 'WebAppData').update(env.BOT_TOKEN).digest();
+  p.set('hash', crypto.createHmac('sha256', secret).update(dcs).digest('hex'));
+  const call = async (path, body) => { const req = new Request('https://bot.test/api/panel' + path, { method: 'POST', headers: { 'x-init-data': p.toString(), 'content-type': 'application/json' }, body: JSON.stringify(body) }); const r = await handlePanelApi(C(), req, new URL(req.url)); return r.json(); };
+  const np = (await call('/post/new', { kind: 'node', md: 'СТАРЫЙ ТЕКСТ', status: 'active', rows: [[{ text: 'Ссылка', url: 'https://disign.ru' }]] })).post;
+  assert.ok((await call('/post/' + np.id + '/rewrite', {})).ok, 'панель включила режим замены');
+  await msg(100, 'НОВЫЙ ТЕКСТ'); await cb(100, 'w:done');
+  const row = await C().db.first('SELECT text, buttons FROM posts WHERE id = ?', [np.id]);
+  assert.equal(row.text, 'НОВЫЙ ТЕКСТ', 'содержимое заменено'); assert.ok(row.buttons && /disign\.ru/.test(row.buttons), 'кнопки сохранились');
+}
+step('замена содержимого поста через бота');
 
 console.log('\nВсе сценарии прошли. Запросов к фейковому Telegram:', calls.length);

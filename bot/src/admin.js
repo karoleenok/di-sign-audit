@@ -376,6 +376,14 @@ async function listPosts(ctx, id, archived) {
   return say(ctx, id, archived ? 'Архив постов:' : 'Посты: ✅ включён · 📝 черновик · ⏸ пауза. Нажми, чтобы открыть.', { reply_markup: kb(btns) });
 }
 
+// из панели: следующее, что админ пришлёт боту (текст, картинки, альбом), заменит содержимое поста — как /new, но для готового поста
+export async function startContentEdit(ctx, id, pid) {
+  await clearState(ctx, id);
+  await setState(ctx, id, 'w:content', { target: 'edit:' + pid });
+  const p = await ctx.db.first(`SELECT title, text FROM posts WHERE id = ?`, [pid]);
+  const nm = p ? (p.title || (p.text || '').split('\n')[0] || '#' + pid).slice(0, 50) : '#' + pid;
+  return say(ctx, id, `Меняем содержимое поста «${nm}». ` + CONTENT_PROMPT);
+}
 export async function showPost(ctx, id, pid, note) {
   const p = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [pid]);
   if (!p) return say(ctx, id, 'Пост не найден.');

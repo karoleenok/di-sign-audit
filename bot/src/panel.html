@@ -1362,7 +1362,7 @@ function openPost(id, opt) {
       '<div class="btns" style="margin-top:8px"><button class="btn ghost" id="bToFeed" type="button">↔ Поставить в ленту</button></div></div>';
   }
   h += '<div class="btns"><button class="btn" id="bSave">' + (isNew ? 'Создать пост' : 'Сохранить') + '</button>' +
-    (isNew ? '<button class="btn ghost" id="bClose">Отмена</button>' : '<div class="btns two" style="margin:0"><button class="btn ghost" id="bPrev">👁 Прислать мне</button><button class="btn ghost" id="bClose">Закрыть</button></div><button class="btn danger" id="bArch">🗄 Убрать в архив</button>') + '</div>';
+    (isNew ? '<button class="btn ghost" id="bClose">Отмена</button>' : '<div class="btns two" style="margin:0"><button class="btn ghost" id="bPrev">👁 Прислать мне</button><button class="btn ghost" id="bClose">Закрыть</button></div><button class="btn ghost" id="bRew" type="button">✏️ Заменить содержимое через бота (как /new)</button><p class="small muted" style="margin:4px 2px 8px">Бот попросит прислать новый текст, картинки или альбом. Старое содержимое поста заменится, кнопки и время останутся.</p><button class="btn danger" id="bArch">🗄 Убрать в архив</button>') + '</div>';
   sheet(h);
 
   // текст: панель оформления и счётчик
@@ -1477,6 +1477,7 @@ function openPost(id, opt) {
 
   const close = () => closeSheet();
   $('bX').onclick = close; $('bClose').onclick = close;
+  if ($('bRew')) $('bRew').onclick = async () => { try { await api('/post/' + p.id + '/rewrite', {}); haptic('medium'); toast('Открой чат с ботом и пришли новое содержимое, потом нажми «Готово»'); setTimeout(() => { try { tg && tg.close(); } catch (e) {} }, 1200); } catch (e) { toast(e.message); } };
   if ($('bPrev')) $('bPrev').onclick = async () => { try { const r = await api('/post/' + p.id + '/preview', {}); toast(r.warn ? '⚠️ ' + r.warn : 'Отправила тебе в бот 👀'); } catch (e) { toast(e.message); } };
   if ($('bToStep')) $('bToStep').onclick = async () => { try { await api('/post/' + p.id + '/move', { to: 'node' }); closeSheet(); haptic('medium'); toast('Теперь это пост для шага: он в блоке «Свои посты для шагов»'); await reload(); } catch (e) { toast(e.message); } };
   const feedList = () => { const d = parseInt($('bFeedDay').value, 10); return S.posts.filter((x) => x.kind === 'drip' && x.day === d && x.id !== p.id).sort((a, b) => (a.pos || 0) - (b.pos || 0) || String(a.time).localeCompare(String(b.time))); };

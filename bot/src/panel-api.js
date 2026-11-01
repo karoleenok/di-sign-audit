@@ -1,7 +1,7 @@
 // API панели админа (Telegram Mini App).
 // Вход: панель присылает initData от Telegram, мы проверяем подпись токеном бота
 // (так подделать вход нельзя) и что человек — админ.
-import { isAdmin } from './admin.js';
+import { isAdmin, startContentEdit } from './admin.js';
 import { AUD, LEVELS } from './texts.js';
 import { sendPost, audienceCount, loadDocs, DOCS, TRACKS, cleanFile } from './posts.js';
 import { mdToEntities, entitiesToMd } from './fmt.js';
@@ -424,6 +424,14 @@ export async function handlePanelApi(ctx, request, url) {
   if (path === '/run/stop' && request.method === 'POST') {
     await stopRuns(ctx, user.id);
     await ctx.tg.call('sendMessage', { chat_id: user.id, text: '⏹ Ускоренный тест остановлен' }).catch(() => {});
+    return json({ ok: true });
+  }
+
+  m = /^\/post\/(\d+)\/rewrite$/.exec(path);
+  if (m && request.method === 'POST') {
+    const p = await ctx.db.first(`SELECT id FROM posts WHERE id = ?`, [+m[1]]);
+    if (!p) return json({ error: 'Пост не найден' }, 404);
+    try { await startContentEdit(ctx, user.id, p.id); } catch (e) { return json({ error: 'Не получилось написать в бот: ' + e.message }, 400); }
     return json({ ok: true });
   }
 
