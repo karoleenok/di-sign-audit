@@ -402,7 +402,10 @@ step('выбрать несколько, откат пачки, «где это 
   // сценарии входа: из соцсетей — с развилкой, после аудита — приветствие «после теста», подарок, без развилки
   assert.ok(await page.$('.stp[data-k="post:' + sc[0].id + '"]') && await page.$('.stp[data-k="hello"]'), 'из соцсетей: приветствие и развилка');
   assert.equal(await page.$('[data-gift]'), null, 'из соцсетей строки с подарком нет');
+  await page.waitForTimeout(3300); await page.evaluate(() => { for (const id of ['sheet', 'sheetBg', 'toast']) { const e = document.getElementById(id); if (e) e.style.display = 'none'; } });
   await page.screenshot({ path: OUT + '/panel-24-site.png', fullPage: true });
+  await page.evaluate(() => window.scrollTo(0, 0)); await page.screenshot({ path: OUT + '/panel-24-top.png' });
+  await page.evaluate(() => { for (const id of ['sheet', 'sheetBg', 'toast']) { const e = document.getElementById(id); if (e) e.style.display = ''; } });
   await page.click('[data-rsrc="audit"]'); await page.waitForTimeout(200);
   assert.ok(await page.$('.stp[data-k="helloTest"]') && await page.$('[data-gift]'), 'после аудита: приветствие «после теста» и подарок');
   assert.equal(await page.$('.stp[data-k="post:' + sc[0].id + '"]'), null, 'после аудита развилки нет');
