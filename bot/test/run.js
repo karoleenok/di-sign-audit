@@ -1149,6 +1149,8 @@ step('новый вход из соцсетей: развилка, экскур�
   // «с улицы» файл получить нельзя
   const bad = await handlePanelApi(C(), new Request('https://bot.test/api/panel/export/send', { method: 'POST', body: '{}' }), new URL('https://bot.test/api/panel/export/send'));
   assert.equal(bad.status, 401, 'без подписи Telegram файл не отдаём');
+  const pvw = await call('/export/rows');
+  assert.ok(pvw.leadHead.length === 9 && pvw.leads.length >= 1 && pvw.leads[0].length === 9 && pvw.reviewHead.length === 7, 'предпросмотр отдаёт шапку и строки');
   const c0 = calls.length;
   const r = await call('/export/send', {});
   assert.equal(r.ok, true); assert.ok(r.leads >= 1, 'заявки есть');
@@ -1157,7 +1159,7 @@ step('новый вход из соцсетей: развилка, экскур�
   assert.equal(sent[0].body.chat_id, 100, 'файл ушёл тому, кто нажал кнопку');
   assert.match(sent[0].body.document.filename, /^di-sign-crm-\d{4}-\d\d-\d\d\.xlsx$/, 'имя файла с датой');
   const { buildXlsx, exportXlsx } = await import('../src/export.js');
-  const x = await exportXlsx(C().db);
+  const x = await exportXlsx(C());
   assert.equal(x.file[0], 0x50); assert.equal(x.file[1], 0x4b); // PK: это настоящий zip
   // разбираем zip сами: список файлов и текст листов
   const buf = x.file; const names = []; const texts = {};
@@ -1176,5 +1178,23 @@ step('новый вход из соцсетей: развилка, экскур�
   assert.equal(odd[0], 0x50, 'файл с «<&>» собирается');
 }
 step('таблица: бот присылает .xlsx с листами «Заявки» и «Отзывы», без подписи не отдаёт');
+
+// технические аккаунты
+{
+  const { parseTech, addTech, removeTech, techSet } = await import('../src/tech.js');
+  assert.deepEqual(parseTech('@Dopamine_Fish'), { name: 'dopamine_fish' });
+  assert.deepEqual(parseTech('https://t.me/Dopamine_Fish'), { name: 'dopamine_fish' });
+  assert.deepEqual(parseTech('123456789'), { id: 123456789 });
+  assert.equal(parseTech('привет!'), null);
+  await addTech(C().db, '@dopamine_fish'); await addTech(C().db, '555000111'); await addTech(C().db, '@dopamine_fish');
+  let ts = await techSet(C());
+  assert.equal(ts.list.length, 2, 'повтор не дублируется');
+  assert.ok(ts.has({ tg_id: 1, username: 'Dopamine_Fish' }) && ts.has({ tg_id: 555000111 }), 'технические по нику и ID');
+  assert.ok(!ts.has({ tg_id: 2, username: 'anna_real' }), 'обычный человек не технический');
+  await removeTech(C().db, 'u:dopamine_fish'); await removeTech(C().db, 'id:555000111');
+  ts = await techSet(C());
+  assert.equal(ts.list.length, 0, 'удаление работает');
+}
+step('технические аккаунты: разбор ника/ID, добавление без дублей, удаление');
 
 console.log('\nВсе сценарии прошли. Запросов к фейковому Telegram:', calls.length);

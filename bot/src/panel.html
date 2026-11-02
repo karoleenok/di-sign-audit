@@ -62,6 +62,12 @@ h1 i{font-style:italic}
 .card.chosen{box-shadow:0 10px 30px rgba(44,13,2,.18)}
 .tag.sc{margin-left:8px;font-size:11px;white-space:nowrap}.scn{margin:2px 0 10px;padding:10px 12px;border-radius:14px;background:rgba(196,87,42,.08);font-size:13px;line-height:1.35}.scn b{display:block;margin-bottom:2px}
 .slot{display:block;width:100%;min-height:48px;margin:6px 0;border:1.5px dashed var(--line);border-radius:14px;background:transparent;color:var(--soft);font:inherit;font-size:13px;padding:10px 12px;text-align:center;cursor:pointer}.slot.link{border:0;min-height:30px;margin:2px 0 8px;padding:4px;color:var(--accent,#c4572a);text-decoration:underline}.slot:active{background:rgba(196,87,42,.08);border-color:var(--accent,#c4572a)}.list:empty{min-height:12px}
+.tvw{overflow:auto;max-height:52vh;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+table.tv{border-collapse:collapse;font-size:13px;min-width:100%}
+table.tv th{position:sticky;top:0;background:var(--pill);text-align:left;font-weight:600;white-space:nowrap;padding:8px 10px;border-bottom:1px solid var(--line)}
+table.tv td{padding:7px 10px;border-bottom:1px solid var(--line);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+table.tv tr:last-child td{border-bottom:0}
+
 .stk{position:sticky;top:0;z-index:20;display:flex;gap:8px;align-items:center;margin:0 -2px 10px;padding:8px 2px;background:var(--bg)}.stk .seg{flex:1}.stk .seg button{padding:8px 2px;font-size:14px}.stk .dens{flex:none;white-space:nowrap}
 .pstage{margin:0 -6px 10px;border:1px solid var(--line);border-radius:18px;background:var(--card);padding:0 8px}
 .pstage .sh{display:flex;align-items:center;gap:8px;min-height:52px;cursor:pointer;-webkit-user-select:none;user-select:none}
@@ -423,7 +429,7 @@ async function renderHome() {
   let c = null;
   try { c = await api('/crm'); crmData = c; } catch (e) { $('body').innerHTML = '<div class="note warn">' + esc(e.message) + '</div>'; return; }
   const now = Math.floor(Date.now() / 1000), wk = now - 7 * 86400;
-  const ppl = c.people;
+  const ppl = c.people.filter((u) => !u.tech);
   const nLead = ppl.filter((u) => u.lead && u.lead.at > wk).length, nRev = ppl.filter((u) => u.review && u.review.at > wk).length, nNew = ppl.filter((u) => u.created_at > wk).length;
   const fmt = (x) => { const dd = new Date((x + 10800) * 1000); return dd.getUTCDate() + '.' + String(dd.getUTCMonth() + 1).padStart(2, '0') + ' ' + String(dd.getUTCHours()).padStart(2, '0') + ':' + String(dd.getUTCMinutes()).padStart(2, '0'); };
   const d = S.docs || {}, items = [];
@@ -442,7 +448,7 @@ async function renderHome() {
     '<div class="hm-g">' + tile(nLead, 'заявок за неделю') + tile(nRev, 'отзывов за неделю') + tile(nNew, 'новых людей') + '</div>';
   const recent = ppl.filter((u) => u.lead).sort((a, b) => b.lead.at - a.lead.at).slice(0, 3);
   h += '<div class="box" style="margin:0"><h3>Последние заявки</h3>' + (recent.length ? recent.map((u) => '<div class="hm-r"><span><b>' + esc(u.name || 'без имени') + '</b><br><span class="small muted">' + esc([u.phone, u.track === 'mat' ? 'материалы' : u.track === 'course' ? 'мини-курс' : '', fmt(u.lead.at)].filter(Boolean).join(' · ')) + '</span></span>' + (u.username ? '<a class="chip" href="https://t.me/' + esc(u.username) + '" target="_blank" rel="noopener">написать</a>' : '') + '</div>').join('') : '<p class="small muted" style="margin:6px 0 0">Заявок пока нет.</p>') +
-    '<div class="btns" style="margin:8px 0 0"><button type="button" class="btn ghost" data-hm="reviews">Все заявки и отзывы</button><button type="button" class="btn ghost" data-hm="dl">📥 Скачать таблицу</button></div></div>';
+    '<div class="btns" style="margin:8px 0 0"><button type="button" class="btn ghost" data-hm="reviews">Все заявки и отзывы</button><button type="button" class="btn ghost" data-hm="pv">👁 Смотреть таблицу</button><button type="button" class="btn ghost" data-hm="dl">📥 Скачать Excel</button></div></div>';
   const today = S.posts.filter((p) => p.kind === 'date' && p.status === 'active' && p.run_at && p.run_at > now - 3600 && p.run_at < now + 86400);
   if (today.length) h += '<div class="box" style="margin:0"><h3>Ближайшие сутки</h3>' + today.map((p) => '<div class="hm-r"><span>' + esc(postName(p).slice(0, 40)) + '</span><span class="small muted">' + fmt(p.run_at) + '</span></div>').join('') + '</div>';
   h += '<div class="meta"><span class="tag ' + (bk && bk.sent ? 'ok' : '') + '">' + (bk ? 'копия базы: ' + fmt(bk.at / 1000) + (bk.sent ? ' · в телеграме' : ' · только на сервере') : 'копии базы ещё нет') + '</span><span class="tag">версия панели ' + esc(/@@/.test(BUILD) ? 'dev' : BUILD.slice(0, 4)) + '</span></div></div>';
@@ -451,6 +457,7 @@ async function renderHome() {
     const k = b.dataset.hm; haptic();
     if (k === 'docs') { tab = 'texts'; render(); window.scrollTo(0, 0); setTimeout(openDocs, 50); }
     else if (k === 'flow' || k === 'reviews') { tab = k === 'flow' ? 'path' : k; render(); window.scrollTo(0, 0); }
+    else if (k === 'pv') previewTable();
     else if (k === 'dl') downloadTable(b);
     else if (/^post:/.test(k)) openPost(+k.slice(5));
   });
@@ -600,7 +607,7 @@ function renderGifts() {
 }
 
 // Люди (CRM): один список — где человек, как с ним связаться, что он оставил
-const crmView = { f: 'all', q: '', open: null };
+const crmView = { f: 'all', q: '', open: null, showTech: false };
 let crmData = null;
 async function renderReviews() {
   if (!crmData) $('body').innerHTML = '<p class="muted" style="margin-top:16px">Загружаю…</p>';
@@ -608,7 +615,8 @@ async function renderReviews() {
   drawCrm();
 }
 function drawCrm() {
-  const all = crmData.people.filter((u) => u.lead || u.review).sort((a, b) => Math.max((b.lead && b.lead.at) || 0, (b.review && b.review.at) || 0) - Math.max((a.lead && a.lead.at) || 0, (a.review && a.review.at) || 0));
+  const nTech = crmData.people.filter((u) => (u.lead || u.review) && u.tech).length;
+  const all = crmData.people.filter((u) => (u.lead || u.review) && (crmView.showTech || !u.tech)).sort((a, b) => Math.max((b.lead && b.lead.at) || 0, (b.review && b.review.at) || 0) - Math.max((a.lead && a.lead.at) || 0, (a.review && a.review.at) || 0));
   S.leadCount = all.length;
   const fmt = (x) => { if (!x) return ''; const dd = new Date((x + 10800) * 1000); return dd.getUTCDate() + '.' + String(dd.getUTCMonth() + 1).padStart(2, '0') + ' ' + String(dd.getUTCHours()).padStart(2, '0') + ':' + String(dd.getUTCMinutes()).padStart(2, '0'); };
   const trk = { course: '🎓 мини-курс', mat: '📚 материалы' };
@@ -619,7 +627,8 @@ function drawCrm() {
   const waiting = all.filter((u) => u.lead && !u.lead.done).length;
   const pend = all.filter((u) => u.review && u.review.bonusPending > 0 && u.stage !== 'blocked').length;
   let h = '<div class="meta" id="crmF" style="margin:16px 0 8px">' + Object.keys(F).map((k) => '<button type="button" class="chip' + (crmView.f === k ? ' on' : '') + '" data-f="' + k + '">' + F[k][0] + ' · ' + all.filter(F[k][1]).length + '</button>').join('') + (waiting ? '<span class="tag warn-t">ждём контакт: ' + waiting + '</span>' : '') + '</div>' +
-    '<div class="btns" style="margin:0 0 8px"><button type="button" class="btn ghost" id="dlCrm">📥 Скачать таблицу (Excel)</button></div>' +
+    (nTech ? '<p class="small muted" style="margin:0 2px 8px">🧪 тестовых скрыто: ' + nTech + ' · <button type="button" class="chip" id="techShow">' + (crmView.showTech ? 'скрыть' : 'показать') + '</button></p>' : '') +
+    '<div class="btns two" style="margin:0 0 8px"><button type="button" class="btn ghost" id="pvCrm">👁 Смотреть таблицу</button><button type="button" class="btn ghost" id="dlCrm">📥 Скачать Excel</button></div>' +
     '<p class="small muted" style="margin:0 2px 10px">Это персональные данные: не пересылай их в чаты и не скачивай на чужие устройства.</p>' +
     (all.length > 4 ? '<input type="search" id="crmQ" placeholder="Поиск: имя, @ник, телефон, почта" value="' + esc(crmView.q) + '" style="margin-bottom:10px">' : '');
   if (crmView.f !== 'lead' && !crmData.activeBonus && all.some((u) => u.review)) h += '<div class="note warn">Нет включённых постов «бонус за отзыв»: включи пост во вкладке «Подарки», иначе отправлять нечего.</div>';
@@ -633,6 +642,7 @@ function drawCrm() {
     if (u.username) act = '<a class="chip" href="https://t.me/' + esc(u.username) + '" target="_blank" rel="noopener">✉️ написать</a>';
     else if (u.stage !== 'blocked') act = '<a class="chip" href="tg://user?id=' + u.tg_id + '">✉️ написать через Telegram</a>';
     if (u.review && u.stage !== 'blocked') act += u.review.bonusPending > 0 ? '<button type="button" class="chip" data-send="' + u.tg_id + '">📤 ' + (u.review.bonusSent ? 'Отправить остальные бонусы' : 'Отправить бонус') + '</button>' : '<span class="tag ok-t">✓ бонус отправлен</span>';
+    act += '<button type="button" class="chip" data-tech="' + u.tg_id + '" data-on="' + (u.tech ? '0' : '1') + '">' + (u.tech ? '🧪 тестовый · вернуть в учёт' : '🧪 это тест: не учитывать') + '</button>';
     return '<div class="msg crm" style="cursor:default"><div class="t"><span class="nm">' + esc(nm) + '</span><span class="stat">' + fmt(Math.max((u.lead && u.lead.at) || 0, (u.review && u.review.at) || 0)) + '</span></div>' +
       '<div class="meta" style="margin-top:6px">' + tags + '</div><div class="cts">' + contacts + '</div>' +
       (u.review ? '<div class="preview" style="margin-top:8px">👍 ' + esc(u.review.like || '—') + '\n\n🛠 ' + esc(u.review.improve || '—') + '</div>' : '') +
@@ -643,10 +653,15 @@ function drawCrm() {
   if (keep && $('crmQ')) { const el = $('crmQ'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
   if ($('crmQ')) $('crmQ').oninput = (e) => { crmView.q = e.target.value; drawCrm(); };
   if ($('dlCrm')) $('dlCrm').onclick = () => downloadTable($('dlCrm'));
+  if ($('pvCrm')) $('pvCrm').onclick = () => previewTable();
   $('crmF').onclick = (e) => { const b = e.target.closest('[data-f]'); if (!b) return; crmView.f = b.dataset.f; haptic(); drawCrm(); };
   document.querySelectorAll('[data-cp]').forEach((el) => el.onclick = () => { const t = el.dataset.cp; (navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast('Скопировано: ' + t)).catch(() => { try { const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); toast('Скопировано: ' + t); } catch (e) { toast(t); } }); });
   const send = async (el, id) => { el.disabled = true; const old = el.textContent; el.textContent = 'Отправляю…'; try { await api('/fb/send', { tg_id: id }); haptic('medium'); toast('Бонус отправлен ✓'); renderReviews(); } catch (e) { toast(e.message); el.disabled = false; el.textContent = old; } };
   document.querySelectorAll('[data-send]').forEach((el) => el.onclick = () => send(el, +el.dataset.send));
+  document.querySelectorAll('[data-tech]').forEach((el) => el.onclick = async () => {
+    try { await api('/tech', { person: +el.dataset.tech, on: el.dataset.on === '1' }); haptic('medium'); toast(el.dataset.on === '1' ? 'Теперь это тестовый аккаунт: в таблицу и счётчики не попадает' : 'Вернула в учёт'); crmData = await api('/crm'); S = await api('/state'); render(); } catch (e) { toast(e.message); }
+  });
+  if ($('techShow')) $('techShow').onclick = () => { crmView.showTech = !crmView.showTech; drawCrm(); };
   if ($('rvAll')) $('rvAll').onclick = async () => { $('rvAll').disabled = true; $('rvAll').textContent = 'Отправляю…'; try { const r = await api('/fb/backfill', { since: 'all' }); toast('Отправлено: ' + r.people + ' чел.'); renderReviews(); } catch (e) { toast(e.message); } };
 }
 
@@ -680,7 +695,8 @@ const mediaTag = (m) => m && m.media ? '<span class="tag">' + ({ photo: '🖼 к
 function renderTexts() {
   const dd = S.docs || {}, okk = (k) => dd[k] ? '✓' : 'не задана';
   let h = '<div class="lnk2"><div><b>Документы</b><div class="small muted">политика ' + okk('policy') + ' · согласие ' + okk('consent') + ' · оферта ' + okk('offer') + '</div></div><button type="button" class="chip" id="docsBtn">изменить</button></div>' +
-    '<div class="lnk2"><div><b>Таблица заявок и отзывов</b><div class="small muted">файл Excel: контакты, треки, отзывы. Бот пришлёт его тебе в чат</div></div><button type="button" class="chip" id="dlBtn">📥 скачать</button></div>' +
+    '<div class="lnk2"><div><b>Технические аккаунты</b><div class="small muted">твои и Дианы тесты: их заявки и отзывы не считаем</div></div><button type="button" class="chip" id="techBtn">настроить</button></div>' +
+    '<div class="lnk2"><div><b>Таблица заявок и отзывов</b><div class="small muted">файл Excel: контакты, треки, отзывы. Бот пришлёт его тебе в чат</div></div><span style="display:flex;gap:6px"><button type="button" class="chip" id="pvBtn">👁 смотреть</button><button type="button" class="chip" id="dlBtn">📥 скачать</button></span></div>' +
     '<div class="lnk2"><div><b>Люди и отзывы</b><div class="small muted">контакты, выбор из аудита, отзывы: ' + (S.fbCount || 0) + '</div></div><button type="button" class="chip" id="peopleBtn">открыть</button></div>';
   h += '<div class="box" style="margin-top:16px"><h3>Путь ученика</h3><p class="small muted" style="margin:0 0 10px">Так бот встречает нового человека — шаг за шагом. Нажми на шаг или на кнопку, чтобы поменять текст, картинку, паузу и кнопки-ссылки.</p>' +
     '<div class="btns" style="margin-top:0"><button class="btn" type="button" id="obNo">▶️ Пройти путь заново — без теста</button><button class="btn ghost" type="button" id="obTest">▶️ Пройти путь заново — как из теста</button></div>' +
@@ -711,7 +727,7 @@ function renderTexts() {
   const ob = async (fromTest) => { try { await api('/run/onboarding', { fromTest, level: view.level }); haptic('medium'); toast('Открой бот — путь начался 👀'); try { tg && tg.close && setTimeout(() => {}, 0); } catch (e) {} } catch (e) { toast(e.message); } };
   $('obNo').onclick = () => ob(false); $('obTest').onclick = () => ob(true);
   $('docsBtn').onclick = openDocs; $('peopleBtn').onclick = openPeople;
-  $('dlBtn').onclick = () => downloadTable($('dlBtn'));
+  $('techBtn').onclick = openTech; $('dlBtn').onclick = () => downloadTable($('dlBtn')); $('pvBtn').onclick = () => previewTable();
 }
 
 // редактор кнопок-ссылок (общий)
@@ -1555,6 +1571,36 @@ async function openPeople() {
       (u.fb_at ? '<div class="preview" style="margin-top:8px">👍 ' + esc(u.fb_like || '—') + '\n\n🛠 ' + esc(u.fb_improve || '—') + '</div>' : '') + '</div>';
   }).join('') || '<p class="muted">Пока никого.</p>';
   $('sheet').innerHTML = '<div class="grab"></div>' + h; $('pX').onclick = closeSheet;
+}
+async function openTech() {
+  let r;
+  try { r = await api('/tech'); } catch (e) { toast(e.message); return; }
+  sheet('<span class="pill">Технические аккаунты</span><h2>Кого не считаем</h2>' +
+    '<p class="small muted" style="margin:0 0 8px">Заявки и отзывы этих аккаунтов не попадают в таблицу, в список «Люди» и в счётчики. Бот им отвечает как обычно, чтобы можно было проверять путь.</p>' +
+    '<div class="grp" style="margin-top:6px">Админы бота (всегда технические)</div>' +
+    (r.admins.length ? r.admins.map((a) => '<div class="lnk2" style="margin:4px 0"><div><b>' + esc(a.who || 'без имени') + '</b><div class="small muted">ID ' + a.id + '</div></div></div>').join('') : '<p class="small muted">Админов нет.</p>') +
+    '<div class="grp" style="margin-top:12px">Добавленные вручную</div>' +
+    (r.list.length ? r.list.map((x) => '<div class="lnk2" style="margin:4px 0"><div><b>' + esc(x.label) + '</b><div class="small muted">' + esc(x.who || 'пока не писал(а) боту') + '</div></div><button type="button" class="chip" data-rmtech="' + esc(x.key) + '">убрать</button></div>').join('') : '<p class="small muted" style="margin:4px 2px">Пока никого.</p>') +
+    '<label class="f">Добавить: @ник или Telegram ID</label><input type="text" id="techIn" placeholder="@dopamine_fish" autocapitalize="off" autocomplete="off">' +
+    '<div class="btns"><button class="btn" id="techAdd">Добавить</button><button class="btn ghost" id="techX">Закрыть</button></div>');
+  $('techX').onclick = () => { closeSheet(); reload(); };
+  const act = async (body) => { try { await api('/tech', body); haptic('medium'); await openTech(); } catch (e) { toast(e.message); } };
+  $('techAdd').onclick = () => { const v = $('techIn').value.trim(); if (v) act({ add: v }); };
+  document.querySelectorAll('[data-rmtech]').forEach((b) => b.onclick = () => act({ remove: b.dataset.rmtech }));
+}
+async function previewTable(tabNow) {
+  let r;
+  try { r = await api('/export/rows'); } catch (e) { toast(e.message); return; }
+  const cur = tabNow === 'reviews' ? 'reviews' : 'leads';
+  const head = cur === 'leads' ? r.leadHead : r.reviewHead, rows = cur === 'leads' ? r.leads : r.reviews;
+  const cell = (v) => '<td title="' + esc(v) + '">' + esc(v) + '</td>';
+  sheet('<span class="pill">Таблица</span><h2>Заявки и отзывы</h2>' +
+    '<div class="seg" style="margin:8px 0">' + [['leads', 'Заявки · ' + r.leads.length], ['reviews', 'Отзывы · ' + r.reviews.length]].map(([k, n]) => '<button type="button" data-tv="' + k + '" class="' + (k === cur ? 'on' : '') + '">' + n + '</button>').join('') + '</div>' +
+    (rows.length ? '<div class="tvw"><table class="tv"><thead><tr>' + head.map((h) => '<th>' + esc(h) + '</th>').join('') + '</tr></thead><tbody>' + rows.map((x) => '<tr>' + x.map(cell).join('') + '</tr>').join('') + '</tbody></table></div><p class="small muted" style="margin:6px 2px 0">Листайте вбок. Это персональные данные: не пересылайте их в чаты.</p>' : '<p class="small muted" style="margin:14px 2px">Здесь пока пусто: появится, когда кто-то оставит заявку или отзыв.</p>') +
+    '<div class="btns"><button class="btn" id="tvDl">📥 Скачать Excel</button><button class="btn ghost" id="tvX">Закрыть</button></div>');
+  $('tvX').onclick = closeSheet;
+  $('tvDl').onclick = () => downloadTable($('tvDl'));
+  document.querySelectorAll('[data-tv]').forEach((b) => b.onclick = () => previewTable(b.dataset.tv));
 }
 let dlBusy = false;
 async function downloadTable(btn) {

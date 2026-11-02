@@ -415,6 +415,32 @@ step('выбрать несколько, откат пачки, «где это 
   const tags = await page.$$eval('#body .tag.sc', (e) => e.map((x) => x.textContent));
   assert.ok(tags.includes('🌱 из соцсетей') && tags.includes('✅ после аудита') && tags.includes('👥 всем'), 'в настройках у шагов видно сценарий: ' + tags.join(' | '));
   assert.ok(await page.$('#dlBtn'), 'в настройках есть кнопка «скачать таблицу»');
+  // два человека с заявками: настоящая и тестовая (ник @dopamine_fish)
+  const T0 = Math.floor(Date.now() / 1000);
+  for (const [id, nm, un, ph] of [[880001, 'Настоящая Анна', 'anna_real', '+79990001111'], [880002, 'Тестовая Рыба', 'Dopamine_Fish', '+79990002222']]) {
+    await db.run(`INSERT INTO users (tg_id, first_name, username, contact_name, phone, track, status, created_at, contact_at, consent_pd_at) VALUES (?, ?, ?, ?, ?, 'mat', 'active', ?, ?, ?)`, [id, nm, un, nm, ph, T0, T0, T0]);
+    await db.run(`INSERT INTO leads (tg_id, source, created_at, done) VALUES (?, 'проверка', ?, 1)`, [id, T0]);
+  }
+  await page.click('#tabs button[data-t="reviews"]'); await page.waitForSelector('#dlCrm'); await page.click('#tabs button[data-t="texts"]'); await page.waitForSelector('#dlBtn');
+  await page.evaluate(() => { const t = document.getElementById('toast'); if (t) t.style.display = 'none'; });
+  await page.click('#pvBtn'); await page.waitForSelector('table.tv th');
+  const ths = await page.$$eval('table.tv th', (e) => e.map((x) => x.textContent));
+  assert.ok(ths.includes('Телефон') && ths.includes('Telegram ID'), 'предпросмотр: шапка таблицы заявок: ' + ths.join(', '));
+  const cellsAll = await page.$$eval('table.tv td', (e) => e.map((x) => x.textContent));
+  await page.click('[data-tv="reviews"]'); await page.waitForTimeout(250);
+  assert.ok((await page.$$eval('table.tv th', (e) => e.map((x) => x.textContent))).includes('Что улучшить') || (await page.$('#sheet.on')), 'вкладка «Отзывы» открывается');
+  await page.click('#tvX');
+  assert.ok(true);
+  // технический аккаунт по нику: пропал из таблицы и из «Люди»
+  await page.waitForTimeout(150);
+  await page.click('#techBtn'); await page.waitForSelector('#techIn');
+  await page.fill('#techIn', '@dopamine_fish'); await page.click('#techAdd'); await page.waitForSelector('[data-rmtech="u:dopamine_fish"]');
+  await page.click('#techX'); await page.waitForTimeout(400);
+  await page.click('#pvBtn'); await page.waitForSelector('table.tv td');
+  const cellsAfter = await page.$$eval('table.tv td', (e) => e.map((x) => x.textContent));
+  assert.ok(cellsAll.includes('+79990002222') && cellsAll.includes('+79990001111'), 'до пометки в таблице обе заявки');
+  assert.ok(!cellsAfter.includes('+79990002222') && cellsAfter.includes('+79990001111'), 'после пометки тестовой заявки в таблице нет, настоящая осталась');
+  await page.click('#tvX');
   await page.click('#tabs button[data-t="reviews"]'); await page.waitForSelector('#dlCrm'); await page.click('#tabs button[data-t="texts"]'); await page.waitForSelector('#dlBtn');
   await page.screenshot({ path: OUT + '/panel-26-texts.png', fullPage: true });
   await page.click('#tabs button[data-t="path"]'); await page.waitForSelector('.stp[data-k="hello"]');

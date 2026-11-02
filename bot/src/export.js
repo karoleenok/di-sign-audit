@@ -1,6 +1,7 @@
 // Внутренняя таблица: заявки и отзывы одним файлом .xlsx (два листа). Файл бот присылает админу в чат.
 // Данные остаются на твоём сервере: никуда, кроме чата Telegram с тобой, они не уходят.
 import { crc32, deflateRawSync } from 'node:zlib';
+import { techSet } from './tech.js';
 const MSK3 = 3 * 3600;
 const fmt = (t) => {
   if (!t) return '';
@@ -13,15 +14,16 @@ export const LEAD_HEAD = ['Telegram ID', 'Дата заявки', 'Имя', 'Н�
 export const REVIEW_HEAD = ['Telegram ID', 'Дата отзыва', 'Имя', 'Ник', 'Что понравилось', 'Что улучшить', 'Бонус отправлен'];
 
 // строки для таблицы: заявки (только принятые) и отзывы
-export async function sheetRows(db) {
-  const us = await db.all(
+export async function sheetRows(ctx) {
+  const db = ctx.db, tech = await techSet(ctx);
+  const us = (await db.all(
     `SELECT u.tg_id, u.first_name, u.username, u.contact_name, u.phone, u.email, u.track, u.zone, u.fb_like, u.fb_improve, u.fb_at,
             (SELECT MAX(created_at) FROM leads l WHERE l.tg_id = u.tg_id AND l.done = 1) AS lead_at,
             (SELECT source FROM leads l WHERE l.tg_id = u.tg_id AND l.done = 1 ORDER BY id DESC LIMIT 1) AS lead_src,
             (SELECT COUNT(*) FROM deliveries d JOIN posts p ON p.id = d.post_id WHERE p.kind = 'fb' AND d.ok = 1 AND d.tg_id = u.tg_id) AS bonus
        FROM users u
       WHERE u.fb_at IS NOT NULL OR EXISTS (SELECT 1 FROM leads l WHERE l.tg_id = u.tg_id AND l.done = 1)
-      ORDER BY u.tg_id`);
+      ORDER BY u.tg_id`)).filter((u) => !tech.has(u));
   const name = (u) => u.contact_name || u.first_name || '';
   const nick = (u) => (u.username ? '@' + u.username : '');
   const leads = us.filter((u) => u.lead_at).map((u) => [String(u.tg_id), fmt(u.lead_at), name(u), nick(u), u.phone || '', u.email || '', TRACK[u.track] || '', u.zone || '', u.lead_src || '']);
@@ -70,8 +72,8 @@ export function buildXlsx(sheets) {
 }
 
 // файл для скачивания: два листа, ширина колонок под содержимое
-export async function exportXlsx(db) {
-  const { leads, reviews } = await sheetRows(db);
+export async function exportXlsx(ctx) {
+  const { leads, reviews } = await sheetRows(ctx);
   return { leads: leads.length, reviews: reviews.length, file: buildXlsx([
     { name: 'Заявки', head: LEAD_HEAD, rows: leads, widths: [14, 17, 22, 18, 17, 24, 13, 12, 18] },
     { name: 'Отзывы', head: REVIEW_HEAD, rows: reviews, widths: [14, 17, 22, 18, 50, 50, 16] },

@@ -9,7 +9,8 @@ import { mdToEntities, entitiesToMd } from './fmt.js';
 import { runPreview, runFullPath, startFastRun, stopRuns, stepRuns, activeRun } from './testrun.js';
 import { onStart, docVars, consentView, backfillFb, loadFlow, normFlow, FLOW_OPTIONAL } from './users.js';
 import { MSK, DAY } from './time.js';
-import { exportXlsx } from './export.js';
+import { exportXlsx, sheetRows, LEAD_HEAD, REVIEW_HEAD } from './export.js';
+import { techSet, addTech, removeTech } from './tech.js';
 import { saveMsgExtra, saveBtnExtra, setMsgOff, linksOf } from './msgs.js';
 import { listMsgs, saveMsg, resetMsg, btn, say, setMsgMedia, canMedia, msgInfo, loadMsgs } from './msgs.js';
 
@@ -183,7 +184,11 @@ async function panelRest(ctx, request, url, user, path, body) {
     const posts = await ctx.db.all(`SELECT * FROM posts WHERE status != 'archived' ORDER BY day, send_time, pos, id`);
     const sent = Object.fromEntries((await ctx.db.all(`SELECT post_id, COUNT(*) AS n FROM deliveries GROUP BY post_id`)).map((r) => [r.post_id, r.n]));
     const clicks = Object.fromEntries((await ctx.db.all(`SELECT post_id, COUNT(*) AS n FROM clicks GROUP BY post_id`)).map((r) => [r.post_id, r.n]));
-    const people = await ctx.db.first(`SELECT COUNT(*) AS n, SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active FROM users`);
+    const tset0 = await techSet(ctx);
+    const allU = await ctx.db.all(`SELECT tg_id, username, status, fb_at FROM users`);
+    const real = allU.filter((u) => !tset0.has(u));
+    const people = { n: real.length, active: real.filter((u) => u.status === 'active').length };
+    const leadIds = new Set((await ctx.db.all(`SELECT DISTINCT tg_id FROM leads`)).map((r) => r.tg_id));
     return json({
       me: { id: user.id, name: user.first_name },
       audiences: AUD, levels: LEVELS,
@@ -192,8 +197,8 @@ async function panelRest(ctx, request, url, user, path, body) {
       docs: await loadDocs(ctx), docNames: DOCS, tracks: TRACKS, flow: await loadFlow(ctx), flowOptional: FLOW_OPTIONAL,
       backup: await lastBackup(ctx),
       undo: await lastUndo(ctx),
-      leadCount: ((await ctx.db.first(`SELECT COUNT(*) AS n FROM users WHERE tg_id IN (SELECT tg_id FROM leads) OR fb_at IS NOT NULL`)) || {}).n || 0,
-      fbCount: ((await ctx.db.first(`SELECT COUNT(*) AS n FROM users WHERE fb_at IS NOT NULL`)) || {}).n || 0,
+      leadCount: real.filter((u) => leadIds.has(u.tg_id) || u.fb_at).length,
+      fbCount: real.filter((u) => u.fb_at).length,
       people: { all: people.n || 0, active: people.active || 0 },
       run: await activeRun(ctx.db, user.id),
     });
@@ -326,9 +331,33 @@ async function panelRest(ctx, request, url, user, path, body) {
       }),
     });
   }
+  // технические аккаунты: список, добавить, убрать
+  if (path === '/tech') {
+    if (request.method === 'POST') {
+      try {
+        if (body.add) await addTech(ctx.db, body.add);
+        if (body.remove) await removeTech(ctx.db, String(body.remove));
+        if (body.person) {
+          const u = await ctx.db.first(`SELECT tg_id, username FROM users WHERE tg_id = ?`, [Number(body.person)]);
+          if (!u) return json({ error: 'Человека нет' }, 404);
+          if (body.on === false) { await removeTech(ctx.db, 'id:' + u.tg_id); if (u.username) await removeTech(ctx.db, 'u:' + u.username.toLowerCase()); }
+          else await addTech(ctx.db, String(u.tg_id));
+        }
+      } catch (e) { return json({ error: e.message }, 400); }
+    }
+    const t = await techSet(ctx);
+    const us = await ctx.db.all(`SELECT tg_id, first_name, contact_name, username FROM users`);
+    const nm = (x) => { const u = us.find((q) => (x.id && q.tg_id === x.id) || (x.name && q.username && q.username.toLowerCase() === x.name)); return u ? (u.contact_name || u.first_name || '') : ''; };
+    return json({ list: t.list.map((x) => ({ key: x.id ? 'id:' + x.id : 'u:' + x.name, label: x.id ? 'ID ' + x.id : '@' + x.name, who: nm(x) })), admins: t.admins.map((id) => ({ id, who: (us.find((q) => q.tg_id === id) || {}).first_name || '' })) });
+  }
+  // предпросмотр той же таблицы прямо в панели
+  if (path === '/export/rows') {
+    const r = await sheetRows(ctx);
+    return json({ leadHead: LEAD_HEAD, reviewHead: REVIEW_HEAD, leads: r.leads, reviews: r.reviews });
+  }
   // таблица заявок и отзывов: бот присылает файл .xlsx тому, кто нажал кнопку
   if (path === '/export/send' && request.method === 'POST') {
-    const x = await exportXlsx(ctx.db);
+    const x = await exportXlsx(ctx);
     const d = new Date(ctx.now * 1000 + 3 * 3600e3), p2 = (n) => String(n).padStart(2, '0');
     const stamp = `${d.getUTCFullYear()}-${p2(d.getUTCMonth() + 1)}-${p2(d.getUTCDate())}`;
     const fd = new FormData();
@@ -357,11 +386,12 @@ async function panelRest(ctx, request, url, user, path, body) {
       if (!u.track) return ['entry', 'выбирает мини-курс или материалы'];
       return ['entry', 'дописывает вход'];
     };
+    const tset = await techSet(ctx);
     const people = us.map((u) => {
       const [stage, stageText] = stageOf(u);
       const sent = D[u.tg_id] || 0;
       return { tg_id: u.tg_id, name: u.contact_name || u.first_name || '', username: u.username, phone: u.phone, email: u.email, level: u.level, zone: u.zone, track: u.track, source: u.source, stage, stageText,
-        created_at: u.created_at, done: !!u.sched_at, lead: L[u.tg_id] ? { at: L[u.tg_id].at, done: !!L[u.tg_id].done } : null, clicks: C[u.tg_id] || 0,
+        tech: tset.has(u), created_at: u.created_at, done: !!u.sched_at, lead: L[u.tg_id] ? { at: L[u.tg_id].at, done: !!L[u.tg_id].done } : null, clicks: C[u.tg_id] || 0,
         review: u.fb_at ? { at: u.fb_at, like: u.fb_like, improve: u.fb_improve, bonusSent: sent, bonusPending: Math.max(0, active - sent) } : null, fbSkip: !!u.fb_skip };
     });
     return json({ people, activeBonus: active });
