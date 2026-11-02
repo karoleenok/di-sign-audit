@@ -12,6 +12,7 @@ cat > /etc/systemd/system/di-sign-autoupdate.timer <<'UNIT'
 [Unit]
 Description=Di Sign bot autoupdate every 3 minutes
 [Timer]
+OnActiveSec=1min
 OnBootSec=2min
 OnUnitActiveSec=3min
 [Install]
