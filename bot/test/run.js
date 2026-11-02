@@ -1150,6 +1150,9 @@ step('новый вход из соцсетей: развилка, экскур�
   assert.ok(g0.counts.leads >= 1, 'заявки в базе есть');
   assert.equal((await call('/sheets', { url: 'https://evil.example.com/exec' })).status, 400, 'чужую ссылку не принимаем');
   assert.equal((await call('/sheets/sync', {})).status, 400, 'без ссылки выгружать некуда');
+  assert.equal((await call('/sheets', { doc: 'https://evil.example.com/x' })).status, 400, 'чужую ссылку на таблицу не принимаем');
+  assert.equal((await call('/sheets', { doc: 'https://docs.google.com/spreadsheets/d/1AbC_def-2/edit?usp=sharing' })).ok, true);
+  assert.equal((await call('/sheets')).doc, 'https://docs.google.com/spreadsheets/d/1AbC_def-2/edit?usp=sharing', 'ссылка на таблицу сохранилась для кнопки');
   const URL_OK = 'https://script.google.com/macros/s/AKfycbTEST_123-x/exec';
   assert.equal((await call('/sheets', { url: URL_OK })).ok, true);
   const real = globalThis.fetch; const seen = []; let reply = { ok: true };

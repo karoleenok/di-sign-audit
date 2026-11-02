@@ -19,9 +19,11 @@ export async function sheetsConfig(db) {
   let key = await getSet(db, 'sheets:key');
   if (!key) { key = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join(''); await putSet(db, 'sheets:key', key); }
   let last = null; try { last = JSON.parse(await getSet(db, 'sheets:last') || 'null'); } catch { last = null; }
-  return { url: await getSet(db, 'sheets:url'), key, last };
+  return { url: await getSet(db, 'sheets:url'), doc: await getSet(db, 'sheets:doc'), key, last };
 }
 export async function saveSheetsUrl(db, url) { await putSet(db, 'sheets:url', url); }
+export async function saveSheetsDoc(db, doc) { await putSet(db, 'sheets:doc', doc); }
+export const validDocUrl = (u) => /^https:\/\/docs\.google\.com\/spreadsheets\/d\/[A-Za-z0-9_-]+/.test(String(u || '').trim());
 export const validSheetsUrl = (u) => /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(String(u || '').trim());
 
 // строки для таблицы: заявки (только принятые) и отзывы

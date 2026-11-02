@@ -442,11 +442,12 @@ async function renderHome() {
     '<div class="hm-g">' + tile(nLead, 'заявок за неделю') + tile(nRev, 'отзывов за неделю') + tile(nNew, 'новых людей') + '</div>';
   const recent = ppl.filter((u) => u.lead).sort((a, b) => b.lead.at - a.lead.at).slice(0, 3);
   h += '<div class="box" style="margin:0"><h3>Последние заявки</h3>' + (recent.length ? recent.map((u) => '<div class="hm-r"><span><b>' + esc(u.name || 'без имени') + '</b><br><span class="small muted">' + esc([u.phone, u.track === 'mat' ? 'материалы' : u.track === 'course' ? 'мини-курс' : '', fmt(u.lead.at)].filter(Boolean).join(' · ')) + '</span></span>' + (u.username ? '<a class="chip" href="https://t.me/' + esc(u.username) + '" target="_blank" rel="noopener">написать</a>' : '') + '</div>').join('') : '<p class="small muted" style="margin:6px 0 0">Заявок пока нет.</p>') +
-    '<div class="btns" style="margin:8px 0 0"><button type="button" class="btn ghost" data-hm="reviews">Все заявки и отзывы</button></div></div>';
+    '<div class="btns" style="margin:8px 0 0"><button type="button" class="btn ghost" data-hm="reviews">Все заявки и отзывы</button><a class="btn ghost" id="hmSheet" href="#" target="_blank" rel="noopener" hidden style="text-align:center;text-decoration:none">📊 Открыть таблицу</a></div></div>';
   const today = S.posts.filter((p) => p.kind === 'date' && p.status === 'active' && p.run_at && p.run_at > now - 3600 && p.run_at < now + 86400);
   if (today.length) h += '<div class="box" style="margin:0"><h3>Ближайшие сутки</h3>' + today.map((p) => '<div class="hm-r"><span>' + esc(postName(p).slice(0, 40)) + '</span><span class="small muted">' + fmt(p.run_at) + '</span></div>').join('') + '</div>';
   h += '<div class="meta"><span class="tag ' + (bk && bk.sent ? 'ok' : '') + '">' + (bk ? 'копия базы: ' + fmt(bk.at / 1000) + (bk.sent ? ' · в телеграме' : ' · только на сервере') : 'копии базы ещё нет') + '</span><span class="tag">версия панели ' + esc(/@@/.test(BUILD) ? 'dev' : BUILD.slice(0, 4)) + '</span></div></div>';
   $('body').innerHTML = h;
+  api('/sheets').then((r) => { if (r.doc && $('hmSheet')) { $('hmSheet').href = r.doc; $('hmSheet').hidden = false; } }).catch(() => {});
   document.querySelectorAll('[data-hm]').forEach((b) => b.onclick = () => {
     const k = b.dataset.hm; haptic();
     if (k === 'docs') { tab = 'texts'; render(); window.scrollTo(0, 0); setTimeout(openDocs, 50); }
@@ -677,7 +678,7 @@ const mediaTag = (m) => m && m.media ? '<span class="tag">' + ({ photo: '🖼 к
 function renderTexts() {
   const dd = S.docs || {}, okk = (k) => dd[k] ? '✓' : 'не задана';
   let h = '<div class="lnk2"><div><b>Документы</b><div class="small muted">политика ' + okk('policy') + ' · согласие ' + okk('consent') + ' · оферта ' + okk('offer') + '</div></div><button type="button" class="chip" id="docsBtn">изменить</button></div>' +
-    '<div class="lnk2"><div><b>Таблица Google</b><div class="small muted" id="shSt">заявки и отзывы сами попадают в таблицу</div></div><button type="button" class="chip" id="shBtn">настроить</button></div>' +
+    '<div class="lnk2"><div><b>Таблица Google</b><div class="small muted" id="shSt">заявки и отзывы сами попадают в таблицу</div></div><span style="display:flex;gap:6px"><a class="chip" id="shOpen" href="#" target="_blank" rel="noopener" hidden>📊 открыть</a><button type="button" class="chip" id="shBtn">настроить</button></span></div>' +
     '<div class="lnk2"><div><b>Люди и отзывы</b><div class="small muted">контакты, выбор из аудита, отзывы: ' + (S.fbCount || 0) + '</div></div><button type="button" class="chip" id="peopleBtn">открыть</button></div>';
   h += '<div class="box" style="margin-top:16px"><h3>Путь ученика</h3><p class="small muted" style="margin:0 0 10px">Так бот встречает нового человека — шаг за шагом. Нажми на шаг или на кнопку, чтобы поменять текст, картинку, паузу и кнопки-ссылки.</p>' +
     '<div class="btns" style="margin-top:0"><button class="btn" type="button" id="obNo">▶️ Пройти путь заново — без теста</button><button class="btn ghost" type="button" id="obTest">▶️ Пройти путь заново — как из теста</button></div>' +
@@ -709,7 +710,7 @@ function renderTexts() {
   $('obNo').onclick = () => ob(false); $('obTest').onclick = () => ob(true);
   $('docsBtn').onclick = openDocs; $('peopleBtn').onclick = openPeople;
   $('shBtn').onclick = openSheets;
-  api('/sheets').then((r) => { if ($('shSt')) $('shSt').textContent = shStatus(r); }).catch(() => {});
+  api('/sheets').then((r) => { if ($('shSt')) $('shSt').textContent = shStatus(r); if (r.doc && $('shOpen')) { $('shOpen').href = r.doc; $('shOpen').hidden = false; } }).catch(() => {});
 }
 
 // редактор кнопок-ссылок (общий)
@@ -1569,6 +1570,8 @@ async function openSheets() {
   sheet('<span class="pill">Таблица Google</span><h2>Заявки и отзывы в таблице</h2>' +
     '<p class="small muted" style="margin:0 0 6px">Бот сам добавляет строки на листы «Заявки» и «Отзывы»: при новой заявке или отзыве. Твои заметки в колонках справа от данных бота остаются на месте. Сейчас в базе: заявок ' + r.counts.leads + ', отзывов ' + r.counts.reviews + '.</p>' +
     '<div class="note">' + esc(shStatus(r)) + '</div>' +
+    '<label class="f">Ссылка на твою таблицу (для кнопки «открыть»)</label><input type="text" id="shDoc" inputmode="url" placeholder="https://docs.google.com/spreadsheets/d/…" value="' + esc(r.doc || '') + '">' +
+    (r.doc ? '<div class="btns" style="margin:8px 0 0"><a class="btn ghost" href="' + esc(r.doc) + '" target="_blank" rel="noopener" style="text-align:center;text-decoration:none">📊 Открыть таблицу</a></div>' : '') +
     li(1, 'Открой свою таблицу → меню «Расширения» → «Apps Script».') +
     li(2, 'Сотри всё в окне кода, нажми «Скопировать скрипт» ниже и вставь. Нажми значок дискеты (сохранить).') +
     '<div class="btns" style="margin:0 0 6px"><button class="btn ghost" type="button" id="shCopy">📋 Скопировать скрипт</button></div>' +
@@ -1584,7 +1587,9 @@ async function openSheets() {
   };
   const run = async (save) => {
     try {
-      if (save) await api('/sheets', { url: $('shUrl').value.trim() });
+      const url = $('shUrl').value.trim(), doc = $('shDoc').value.trim();
+      await api('/sheets', save ? { url, doc } : { doc });
+      if (save && !url) { haptic('medium'); toast('Ссылка на таблицу сохранена ✓'); closeSheet(); render(); return; }
       const x = await api('/sheets/sync', {});
       haptic('medium'); toast('Готово: заявок ' + x.leads + ', отзывов ' + x.reviews); closeSheet(); render();
     } catch (e) { toast(e.message); }

@@ -9,7 +9,7 @@ import { mdToEntities, entitiesToMd } from './fmt.js';
 import { runPreview, runFullPath, startFastRun, stopRuns, stepRuns, activeRun } from './testrun.js';
 import { onStart, docVars, consentView, backfillFb, loadFlow, normFlow, FLOW_OPTIONAL } from './users.js';
 import { MSK, DAY } from './time.js';
-import { sheetsConfig, saveSheetsUrl, validSheetsUrl, pushSheets, scriptFor, sheetRows } from './sheets.js';
+import { sheetsConfig, saveSheetsUrl, saveSheetsDoc, validDocUrl, validSheetsUrl, pushSheets, scriptFor, sheetRows } from './sheets.js';
 import { saveMsgExtra, saveBtnExtra, setMsgOff, linksOf } from './msgs.js';
 import { listMsgs, saveMsg, resetMsg, btn, say, setMsgMedia, canMedia, msgInfo, loadMsgs } from './msgs.js';
 
@@ -330,13 +330,20 @@ async function panelRest(ctx, request, url, user, path, body) {
   if (path === '/sheets') {
     const cfg = await sheetsConfig(ctx.db);
     if (request.method === 'POST') {
-      const u = String(body.url || '').trim();
-      if (u && !validSheetsUrl(u)) return json({ error: 'Это не похоже на ссылку веб-приложения: она начинается с https://script.google.com/macros/s/ и заканчивается на /exec' }, 400);
-      await saveSheetsUrl(ctx.db, u);
+      if (body.doc != null) {
+        const d = String(body.doc || '').trim();
+        if (d && !validDocUrl(d)) return json({ error: 'Это не похоже на ссылку на Google-таблицу: она начинается с https://docs.google.com/spreadsheets/d/' }, 400);
+        await saveSheetsDoc(ctx.db, d);
+      }
+      if (body.url != null) {
+        const u = String(body.url || '').trim();
+        if (u && !validSheetsUrl(u)) return json({ error: 'Это не похоже на ссылку веб-приложения: она начинается с https://script.google.com/macros/s/ и заканчивается на /exec' }, 400);
+        await saveSheetsUrl(ctx.db, u);
+      }
       return json({ ok: true });
     }
     const n = await sheetRows(ctx.db);
-    return json({ url: cfg.url, script: scriptFor(cfg.key), last: cfg.last, counts: { leads: n.leads.length, reviews: n.reviews.length } });
+    return json({ url: cfg.url, doc: cfg.doc, script: scriptFor(cfg.key), last: cfg.last, counts: { leads: n.leads.length, reviews: n.reviews.length } });
   }
   if (path === '/sheets/sync' && request.method === 'POST') {
     const r = await pushSheets(ctx);
