@@ -343,7 +343,7 @@ async function panelRest(ctx, request, url, user, path, body) {
       return json({ ok: true });
     }
     const n = await sheetRows(ctx.db);
-    return json({ url: cfg.url, doc: cfg.doc, script: scriptFor(cfg.key), last: cfg.last, counts: { leads: n.leads.length, reviews: n.reviews.length } });
+    return json({ url: cfg.url, doc: cfg.doc, script: scriptFor(), last: cfg.last, counts: { leads: n.leads.length, reviews: n.reviews.length } });
   }
   if (path === '/sheets/sync' && request.method === 'POST') {
     const r = await pushSheets(ctx);

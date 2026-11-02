@@ -1145,8 +1145,8 @@ step('новый вход из соцсетей: развилка, экскур�
   const call = async (path, body) => { const req = new Request('https://bot.test/api/panel' + path, { method: body ? 'POST' : 'GET', headers: { 'x-init-data': pp.toString(), 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }); const r = await handlePanelApi(C(), req, new URL(req.url)); return { status: r.status, ...(await r.json()) }; };
   const g0 = await call('/sheets');
   assert.equal(g0.url, '', 'сначала таблица не подключена');
-  const key = /const KEY = '([0-9a-f]{32})'/.exec(g0.script);
-  assert.ok(key && g0.script.includes('doPost') && g0.script.includes("'Заявки'") && g0.script.includes("'Отзывы'"), 'скрипт для таблицы с ключом');
+  const key = [null, (await C().db.first(`SELECT value FROM settings WHERE key = 'sheets:key'`)).value];
+  assert.ok(/^[0-9a-f]{32}$/.test(key[1]) && g0.script.includes('getScriptProperties') && g0.script.includes('doPost') && g0.script.includes("'Заявки'") && g0.script.includes("'Отзывы'"), 'скрипт для таблицы с ключом');
   assert.ok(g0.counts.leads >= 1, 'заявки в базе есть');
   assert.equal((await call('/sheets', { url: 'https://evil.example.com/exec' })).status, 400, 'чужую ссылку не принимаем');
   assert.equal((await call('/sheets/sync', {})).status, 400, 'без ссылки выгружать некуда');
@@ -1161,14 +1161,14 @@ step('новый вход из соцсетей: развилка, экскур�
     const r1 = await call('/sheets/sync', {});
     assert.equal(r1.ok, true); assert.equal(seen.length, 1); assert.equal(seen[0].u, URL_OK);
     const pl = seen[0].body;
-    assert.equal(pl.key, key[1], 'ключ из скрипта совпадает с тем, что шлёт бот');
+    assert.equal(pl.key, key[1], 'бот шлёт свой ключ');
     assert.equal(pl.leads.length, g0.counts.leads); assert.equal(pl.leadHead.length, pl.leads[0].length, 'колонок столько же, сколько в шапке');
     assert.ok(pl.leads.every((r) => /^\d+$/.test(r[0])) && pl.leads.some((r) => r[4]), 'в заявках есть Telegram ID и телефон');
     assert.equal(pl.reviewHead.length, pl.reviews.length ? pl.reviews[0].length : pl.reviewHead.length);
     assert.equal((await call('/sheets')).last.ok, true, 'результат выгрузки запомнен');
     reply = { ok: false, error: 'key' };
     const r2 = await call('/sheets/sync', {});
-    assert.equal(r2.status, 400); assert.match(r2.error, /ключ/);
+    assert.equal(r2.status, 400); assert.match(r2.error, /resetKey/);
     assert.equal((await call('/sheets')).last.ok, false, 'и неудача тоже видна в панели');
   } finally { globalThis.fetch = real; }
 }

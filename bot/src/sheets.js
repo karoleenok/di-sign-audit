@@ -54,7 +54,7 @@ export async function pushSheets(ctx) {
     const txt = await r.text();
     let j = null; try { j = JSON.parse(txt); } catch { j = null; }
     if (!r.ok || !j) res = { ok: false, error: r.status === 200 ? 'Таблица ответила не так, как ждали: проверь, что скрипт выложен для «Все» и это самая новая версия' : 'Таблица не ответила (код ' + r.status + ')' };
-    else if (!j.ok) res = { ok: false, error: j.error === 'key' ? 'Не совпал ключ: вставь свежий скрипт из панели и выложи новую версию' : String(j.error || 'ошибка в скрипте').slice(0, 200) };
+    else if (!j.ok) res = { ok: false, error: j.error === 'key' ? 'Не совпал ключ: в Apps Script выбери функцию resetKey, нажми «Выполнить» и повтори выгрузку' : String(j.error || 'ошибка в скрипте').slice(0, 200) };
     else res = { ok: true, leads: leads.length, reviews: reviews.length };
   } catch (e) { res = { ok: false, error: 'Не достучалась до таблицы: ' + String((e && e.message) || e).slice(0, 120) }; }
   await putSet(ctx.db, 'sheets:last', JSON.stringify({ at: ctx.now, ...res }));
@@ -64,9 +64,9 @@ export async function pushSheets(ctx) {
 export function syncSoon(ctx) { return pushSheets(ctx).catch(() => {}); }
 
 // скрипт для таблицы: вставляется в «Расширения → Apps Script»
-export function scriptFor(key) {
+export function scriptFor() {
   return `// Приёмник для бота Di Sign University. Вставь целиком, сохрани и выложи как веб-приложение.
-const KEY = '${key}';
+// Ключ бота скрипт запоминает при первом обращении, поэтому одинаковый скрипт подходит всем.
 function put_(ss, name, head, rows) {
   let sh = ss.getSheetByName(name);
   if (!sh) sh = ss.insertSheet(name);
@@ -90,12 +90,16 @@ function put_(ss, name, head, rows) {
 function doPost(e) {
   let d;
   try { d = JSON.parse(e.postData.contents); } catch (err) { return out_({ ok: false, error: 'json' }); }
-  if (d.key !== KEY) return out_({ ok: false, error: 'key' });
+  const props = PropertiesService.getScriptProperties();
+  let k = props.getProperty('KEY');
+  if (!k && d.key) { props.setProperty('KEY', d.key); k = d.key; }
+  if (!k || d.key !== k) return out_({ ok: false, error: 'key' });
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   put_(ss, 'Заявки', d.leadHead, d.leads || []);
   put_(ss, 'Отзывы', d.reviewHead, d.reviews || []);
   return out_({ ok: true });
 }
+function resetKey() { PropertiesService.getScriptProperties().deleteProperty('KEY'); }
 function out_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 `;
 }
