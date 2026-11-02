@@ -677,6 +677,7 @@ const mediaTag = (m) => m && m.media ? '<span class="tag">' + ({ photo: '🖼 к
 function renderTexts() {
   const dd = S.docs || {}, okk = (k) => dd[k] ? '✓' : 'не задана';
   let h = '<div class="lnk2"><div><b>Документы</b><div class="small muted">политика ' + okk('policy') + ' · согласие ' + okk('consent') + ' · оферта ' + okk('offer') + '</div></div><button type="button" class="chip" id="docsBtn">изменить</button></div>' +
+    '<div class="lnk2"><div><b>Таблица Google</b><div class="small muted" id="shSt">заявки и отзывы сами попадают в таблицу</div></div><button type="button" class="chip" id="shBtn">настроить</button></div>' +
     '<div class="lnk2"><div><b>Люди и отзывы</b><div class="small muted">контакты, выбор из аудита, отзывы: ' + (S.fbCount || 0) + '</div></div><button type="button" class="chip" id="peopleBtn">открыть</button></div>';
   h += '<div class="box" style="margin-top:16px"><h3>Путь ученика</h3><p class="small muted" style="margin:0 0 10px">Так бот встречает нового человека — шаг за шагом. Нажми на шаг или на кнопку, чтобы поменять текст, картинку, паузу и кнопки-ссылки.</p>' +
     '<div class="btns" style="margin-top:0"><button class="btn" type="button" id="obNo">▶️ Пройти путь заново — без теста</button><button class="btn ghost" type="button" id="obTest">▶️ Пройти путь заново — как из теста</button></div>' +
@@ -707,6 +708,8 @@ function renderTexts() {
   const ob = async (fromTest) => { try { await api('/run/onboarding', { fromTest, level: view.level }); haptic('medium'); toast('Открой бот — путь начался 👀'); try { tg && tg.close && setTimeout(() => {}, 0); } catch (e) {} } catch (e) { toast(e.message); } };
   $('obNo').onclick = () => ob(false); $('obTest').onclick = () => ob(true);
   $('docsBtn').onclick = openDocs; $('peopleBtn').onclick = openPeople;
+  $('shBtn').onclick = openSheets;
+  api('/sheets').then((r) => { if ($('shSt')) $('shSt').textContent = shStatus(r); }).catch(() => {});
 }
 
 // редактор кнопок-ссылок (общий)
@@ -1551,6 +1554,45 @@ async function openPeople() {
   }).join('') || '<p class="muted">Пока никого.</p>';
   $('sheet').innerHTML = '<div class="grab"></div>' + h; $('pX').onclick = closeSheet;
 }
+function shStatus(r) {
+  if (!r.url) return 'не подключена: нажми «настроить», там пошаговая инструкция';
+  const l = r.last;
+  if (!l) return 'подключена · выгрузок ещё не было';
+  const d = new Date((l.at + 10800) * 1000), p2 = (n) => String(n).padStart(2, '0');
+  const when = p2(d.getUTCDate()) + '.' + p2(d.getUTCMonth() + 1) + ' ' + p2(d.getUTCHours()) + ':' + p2(d.getUTCMinutes());
+  return l.ok ? 'подключена · выгрузка ' + when + ' · заявок ' + l.leads + ', отзывов ' + l.reviews : '⚠️ ' + when + ': ' + l.error;
+}
+async function openSheets() {
+  let r;
+  try { r = await api('/sheets'); } catch (e) { toast(e.message); return; }
+  const li = (n, t) => '<div style="display:flex;gap:10px;margin:8px 0"><b style="flex:none;width:24px;height:24px;border-radius:50%;background:var(--pill);display:grid;place-items:center;font-size:12px">' + n + '</b><span class="small" style="flex:1">' + t + '</span></div>';
+  sheet('<span class="pill">Таблица Google</span><h2>Заявки и отзывы в таблице</h2>' +
+    '<p class="small muted" style="margin:0 0 6px">Бот сам добавляет строки на листы «Заявки» и «Отзывы»: при новой заявке или отзыве. Твои заметки в колонках справа от данных бота остаются на месте. Сейчас в базе: заявок ' + r.counts.leads + ', отзывов ' + r.counts.reviews + '.</p>' +
+    '<div class="note">' + esc(shStatus(r)) + '</div>' +
+    li(1, 'Открой свою таблицу → меню «Расширения» → «Apps Script».') +
+    li(2, 'Сотри всё в окне кода, нажми «Скопировать скрипт» ниже и вставь. Нажми значок дискеты (сохранить).') +
+    '<div class="btns" style="margin:0 0 6px"><button class="btn ghost" type="button" id="shCopy">📋 Скопировать скрипт</button></div>' +
+    '<textarea id="shScript" readonly rows="3" style="width:100%;font:12px/1.3 monospace;display:none"></textarea>' +
+    li(3, 'Вверху справа «Начать развёртывание» → «Новое развёртывание» → шестерёнка → «Веб-приложение». «Выполнять от имени»: <b>я</b>. «У кого есть доступ»: <b>все</b>. Нажми «Начать развёртывание» и разреши доступ к таблице (Google может предупредить «приложение не проверено» → «Дополнительно» → «Перейти»).') +
+    li(4, 'Скопируй «URL веб-приложения» (оканчивается на /exec) и вставь сюда:') +
+    '<input type="text" id="shUrl" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec" value="' + esc(r.url || '') + '">' +
+    '<div class="btns"><button class="btn" id="shSave">Сохранить и выгрузить</button>' + (r.url ? '<button class="btn ghost" id="shSync">Выгрузить всё сейчас</button>' : '') + '<button class="btn ghost" id="shClose">Закрыть</button></div>');
+  $('shClose').onclick = closeSheet;
+  $('shCopy').onclick = async () => {
+    const ta = $('shScript'); ta.value = r.script;
+    try { await navigator.clipboard.writeText(r.script); toast('Скрипт скопирован ✓'); } catch (e) { ta.style.display = 'block'; ta.select(); toast('Выдели текст ниже и скопируй'); }
+  };
+  const run = async (save) => {
+    try {
+      if (save) await api('/sheets', { url: $('shUrl').value.trim() });
+      const x = await api('/sheets/sync', {});
+      haptic('medium'); toast('Готово: заявок ' + x.leads + ', отзывов ' + x.reviews); closeSheet(); render();
+    } catch (e) { toast(e.message); }
+  };
+  $('shSave').onclick = () => run(true);
+  if ($('shSync')) $('shSync').onclick = () => run(false);
+}
+
 function openDocs() {
   const d = S.docs || {};
   const f = (k, t, ph, hint) => '<label class="f">' + t + '</label><input type="text" id="d_' + k + '" inputmode="url" placeholder="' + ph + '" value="' + esc(d[k] || '') + '">' + (hint ? '<p class="small muted" style="margin:6px 2px 0">' + hint + '</p>' : '');

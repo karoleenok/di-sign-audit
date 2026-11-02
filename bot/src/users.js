@@ -2,6 +2,7 @@ import { ZONES, LEVELS } from './texts.js';
 import { say, btn, msg as msgText, delayOf, linksOf, CB_BTN, btnExtra, isOff } from './msgs.js';
 import { sendPost, recordDeliveries, loadDocs, sendButtonFile, resolveFork } from './posts.js';
 import { isAdmin } from './admin.js';
+import { syncSoon } from './sheets.js';
 
 const CONSENT_VERSION = 'v1';
 
@@ -374,6 +375,7 @@ export async function onUserText(ctx, msg, state) {
     await pauseFor(ctx, id, 'fbThanks');
     await sendFbBonus(ctx, await getUser(ctx, id));
     await notifyAdmins(ctx, await getUser(ctx, id));
+    syncSoon(ctx);
     return nextStep(ctx, await getUser(ctx, id));
   }
 }
@@ -444,6 +446,7 @@ async function finishLead(ctx, id, first) {
   }
   await ctx.db.run(`UPDATE leads SET done = 1 WHERE id = ?`, [lead.id]);
   await notifyLead(ctx, u, lead.source);
+  syncSoon(ctx);
   await say(ctx, id, 'leadThanks', {});
   // заявку оставили в середине входа — продолжаем вход
   const u2 = await getUser(ctx, id);

@@ -1134,4 +1134,41 @@ step('несколько постов сразу, автоархив анонс�
 }
 step('новый вход из соцсетей: развилка, экскурсия, меню; заявка не раньше согласия; ссылка не слипается');
 
+// выгрузка заявок и отзывов в Google-таблицу (через скрипт-приёмник; настоящая сеть не нужна)
+{
+  const { handlePanelApi } = await import('../src/panel-api.js');
+  const crypto = await import('node:crypto');
+  const pp = new URLSearchParams({ auth_date: String(NOW), user: JSON.stringify({ id: 100, first_name: 'Каролина' }) });
+  const dcs = [...pp.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, v]) => `${k}=${v}`).join('\n');
+  const secret = crypto.createHmac('sha256', 'WebAppData').update(env.BOT_TOKEN).digest();
+  pp.set('hash', crypto.createHmac('sha256', secret).update(dcs).digest('hex'));
+  const call = async (path, body) => { const req = new Request('https://bot.test/api/panel' + path, { method: body ? 'POST' : 'GET', headers: { 'x-init-data': pp.toString(), 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }); const r = await handlePanelApi(C(), req, new URL(req.url)); return { status: r.status, ...(await r.json()) }; };
+  const g0 = await call('/sheets');
+  assert.equal(g0.url, '', 'сначала таблица не подключена');
+  const key = /const KEY = '([0-9a-f]{32})'/.exec(g0.script);
+  assert.ok(key && g0.script.includes('doPost') && g0.script.includes("'Заявки'") && g0.script.includes("'Отзывы'"), 'скрипт для таблицы с ключом');
+  assert.ok(g0.counts.leads >= 1, 'заявки в базе есть');
+  assert.equal((await call('/sheets', { url: 'https://evil.example.com/exec' })).status, 400, 'чужую ссылку не принимаем');
+  assert.equal((await call('/sheets/sync', {})).status, 400, 'без ссылки выгружать некуда');
+  const URL_OK = 'https://script.google.com/macros/s/AKfycbTEST_123-x/exec';
+  assert.equal((await call('/sheets', { url: URL_OK })).ok, true);
+  const real = globalThis.fetch; const seen = []; let reply = { ok: true };
+  globalThis.fetch = async (u, init) => { seen.push({ u, init, body: JSON.parse(init.body) }); return { ok: true, status: 200, text: async () => JSON.stringify(reply) }; };
+  try {
+    const r1 = await call('/sheets/sync', {});
+    assert.equal(r1.ok, true); assert.equal(seen.length, 1); assert.equal(seen[0].u, URL_OK);
+    const pl = seen[0].body;
+    assert.equal(pl.key, key[1], 'ключ из скрипта совпадает с тем, что шлёт бот');
+    assert.equal(pl.leads.length, g0.counts.leads); assert.equal(pl.leadHead.length, pl.leads[0].length, 'колонок столько же, сколько в шапке');
+    assert.ok(pl.leads.every((r) => /^\d+$/.test(r[0])) && pl.leads.some((r) => r[4]), 'в заявках есть Telegram ID и телефон');
+    assert.equal(pl.reviewHead.length, pl.reviews.length ? pl.reviews[0].length : pl.reviewHead.length);
+    assert.equal((await call('/sheets')).last.ok, true, 'результат выгрузки запомнен');
+    reply = { ok: false, error: 'key' };
+    const r2 = await call('/sheets/sync', {});
+    assert.equal(r2.status, 400); assert.match(r2.error, /ключ/);
+    assert.equal((await call('/sheets')).last.ok, false, 'и неудача тоже видна в панели');
+  } finally { globalThis.fetch = real; }
+}
+step('таблица Google: скрипт с ключом, проверка ссылки, выгрузка заявок и отзывов, ошибка видна');
+
 console.log('\nВсе сценарии прошли. Запросов к фейковому Telegram:', calls.length);
