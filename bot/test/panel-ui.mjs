@@ -414,7 +414,8 @@ step('выбрать несколько, откат пачки, «где это 
   await page.screenshot({ path: OUT + '/panel-26-texts.png', fullPage: true });
   await page.click('#tabs button[data-t="path"]'); await page.waitForSelector('.stp[data-k="hello"]');
   // редактор развилки: «кому» и тип кнопки «Отзыв»
-  await page.click('.stp[data-k="post:' + sc[0].id + '"]'); await page.waitForSelector('#fWho');
+  await page.$eval('.stp[data-k="post:' + sc[0].id + '"]', (e) => e.scrollIntoView({ block: 'center' }));
+  await page.click('.stp[data-k="post:' + sc[0].id + '"] .st-t'); await page.waitForSelector('#fWho');
   assert.ok(await page.$('#bEd [data-type="fb"]'), 'у кнопки есть тип «Отзыв»');
   await page.screenshot({ path: OUT + '/panel-21-who.png' });
   await page.evaluate(() => document.querySelector('#sheetBg').click()); await page.waitForTimeout(200);
@@ -440,8 +441,9 @@ step('заготовка входа из соцсетей, кнопка отзы
   assert.deepEqual({ ...row }, { kind: 'drip', day, status: 'draft' }, 'пост переехал в выбранный день, а не скопировался');
   assert.equal((await db.all(`SELECT id FROM posts WHERE title LIKE 'ПЕРЕНЕСИ МЕНЯ%'`)).length, 1, 'дубля нет');
   // копия в подарок
-  await page.waitForSelector('[data-slot="gift"], [data-pickk="gift"]');
-  await page.evaluate(() => (document.querySelector('[data-slot="gift"]') || document.querySelector('[data-pickk="gift"]')).click());
+  await page.evaluate(() => { const h = document.querySelector('[data-stage="gift"].cl [data-tg]'); if (h) h.click(); });
+  await page.waitForSelector('[data-addk="gift"]'); await page.evaluate(() => document.querySelector('[data-addk="gift"]').click());
+  await page.waitForSelector('#sheet [data-pickk="gift"]'); await page.evaluate(() => document.querySelector('#sheet [data-pickk="gift"]').click());
   await page.waitForSelector('#pkList .kind'); await page.click('#pkMode [data-v="copy"]');
   await page.fill('#pkQ', 'ПЕРЕНЕСИ'); await page.waitForTimeout(150);
   await page.click('#pkList .kind'); await page.waitForTimeout(800);
