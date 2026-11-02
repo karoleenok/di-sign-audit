@@ -414,6 +414,8 @@ step('выбрать несколько, откат пачки, «где это 
   await page.click('#tabs button[data-t="texts"]'); await page.waitForTimeout(250);
   const tags = await page.$$eval('#body .tag.sc', (e) => e.map((x) => x.textContent));
   assert.ok(tags.includes('🌱 из соцсетей') && tags.includes('✅ после аудита') && tags.includes('👥 всем'), 'в настройках у шагов видно сценарий: ' + tags.join(' | '));
+  assert.ok(await page.$('#dlBtn'), 'в настройках есть кнопка «скачать таблицу»');
+  await page.click('#tabs button[data-t="reviews"]'); await page.waitForSelector('#dlCrm'); await page.click('#tabs button[data-t="texts"]'); await page.waitForSelector('#dlBtn');
   await page.screenshot({ path: OUT + '/panel-26-texts.png', fullPage: true });
   await page.click('#tabs button[data-t="path"]'); await page.waitForSelector('.stp[data-k="hello"]');
   // редактор развилки: «кому» и тип кнопки «Отзыв»

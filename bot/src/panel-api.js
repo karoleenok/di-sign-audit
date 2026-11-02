@@ -9,7 +9,7 @@ import { mdToEntities, entitiesToMd } from './fmt.js';
 import { runPreview, runFullPath, startFastRun, stopRuns, stepRuns, activeRun } from './testrun.js';
 import { onStart, docVars, consentView, backfillFb, loadFlow, normFlow, FLOW_OPTIONAL } from './users.js';
 import { MSK, DAY } from './time.js';
-import { sheetsConfig, saveSheetsUrl, saveSheetsDoc, validDocUrl, validSheetsUrl, pushSheets, scriptFor, sheetRows } from './sheets.js';
+import { exportXlsx } from './export.js';
 import { saveMsgExtra, saveBtnExtra, setMsgOff, linksOf } from './msgs.js';
 import { listMsgs, saveMsg, resetMsg, btn, say, setMsgMedia, canMedia, msgInfo, loadMsgs } from './msgs.js';
 
@@ -326,28 +326,17 @@ async function panelRest(ctx, request, url, user, path, body) {
       }),
     });
   }
-  // выгрузка заявок и отзывов в Google-таблицу
-  if (path === '/sheets') {
-    const cfg = await sheetsConfig(ctx.db);
-    if (request.method === 'POST') {
-      if (body.doc != null) {
-        const d = String(body.doc || '').trim();
-        if (d && !validDocUrl(d)) return json({ error: 'Это не похоже на ссылку на Google-таблицу: она начинается с https://docs.google.com/spreadsheets/d/' }, 400);
-        await saveSheetsDoc(ctx.db, d);
-      }
-      if (body.url != null) {
-        const u = String(body.url || '').trim();
-        if (u && !validSheetsUrl(u)) return json({ error: 'Это не похоже на ссылку веб-приложения: она начинается с https://script.google.com/macros/s/ и заканчивается на /exec' }, 400);
-        await saveSheetsUrl(ctx.db, u);
-      }
-      return json({ ok: true });
-    }
-    const n = await sheetRows(ctx.db);
-    return json({ url: cfg.url, doc: cfg.doc, script: scriptFor(), last: cfg.last, counts: { leads: n.leads.length, reviews: n.reviews.length } });
-  }
-  if (path === '/sheets/sync' && request.method === 'POST') {
-    const r = await pushSheets(ctx);
-    return json(r.ok ? r : { error: r.error }, r.ok ? 200 : 400);
+  // таблица заявок и отзывов: бот присылает файл .xlsx тому, кто нажал кнопку
+  if (path === '/export/send' && request.method === 'POST') {
+    const x = await exportXlsx(ctx.db);
+    const d = new Date(ctx.now * 1000 + 3 * 3600e3), p2 = (n) => String(n).padStart(2, '0');
+    const stamp = `${d.getUTCFullYear()}-${p2(d.getUTCMonth() + 1)}-${p2(d.getUTCDate())}`;
+    const fd = new FormData();
+    fd.append('chat_id', String(user.id));
+    fd.append('caption', `таблица на ${stamp}: заявок ${x.leads}, отзывов ${x.reviews}. внутри телефоны и почты, храни только у себя`);
+    fd.append('document', new Blob([x.file], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `di-sign-crm-${stamp}.xlsx`);
+    try { await ctx.tg.upload('sendDocument', fd); } catch (e) { return json({ error: 'Telegram не принял файл: ' + String(e.message || e).slice(0, 120) }, 400); }
+    return json({ ok: true, leads: x.leads, reviews: x.reviews });
   }
   // CRM: все люди одним списком — этап, контакты, заявка, отзыв, бонус
   if (path === '/crm') {

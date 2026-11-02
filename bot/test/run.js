@@ -10,7 +10,9 @@ const calls = [];
 let failEmoji = false, fail403 = new Set(), fail429 = false, msgId = 1000;
 const fakeFetch = async (url, init) => {
   const method = url.split('/').pop();
-  const body = JSON.parse(init.body);
+  let body;
+  if (typeof init.body === 'string') body = JSON.parse(init.body);
+  else { body = {}; for (const [k, v] of init.body.entries()) body[k] = typeof v === 'string' ? v : { filename: v.name, size: v.size }; if (body.chat_id) body.chat_id = Number(body.chat_id); }
   calls.push({ method, body });
   const ok = (result) => ({ json: async () => ({ ok: true, result }) });
   const err = (code, d, extra) => ({ json: async () => ({ ok: false, error_code: code, description: d, ...extra }) });
@@ -1134,44 +1136,45 @@ step('несколько постов сразу, автоархив анонс�
 }
 step('новый вход из соцсетей: развилка, экскурсия, меню; заявка не раньше согласия; ссылка не слипается');
 
-// выгрузка заявок и отзывов в Google-таблицу (через скрипт-приёмник; настоящая сеть не нужна)
+// таблица заявок и отзывов: бот присылает файл .xlsx тому, кто нажал кнопку в панели
 {
   const { handlePanelApi } = await import('../src/panel-api.js');
+  const { zlib } = { zlib: await import('node:zlib') };
   const crypto = await import('node:crypto');
   const pp = new URLSearchParams({ auth_date: String(NOW), user: JSON.stringify({ id: 100, first_name: 'Каролина' }) });
   const dcs = [...pp.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, v]) => `${k}=${v}`).join('\n');
   const secret = crypto.createHmac('sha256', 'WebAppData').update(env.BOT_TOKEN).digest();
   pp.set('hash', crypto.createHmac('sha256', secret).update(dcs).digest('hex'));
   const call = async (path, body) => { const req = new Request('https://bot.test/api/panel' + path, { method: body ? 'POST' : 'GET', headers: { 'x-init-data': pp.toString(), 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }); const r = await handlePanelApi(C(), req, new URL(req.url)); return { status: r.status, ...(await r.json()) }; };
-  const g0 = await call('/sheets');
-  assert.equal(g0.url, '', 'сначала таблица не подключена');
-  const key = [null, (await C().db.first(`SELECT value FROM settings WHERE key = 'sheets:key'`)).value];
-  assert.ok(/^[0-9a-f]{32}$/.test(key[1]) && g0.script.includes('getScriptProperties') && g0.script.includes('doPost') && g0.script.includes("'Заявки'") && g0.script.includes("'Отзывы'"), 'скрипт для таблицы с ключом');
-  assert.ok(g0.counts.leads >= 1, 'заявки в базе есть');
-  assert.equal((await call('/sheets', { url: 'https://evil.example.com/exec' })).status, 400, 'чужую ссылку не принимаем');
-  assert.equal((await call('/sheets/sync', {})).status, 400, 'без ссылки выгружать некуда');
-  assert.equal((await call('/sheets', { doc: 'https://evil.example.com/x' })).status, 400, 'чужую ссылку на таблицу не принимаем');
-  assert.equal((await call('/sheets', { doc: 'https://docs.google.com/spreadsheets/d/1AbC_def-2/edit?usp=sharing' })).ok, true);
-  assert.equal((await call('/sheets')).doc, 'https://docs.google.com/spreadsheets/d/1AbC_def-2/edit?usp=sharing', 'ссылка на таблицу сохранилась для кнопки');
-  const URL_OK = 'https://script.google.com/macros/s/AKfycbTEST_123-x/exec';
-  assert.equal((await call('/sheets', { url: URL_OK })).ok, true);
-  const real = globalThis.fetch; const seen = []; let reply = { ok: true };
-  globalThis.fetch = async (u, init) => { seen.push({ u, init, body: JSON.parse(init.body) }); return { ok: true, status: 200, text: async () => JSON.stringify(reply) }; };
-  try {
-    const r1 = await call('/sheets/sync', {});
-    assert.equal(r1.ok, true); assert.equal(seen.length, 1); assert.equal(seen[0].u, URL_OK);
-    const pl = seen[0].body;
-    assert.equal(pl.key, key[1], 'бот шлёт свой ключ');
-    assert.equal(pl.leads.length, g0.counts.leads); assert.equal(pl.leadHead.length, pl.leads[0].length, 'колонок столько же, сколько в шапке');
-    assert.ok(pl.leads.every((r) => /^\d+$/.test(r[0])) && pl.leads.some((r) => r[4]), 'в заявках есть Telegram ID и телефон');
-    assert.equal(pl.reviewHead.length, pl.reviews.length ? pl.reviews[0].length : pl.reviewHead.length);
-    assert.equal((await call('/sheets')).last.ok, true, 'результат выгрузки запомнен');
-    reply = { ok: false, error: 'key' };
-    const r2 = await call('/sheets/sync', {});
-    assert.equal(r2.status, 400); assert.match(r2.error, /resetKey/);
-    assert.equal((await call('/sheets')).last.ok, false, 'и неудача тоже видна в панели');
-  } finally { globalThis.fetch = real; }
+  // «с улицы» файл получить нельзя
+  const bad = await handlePanelApi(C(), new Request('https://bot.test/api/panel/export/send', { method: 'POST', body: '{}' }), new URL('https://bot.test/api/panel/export/send'));
+  assert.equal(bad.status, 401, 'без подписи Telegram файл не отдаём');
+  const c0 = calls.length;
+  const r = await call('/export/send', {});
+  assert.equal(r.ok, true); assert.ok(r.leads >= 1, 'заявки есть');
+  const sent = calls.slice(c0).filter((c) => c.method === 'sendDocument');
+  assert.equal(sent.length, 1, 'файл ушёл одним сообщением');
+  assert.equal(sent[0].body.chat_id, 100, 'файл ушёл тому, кто нажал кнопку');
+  assert.match(sent[0].body.document.filename, /^di-sign-crm-\d{4}-\d\d-\d\d\.xlsx$/, 'имя файла с датой');
+  const { buildXlsx, exportXlsx } = await import('../src/export.js');
+  const x = await exportXlsx(C().db);
+  assert.equal(x.file[0], 0x50); assert.equal(x.file[1], 0x4b); // PK: это настоящий zip
+  // разбираем zip сами: список файлов и текст листов
+  const buf = x.file; const names = []; const texts = {};
+  let off = buf.readUInt32LE(buf.length - 6); const cnt = buf.readUInt16LE(buf.length - 12);
+  for (let i = 0; i < cnt; i++) {
+    const nl = buf.readUInt16LE(off + 28), lho = buf.readUInt32LE(off + 42), csz = buf.readUInt32LE(off + 20);
+    const name = buf.subarray(off + 46, off + 46 + nl).toString('utf8'); names.push(name);
+    const lnl = buf.readUInt16LE(lho + 26), lex = buf.readUInt16LE(lho + 28), data = buf.subarray(lho + 30 + lnl + lex, lho + 30 + lnl + lex + csz);
+    texts[name] = zlib.inflateRawSync(data).toString('utf8'); off += 46 + nl;
+  }
+  assert.ok(['[Content_Types].xml', 'xl/workbook.xml', 'xl/worksheets/sheet1.xml', 'xl/worksheets/sheet2.xml'].every((n) => names.includes(n)), 'в файле все части: ' + names.join(', '));
+  assert.ok(texts['xl/workbook.xml'].includes('Заявки') && texts['xl/workbook.xml'].includes('Отзывы'), 'два листа: Заявки и Отзывы');
+  assert.ok(texts['xl/worksheets/sheet1.xml'].includes('Telegram ID') && /<t[^>]*>\+?\d{7,}/.test(texts['xl/worksheets/sheet1.xml']), 'на листе заявок есть шапка и телефон');
+  // опасные символы не ломают файл
+  const odd = buildXlsx([{ name: 'A', head: ['x'], rows: [['<b>&"\u0001ок']], widths: [10] }]);
+  assert.equal(odd[0], 0x50, 'файл с «<&>» собирается');
 }
-step('таблица Google: скрипт с ключом, проверка ссылки, выгрузка заявок и отзывов, ошибка видна');
+step('таблица: бот присылает .xlsx с листами «Заявки» и «Отзывы», без подписи не отдаёт');
 
 console.log('\nВсе сценарии прошли. Запросов к фейковому Telegram:', calls.length);

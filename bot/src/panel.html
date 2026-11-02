@@ -442,16 +442,16 @@ async function renderHome() {
     '<div class="hm-g">' + tile(nLead, 'заявок за неделю') + tile(nRev, 'отзывов за неделю') + tile(nNew, 'новых людей') + '</div>';
   const recent = ppl.filter((u) => u.lead).sort((a, b) => b.lead.at - a.lead.at).slice(0, 3);
   h += '<div class="box" style="margin:0"><h3>Последние заявки</h3>' + (recent.length ? recent.map((u) => '<div class="hm-r"><span><b>' + esc(u.name || 'без имени') + '</b><br><span class="small muted">' + esc([u.phone, u.track === 'mat' ? 'материалы' : u.track === 'course' ? 'мини-курс' : '', fmt(u.lead.at)].filter(Boolean).join(' · ')) + '</span></span>' + (u.username ? '<a class="chip" href="https://t.me/' + esc(u.username) + '" target="_blank" rel="noopener">написать</a>' : '') + '</div>').join('') : '<p class="small muted" style="margin:6px 0 0">Заявок пока нет.</p>') +
-    '<div class="btns" style="margin:8px 0 0"><button type="button" class="btn ghost" data-hm="reviews">Все заявки и отзывы</button><a class="btn ghost" id="hmSheet" href="#" target="_blank" rel="noopener" hidden style="text-align:center;text-decoration:none">📊 Открыть таблицу</a></div></div>';
+    '<div class="btns" style="margin:8px 0 0"><button type="button" class="btn ghost" data-hm="reviews">Все заявки и отзывы</button><button type="button" class="btn ghost" data-hm="dl">📥 Скачать таблицу</button></div></div>';
   const today = S.posts.filter((p) => p.kind === 'date' && p.status === 'active' && p.run_at && p.run_at > now - 3600 && p.run_at < now + 86400);
   if (today.length) h += '<div class="box" style="margin:0"><h3>Ближайшие сутки</h3>' + today.map((p) => '<div class="hm-r"><span>' + esc(postName(p).slice(0, 40)) + '</span><span class="small muted">' + fmt(p.run_at) + '</span></div>').join('') + '</div>';
   h += '<div class="meta"><span class="tag ' + (bk && bk.sent ? 'ok' : '') + '">' + (bk ? 'копия базы: ' + fmt(bk.at / 1000) + (bk.sent ? ' · в телеграме' : ' · только на сервере') : 'копии базы ещё нет') + '</span><span class="tag">версия панели ' + esc(/@@/.test(BUILD) ? 'dev' : BUILD.slice(0, 4)) + '</span></div></div>';
   $('body').innerHTML = h;
-  api('/sheets').then((r) => { if (r.doc && $('hmSheet')) { $('hmSheet').href = r.doc; $('hmSheet').hidden = false; } }).catch(() => {});
   document.querySelectorAll('[data-hm]').forEach((b) => b.onclick = () => {
     const k = b.dataset.hm; haptic();
     if (k === 'docs') { tab = 'texts'; render(); window.scrollTo(0, 0); setTimeout(openDocs, 50); }
     else if (k === 'flow' || k === 'reviews') { tab = k === 'flow' ? 'path' : k; render(); window.scrollTo(0, 0); }
+    else if (k === 'dl') downloadTable(b);
     else if (/^post:/.test(k)) openPost(+k.slice(5));
   });
 }
@@ -619,6 +619,7 @@ function drawCrm() {
   const waiting = all.filter((u) => u.lead && !u.lead.done).length;
   const pend = all.filter((u) => u.review && u.review.bonusPending > 0 && u.stage !== 'blocked').length;
   let h = '<div class="meta" id="crmF" style="margin:16px 0 8px">' + Object.keys(F).map((k) => '<button type="button" class="chip' + (crmView.f === k ? ' on' : '') + '" data-f="' + k + '">' + F[k][0] + ' · ' + all.filter(F[k][1]).length + '</button>').join('') + (waiting ? '<span class="tag warn-t">ждём контакт: ' + waiting + '</span>' : '') + '</div>' +
+    '<div class="btns" style="margin:0 0 8px"><button type="button" class="btn ghost" id="dlCrm">📥 Скачать таблицу (Excel)</button></div>' +
     '<p class="small muted" style="margin:0 2px 10px">Это персональные данные: не пересылай их в чаты и не скачивай на чужие устройства.</p>' +
     (all.length > 4 ? '<input type="search" id="crmQ" placeholder="Поиск: имя, @ник, телефон, почта" value="' + esc(crmView.q) + '" style="margin-bottom:10px">' : '');
   if (crmView.f !== 'lead' && !crmData.activeBonus && all.some((u) => u.review)) h += '<div class="note warn">Нет включённых постов «бонус за отзыв»: включи пост во вкладке «Подарки», иначе отправлять нечего.</div>';
@@ -641,6 +642,7 @@ function drawCrm() {
   $('body').innerHTML = h;
   if (keep && $('crmQ')) { const el = $('crmQ'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
   if ($('crmQ')) $('crmQ').oninput = (e) => { crmView.q = e.target.value; drawCrm(); };
+  if ($('dlCrm')) $('dlCrm').onclick = () => downloadTable($('dlCrm'));
   $('crmF').onclick = (e) => { const b = e.target.closest('[data-f]'); if (!b) return; crmView.f = b.dataset.f; haptic(); drawCrm(); };
   document.querySelectorAll('[data-cp]').forEach((el) => el.onclick = () => { const t = el.dataset.cp; (navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast('Скопировано: ' + t)).catch(() => { try { const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); toast('Скопировано: ' + t); } catch (e) { toast(t); } }); });
   const send = async (el, id) => { el.disabled = true; const old = el.textContent; el.textContent = 'Отправляю…'; try { await api('/fb/send', { tg_id: id }); haptic('medium'); toast('Бонус отправлен ✓'); renderReviews(); } catch (e) { toast(e.message); el.disabled = false; el.textContent = old; } };
@@ -678,7 +680,7 @@ const mediaTag = (m) => m && m.media ? '<span class="tag">' + ({ photo: '🖼 к
 function renderTexts() {
   const dd = S.docs || {}, okk = (k) => dd[k] ? '✓' : 'не задана';
   let h = '<div class="lnk2"><div><b>Документы</b><div class="small muted">политика ' + okk('policy') + ' · согласие ' + okk('consent') + ' · оферта ' + okk('offer') + '</div></div><button type="button" class="chip" id="docsBtn">изменить</button></div>' +
-    '<div class="lnk2"><div><b>Таблица Google</b><div class="small muted" id="shSt">заявки и отзывы сами попадают в таблицу</div></div><span style="display:flex;gap:6px"><a class="chip" id="shOpen" href="#" target="_blank" rel="noopener" hidden>📊 открыть</a><button type="button" class="chip" id="shBtn">настроить</button></span></div>' +
+    '<div class="lnk2"><div><b>Таблица заявок и отзывов</b><div class="small muted">файл Excel: контакты, треки, отзывы. Бот пришлёт его тебе в чат</div></div><button type="button" class="chip" id="dlBtn">📥 скачать</button></div>' +
     '<div class="lnk2"><div><b>Люди и отзывы</b><div class="small muted">контакты, выбор из аудита, отзывы: ' + (S.fbCount || 0) + '</div></div><button type="button" class="chip" id="peopleBtn">открыть</button></div>';
   h += '<div class="box" style="margin-top:16px"><h3>Путь ученика</h3><p class="small muted" style="margin:0 0 10px">Так бот встречает нового человека — шаг за шагом. Нажми на шаг или на кнопку, чтобы поменять текст, картинку, паузу и кнопки-ссылки.</p>' +
     '<div class="btns" style="margin-top:0"><button class="btn" type="button" id="obNo">▶️ Пройти путь заново — без теста</button><button class="btn ghost" type="button" id="obTest">▶️ Пройти путь заново — как из теста</button></div>' +
@@ -709,8 +711,7 @@ function renderTexts() {
   const ob = async (fromTest) => { try { await api('/run/onboarding', { fromTest, level: view.level }); haptic('medium'); toast('Открой бот — путь начался 👀'); try { tg && tg.close && setTimeout(() => {}, 0); } catch (e) {} } catch (e) { toast(e.message); } };
   $('obNo').onclick = () => ob(false); $('obTest').onclick = () => ob(true);
   $('docsBtn').onclick = openDocs; $('peopleBtn').onclick = openPeople;
-  $('shBtn').onclick = openSheets;
-  api('/sheets').then((r) => { if ($('shSt')) $('shSt').textContent = shStatus(r); if (r.doc && $('shOpen')) { $('shOpen').href = r.doc; $('shOpen').hidden = false; } }).catch(() => {});
+  $('dlBtn').onclick = () => downloadTable($('dlBtn'));
 }
 
 // редактор кнопок-ссылок (общий)
@@ -1555,49 +1556,19 @@ async function openPeople() {
   }).join('') || '<p class="muted">Пока никого.</p>';
   $('sheet').innerHTML = '<div class="grab"></div>' + h; $('pX').onclick = closeSheet;
 }
-function shStatus(r) {
-  if (!r.url) return 'не подключена: нажми «настроить», там пошаговая инструкция';
-  const l = r.last;
-  if (!l) return 'подключена · выгрузок ещё не было';
-  const d = new Date((l.at + 10800) * 1000), p2 = (n) => String(n).padStart(2, '0');
-  const when = p2(d.getUTCDate()) + '.' + p2(d.getUTCMonth() + 1) + ' ' + p2(d.getUTCHours()) + ':' + p2(d.getUTCMinutes());
-  return l.ok ? 'подключена · выгрузка ' + when + ' · заявок ' + l.leads + ', отзывов ' + l.reviews : '⚠️ ' + when + ': ' + l.error;
+let dlBusy = false;
+async function downloadTable(btn) {
+  if (dlBusy) return;
+  dlBusy = true;
+  const old = btn ? btn.textContent : '';
+  if (btn) btn.textContent = 'Готовлю файл…';
+  try {
+    const r = await api('/export/send', {});
+    haptic('medium'); toast('Файл в чате с ботом: заявок ' + r.leads + ', отзывов ' + r.reviews);
+  } catch (e) { toast(e.message); }
+  dlBusy = false;
+  if (btn) btn.textContent = old;
 }
-async function openSheets() {
-  let r;
-  try { r = await api('/sheets'); } catch (e) { toast(e.message); return; }
-  const li = (n, t) => '<div style="display:flex;gap:10px;margin:8px 0"><b style="flex:none;width:24px;height:24px;border-radius:50%;background:var(--pill);display:grid;place-items:center;font-size:12px">' + n + '</b><span class="small" style="flex:1">' + t + '</span></div>';
-  sheet('<span class="pill">Таблица Google</span><h2>Заявки и отзывы в таблице</h2>' +
-    '<p class="small muted" style="margin:0 0 6px">Бот сам добавляет строки на листы «Заявки» и «Отзывы»: при новой заявке или отзыве. Твои заметки в колонках справа от данных бота остаются на месте. Сейчас в базе: заявок ' + r.counts.leads + ', отзывов ' + r.counts.reviews + '.</p>' +
-    '<div class="note">' + esc(shStatus(r)) + '</div>' +
-    '<label class="f">Ссылка на твою таблицу (для кнопки «открыть»)</label><input type="text" id="shDoc" inputmode="url" placeholder="https://docs.google.com/spreadsheets/d/…" value="' + esc(r.doc || '') + '">' +
-    (r.doc ? '<div class="btns" style="margin:8px 0 0"><a class="btn ghost" href="' + esc(r.doc) + '" target="_blank" rel="noopener" style="text-align:center;text-decoration:none">📊 Открыть таблицу</a></div>' : '') +
-    li(1, 'Открой свою таблицу → меню «Расширения» → «Apps Script».') +
-    li(2, 'Сотри всё в окне кода, нажми «Скопировать скрипт» ниже и вставь. Нажми значок дискеты (сохранить).') +
-    '<div class="btns" style="margin:0 0 6px"><button class="btn ghost" type="button" id="shCopy">📋 Скопировать скрипт</button></div>' +
-    '<textarea id="shScript" readonly rows="3" style="width:100%;font:12px/1.3 monospace;display:none"></textarea>' +
-    li(3, 'Вверху справа «Начать развёртывание» → «Новое развёртывание» → шестерёнка → «Веб-приложение». «Выполнять от имени»: <b>я</b>. «У кого есть доступ»: <b>все</b>. Нажми «Начать развёртывание» и разреши доступ к таблице (Google может предупредить «приложение не проверено» → «Дополнительно» → «Перейти»).') +
-    li(4, 'Скопируй «URL веб-приложения» (оканчивается на /exec) и вставь сюда:') +
-    '<input type="text" id="shUrl" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec" value="' + esc(r.url || '') + '">' +
-    '<div class="btns"><button class="btn" id="shSave">Сохранить и выгрузить</button>' + (r.url ? '<button class="btn ghost" id="shSync">Выгрузить всё сейчас</button>' : '') + '<button class="btn ghost" id="shClose">Закрыть</button></div>');
-  $('shClose').onclick = closeSheet;
-  $('shCopy').onclick = async () => {
-    const ta = $('shScript'); ta.value = r.script;
-    try { await navigator.clipboard.writeText(r.script); toast('Скрипт скопирован ✓'); } catch (e) { ta.style.display = 'block'; ta.select(); toast('Выдели текст ниже и скопируй'); }
-  };
-  const run = async (save) => {
-    try {
-      const url = $('shUrl').value.trim(), doc = $('shDoc').value.trim();
-      await api('/sheets', save ? { url, doc } : { doc });
-      if (save && !url) { haptic('medium'); toast('Ссылка на таблицу сохранена ✓'); closeSheet(); render(); return; }
-      const x = await api('/sheets/sync', {});
-      haptic('medium'); toast('Готово: заявок ' + x.leads + ', отзывов ' + x.reviews); closeSheet(); render();
-    } catch (e) { toast(e.message); }
-  };
-  $('shSave').onclick = () => run(true);
-  if ($('shSync')) $('shSync').onclick = () => run(false);
-}
-
 function openDocs() {
   const d = S.docs || {};
   const f = (k, t, ph, hint) => '<label class="f">' + t + '</label><input type="text" id="d_' + k + '" inputmode="url" placeholder="' + ph + '" value="' + esc(d[k] || '') + '">' + (hint ? '<p class="small muted" style="margin:6px 2px 0">' + hint + '</p>' : '');
