@@ -43,6 +43,8 @@ export async function checkInitData(initData, botToken, now, maxAge = 86400) {
 const json = (o, status = 200) => new Response(JSON.stringify(o), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
 const j = (s, d) => { try { return s ? JSON.parse(s) : d; } catch { return d; } };
 const TIME = /^([01]?\d|2[0-3]):([0-5]\d)$/;
+const TASK_OWNERS = ['Каролина', 'Диана', 'Артём'];
+const TASK_ID = /^[a-z]{2,6}-\d{4}$/;
 const pad = (t) => { const m = TIME.exec(t || ''); return m ? `${m[1].padStart(2, '0')}:${m[2]}` : null; };
 
 function postOut(p, sent, clicks) {
@@ -579,6 +581,23 @@ async function panelRest(ctx, request, url, user, path, body) {
       await ctx.db.run(`UPDATE posts SET day = ?, send_time = ?, pos = ?, mode = 'day' WHERE id = ? AND kind = 'drip'`, [parseInt(it.day, 10), pad(it.time), parseInt(it.pos, 10) || 0, +it.id]);
     }
     return json({ ok: true, n: items.length });
+  }
+
+  // задачи команды: общие отметки «сделано» (доступ только админам — проверка в начале)
+  if (path === '/tasks' && request.method === 'GET') {
+    const rows = await ctx.db.all(`SELECT task_id, owner, done_at FROM team_tasks`);
+    return json({ done: rows });
+  }
+  if (path === '/tasks/toggle' && request.method === 'POST') {
+    const id = String(body.task_id || ''), owner = String(body.owner || '');
+    if (!TASK_ID.test(id) || !TASK_OWNERS.includes(owner)) return json({ error: 'Неверная задача' }, 400);
+    if (body.done) {
+      await ctx.db.run(`INSERT INTO team_tasks (task_id, owner, done_at, done_by) VALUES (?, ?, ?, ?)
+        ON CONFLICT(task_id, owner) DO UPDATE SET done_at = excluded.done_at, done_by = excluded.done_by`, [id, owner, ctx.now, user.id]);
+    } else {
+      await ctx.db.run(`DELETE FROM team_tasks WHERE task_id = ? AND owner = ?`, [id, owner]);
+    }
+    return json({ ok: true });
   }
 
   // проверка ленты на себе

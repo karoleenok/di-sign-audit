@@ -137,6 +137,14 @@ export const MIGRATIONS = [
   ],
   // кому шаг входа: all — всем, new — только тем, кто пришёл без аудита
   [`ALTER TABLE posts ADD COLUMN who TEXT`],
+  // v7: вкладка «Задачи» в панели — общие отметки «сделано» (список задач лежит в panel.html, тут только отметки)
+  [
+    `CREATE TABLE IF NOT EXISTS team_tasks (
+      task_id TEXT NOT NULL, owner TEXT NOT NULL,
+      done_at INTEGER NOT NULL, done_by INTEGER,
+      PRIMARY KEY (task_id, owner)
+    )`,
+  ],
 ];
 
 // Обновить базу при первом запуске после выкладки новой версии (один раз на процесс)
