@@ -84,7 +84,12 @@ img{display:block}
 .hello{gap:var(--s5)}
 .hello .hero{gap:var(--s3)}
 .hello-img{display:flex;justify-content:center;padding-block:var(--s2)}
-.hello-img img{width:min(52vw,208px);height:auto;aspect-ratio:1;object-fit:contain}
+.hello-img img{width:min(74vw,300px,27dvh);height:auto;aspect-ratio:1;object-fit:contain}
+.hello{text-align:center}
+.hello .brandbar{justify-content:center}
+.hello .hero{align-items:center}
+.hello .bell{display:flex;flex-direction:column;align-items:center;gap:var(--s2);text-align:center}
+.hello .dock{align-items:stretch}
 .bell{display:grid;grid-template-columns:44px minmax(0,1fr);gap:var(--s3);align-items:start;padding:var(--s4);border:1px solid var(--line);border-radius:var(--r-xl);background:var(--card)}
 .bell-ic{width:44px;height:44px;border-radius:50%;background:var(--lilac);display:grid;place-items:center;color:var(--ink)}
 .bell-ic svg{transform-origin:50% 8%;animation:ring 2.6s ease-in-out 1s 2}
