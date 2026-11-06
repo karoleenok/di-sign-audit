@@ -5,6 +5,7 @@ import { migrate } from '../src/schema.js';
 import { makeCtx, handleUpdate, tick, clickRedirect } from '../src/core.js';
 import { parseWhen, fmtWhen } from '../src/time.js';
 import { saveBtnExtra, setMsgOff } from '../src/msgs.js';
+import { loadCfg, saveCfg, viewFor, isOpen, normalize } from '../src/appcfg.js';
 
 const calls = [];
 let failEmoji = false, fail403 = new Set(), fail429 = false, msgId = 1000;
@@ -1196,5 +1197,33 @@ step('таблица: бот присылает .xlsx с листами «Зая
   assert.equal(ts.list.length, 0, 'удаление работает');
 }
 step('технические аккаунты: разбор ника/ID, добавление без дублей, удаление');
+
+{
+  // расписание открытия игр в аппке
+  let cfg = await loadCfg(C());
+  assert.equal(cfg.public, false, 'по умолчанию аппка только для админов');
+  assert.equal(isOpen(cfg.items.poster, NOW), true, 'по умолчанию игры открыты');
+  const T = NOW;
+  let r = await saveCfg(C(), { public: true, items: { poster: { mode: 'sched', from: T + 3600, until: null }, fonts: { mode: 'closed' }, hack: { mode: 'open' } } });
+  assert.ok(r.cfg, 'сохранилось');
+  cfg = await loadCfg(C());
+  assert.equal(cfg.public, true);
+  assert.equal(isOpen(cfg.items.poster, T), false, 'до даты закрыто');
+  assert.equal(isOpen(cfg.items.poster, T + 3600), true, 'в момент открытия открыто');
+  assert.equal(isOpen(cfg.items.fonts, T), false, 'закрыто вручную');
+  assert.equal(cfg.items.hack, undefined, 'чужие ключи отбрасываются');
+  const vUser = viewFor(cfg, T, false);
+  assert.equal(vUser.items.poster.from, T + 3600, 'человеку показываем, когда откроется');
+  assert.equal(vUser.items.poster.mode, undefined, 'режимы человеку не отдаём');
+  assert.equal(viewFor(cfg, T, true).items.fonts.mode, 'closed', 'админу отдаём всё');
+  r = await saveCfg(C(), { items: { poster: { mode: 'sched', from: T + 100, until: T + 50 } } });
+  assert.match(r.error, /позже/, 'закрытие раньше открытия не принимается');
+  r = await saveCfg(C(), { items: { poster: { mode: 'sched' } } });
+  assert.match(r.error, /выбери дату/, 'расписание без дат не принимается');
+  const closing = { mode: 'sched', from: T, until: T + 100 };
+  assert.equal(isOpen(normalize({ items: { fonts: closing } }).items.fonts, T + 100), false, 'после даты закрытия закрыто');
+  assert.deepEqual(normalize('мусор').items.poster, { mode: 'open', from: null, until: null }, 'мусор превращается в значения по умолчанию');
+}
+step('расписание аппки: по умолчанию, открытие по дате, закрытие, проверка дат, чужие ключи');
 
 console.log('\nВсе сценарии прошли. Запросов к фейковому Telegram:', calls.length);

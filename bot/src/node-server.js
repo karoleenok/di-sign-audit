@@ -8,6 +8,7 @@
 import http from 'node:http';
 import { checkInitData as __checkInit } from './panel-api.js';
 import { isAdmin as __isAdmin } from './admin.js';
+import { loadCfg as __loadCfg, saveCfg as __saveCfg, viewFor as __viewFor } from './appcfg.js';
 import __GATE from './workshop-gate.js';
 import net from 'node:net';
 import dns from 'node:dns';
@@ -72,8 +73,27 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/app/load' && req.method === 'POST') {
       const __u = await __checkInit(String(req.headers['x-init-data'] || ''), env.BOT_TOKEN, Math.floor(Date.now() / 1000));
       if (!__u) return send(401, 'unauthorized', 'text/plain; charset=utf-8', { 'cache-control': 'no-store' });
-      if (!(await __isAdmin(ctxFor(), __u.id))) return send(403, 'forbidden', 'text/plain; charset=utf-8', { 'cache-control': 'no-store' });
-      return send(200, fs.readFileSync(new URL('../app/workshop.html', import.meta.url), 'utf8'), 'text/html; charset=utf-8', { 'cache-control': 'no-store' });
+      const __c = ctxFor(), __admin = await __isAdmin(__c, __u.id), __cfg = await __loadCfg(__c);
+      // не админам аппка открыта только когда админ включил «Показывать всем»
+      if (!__admin && !__cfg.public) return send(403, 'forbidden', 'text/plain; charset=utf-8', { 'cache-control': 'no-store' });
+      const __view = __viewFor(__cfg, Math.floor(Date.now() / 1000), __admin);
+      const __html = fs.readFileSync(new URL('../app/workshop.html', import.meta.url), 'utf8').replace('/*__APPCFG__*/null', () => JSON.stringify(__view).replace(/</g, '\\u003c'));
+      return send(200, __html, 'text/html; charset=utf-8', { 'cache-control': 'no-store' });
+    }
+    // расписание открытия игр: сохраняет только админ
+    if (url.pathname === '/api/app/cfg' && req.method === 'POST') {
+      const J = (code, o) => send(code, JSON.stringify(o), 'application/json; charset=utf-8', { 'cache-control': 'no-store' });
+      const __u = await __checkInit(String(req.headers['x-init-data'] || ''), env.BOT_TOKEN, Math.floor(Date.now() / 1000));
+      if (!__u) return J(401, { error: 'Открой аппку из бота' });
+      const __c = ctxFor();
+      if (!(await __isAdmin(__c, __u.id))) return J(403, { error: 'Только для админов' });
+      let body = ''; let big = false;
+      await new Promise((ok) => { req.on('data', (c) => { body += c; if (body.length > 16384) { big = true; req.destroy(); } }); req.on('end', ok); req.on('close', ok); req.on('error', ok); });
+      if (big) return J(413, { error: 'Слишком большой запрос' });
+      let input; try { input = JSON.parse(body || '{}'); } catch { return J(400, { error: 'Не получилось прочитать данные' }); }
+      const r = await __saveCfg(__c, input);
+      if (r.error) return J(400, { error: r.error });
+      return J(200, { ok: true, view: __viewFor(r.cfg, Math.floor(Date.now() / 1000), true) });
     }
     if (url.pathname === '/admin' || url.pathname === '/admin/') return send(200, PANEL, 'text/html; charset=utf-8', { 'cache-control': 'no-store' });
     // большие файлы для кнопок: кладём на диск сервера (Telegram принимает от бота не больше 50 МБ)

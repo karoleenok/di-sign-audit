@@ -10,7 +10,7 @@ export default `<!doctype html><html lang="ru" data-theme="light"><head><meta ch
   var m=document.getElementById('m'),tg=window.Telegram&&window.Telegram.WebApp;
   if(!tg||!tg.initData){m.textContent='Открой игру из бота: команда /game.';return}
   fetch('/api/app/load',{method:'POST',headers:{'x-init-data':tg.initData}}).then(function(r){
-    if(r.status===403){m.textContent='Игра пока только для админов.';return null}
+    if(r.status===403){m.textContent='Игра пока закрыта.';return null}
     if(!r.ok){m.textContent='Не получилось открыть (код '+r.status+'). Попробуй ещё раз из бота.';return null}
     return r.text()}).then(function(h){if(!h)return;document.open();document.write(h);document.close()}).catch(function(){m.textContent='Нет связи. Попробуй ещё раз.'});
 })();
