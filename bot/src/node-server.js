@@ -178,6 +178,14 @@ const server = http.createServer(async (req, res) => {
       const f = new URL('../docs/' + url.pathname.slice(1) + '.html', import.meta.url);
       return send(200, fs.readFileSync(f, 'utf8'), 'text/html; charset=utf-8', { 'cache-control': 'public, max-age=300' });
     }
+    // шрифты упражнения со своего сервера (только файлы из bot/app/fonts), кэш на год
+    { const fo = /^\/fonts\/([a-z0-9-]{3,40})\.woff$/.exec(url.pathname);
+      if (fo) {
+        const ff = new URL('../app/fonts/' + fo[1] + '.woff', import.meta.url);
+        let buf; try { buf = fs.readFileSync(ff); } catch { return send(404, 'not found', 'text/plain; charset=utf-8'); }
+        res.writeHead(200, { 'content-type': 'font/woff', 'cache-control': 'public, max-age=31536000, immutable', 'content-length': buf.length });
+        return res.end(buf);
+      } }
     // страница аудит-теста: берём файл с GitHub и отдаём как обычную страницу
     if (url.pathname === '/test' || url.pathname === '/test/') {
       // страница тянется с GitHub раз в 5 минут и хранится в памяти (раньше — при каждом открытии, а это 300 КБ)
