@@ -1282,6 +1282,18 @@ step('кнопка «Игра»: админам всегда, людям пос�
   assert.equal((await call('/game')).cfg.soon.mini[0].t, 'Новый материал', 'сохранение расписания без списка «Дальше» его не стирает');
   await call('/game', { soon: { mini: [], mat: [] } });
   assert.deepEqual((await call('/game')).cfg.soon, { mini: [], mat: [] }, 'список можно очистить совсем');
+  // ползунок «показывать всем» сохраняется сам и ничего другого не стирает
+  await call('/game', { items: { poster: { mode: 'open' }, fonts: { mode: 'closed' } } });
+  g = await call('/game', { public: true });
+  assert.equal(g.cfg.public, true, 'ползунок включил игру');
+  assert.equal(g.cfg.items.fonts.mode, 'closed', 'расписание после ползунка осталось');
+  assert.ok(g.cfg.soon.mini.length === 0 && g.cfg.soon.mat.length === 0, 'список «Дальше» после ползунка остался');
+  let lm = null;
+  for (let i = 0; i < 100 && !(lm && lm.on); i++) { await new Promise((ok) => setTimeout(ok, 100)); lm = (await call('/game')).menu; }
+  assert.ok(lm && lm.on === true && lm.total >= 0 && lm.ok + lm.fail === lm.total, 'итог обновления кнопки виден в панели');
+  g = await call('/game', { public: false });
+  assert.equal(g.cfg.public, false);
+  await call('/game', { items: { poster: { mode: 'open' }, fonts: { mode: 'open' } } });
   const np = await call('/post/new', { kind: 'node', md: 'Играем', status: 'active', rows: [[{ text: 'Открыть игру', app: true }]] });
   assert.ok(np.post, 'пост с кнопкой «Игра» сохранился');
   const kb = keyboard({ id: np.post.id, buttons: JSON.stringify(np.post.rows) }, 1, 'https://bot.test', {});

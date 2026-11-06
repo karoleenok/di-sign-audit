@@ -85,8 +85,9 @@ export async function loadCfg(ctx) {
 }
 
 export async function saveCfg(ctx, input) {
-  const cfg = normalize(input);
-  if (!input || input.soon === undefined) cfg.soon = (await loadCfg(ctx)).soon; // аппка и бот шлют только расписание, список «Дальше» не трогаем
+  // что не прислали, то не трогаем: ползунок «показывать всем» шлёт только public, расписание шлёт public и items
+  const cur = await loadCfg(ctx), inp = input && typeof input === 'object' ? input : {};
+  const cfg = normalize({ public: inp.public === undefined ? cur.public : inp.public, items: inp.items === undefined ? cur.items : inp.items, soon: inp.soon === undefined ? cur.soon : inp.soon });
   const err = validate(cfg);
   if (err) return { error: err };
   await ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [KEY, JSON.stringify(cfg)]);
@@ -110,20 +111,25 @@ export function viewFor(cfg, now, admin) {
 // Есть только у тех, кто уже выбрал «мини-курс» или «материалы», и только когда админ открыл аппку для всех.
 export const appTrack = (t) => (t === 'course' ? 'mini' : t === 'mat' ? 'mat' : null);
 export async function userMenu(ctx, id, cfg) {
-  if (!ctx.publicUrl) return;
+  if (!ctx.publicUrl) return false;
   try {
     const c = cfg || (await loadCfg(ctx));
     const u = await ctx.db.first(`SELECT track FROM users WHERE tg_id = ?`, [id]);
     const on = !!(c.public && u && appTrack(u.track));
     await ctx.tg.call('setChatMenuButton', { chat_id: id, menu_button: on ? { type: 'web_app', text: 'Игра', web_app: { url: ctx.publicUrl + '/app' } } : { type: 'commands' } });
-  } catch { /* кнопка не критична */ }
+    return true;
+  } catch (e) { return String((e && (e.description || e.message)) || e).slice(0, 140); /* кнопка не критична: причину покажем в панели */ }
 }
 // всем, кто выбрал трек: вызываем, когда админ включил или выключил «Показывать всем». Идём не быстрее ~20 человек в секунду
 export async function allUsersMenu(ctx) {
   const cfg = await loadCfg(ctx);
   const rows = await ctx.db.all(`SELECT tg_id FROM users WHERE track IS NOT NULL AND status NOT IN ('blocked') LIMIT 5000`);
-  for (const r of rows) { await userMenu(ctx, r.tg_id, cfg); await new Promise((ok) => setTimeout(ok, 50)); }
-  return rows.length;
+  let ok = 0, fail = 0, err = null;
+  for (const r of rows) { const x = await userMenu(ctx, r.tg_id, cfg); if (x === true) ok++; else { fail++; err = err || (x === false ? 'в боте не задан адрес PUBLIC_URL' : x); } await new Promise((res) => setTimeout(res, 50)); }
+  // итог виден в панели: сколько человек получили кнопку и у скольких не вышло
+  const res = { at: Math.floor(Date.now() / 1000), on: cfg.public, ok, fail, total: rows.length, err };
+  await ctx.db.run(`INSERT INTO settings (key, value) VALUES ('game_menu', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [JSON.stringify(res)]);
+  return res;
 }
 
 // сохранить расписание; если «Показывать всем» поменялось, обновляем кнопку «Игра» у людей в фоне

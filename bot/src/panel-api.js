@@ -564,7 +564,9 @@ async function panelRest(ctx, request, url, user, path, body) {
     const view = async () => {
       const cfg = await loadCfg(ctx);
       const n = async (t) => (await ctx.db.first(`SELECT COUNT(*) AS n FROM users WHERE track = ? AND status != 'blocked'`, [t])).n;
-      return { cfg: gameView(cfg, ctx.now, true), items: GAME_ITEMS, ready: { course: await n('course'), mat: await n('mat') } };
+      const lm = await ctx.db.first(`SELECT value FROM settings WHERE key = 'game_menu'`);
+      let menu = null; try { menu = lm ? JSON.parse(lm.value) : null; } catch { menu = null; }
+      return { cfg: gameView(cfg, ctx.now, true), items: GAME_ITEMS, ready: { course: await n('course'), mat: await n('mat') }, menu, pubUrl: !!ctx.publicUrl };
     };
     if (request.method === 'POST') {
       const r = await saveCfgAndMenu(ctx, body);

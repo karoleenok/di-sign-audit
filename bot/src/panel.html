@@ -482,13 +482,16 @@ function gState(r) {
 async function renderGame() {
   if (!GM) {
     $('body').innerHTML = '<p class="muted" style="margin-top:16px">Загружаю…</p>';
-    try { const d = await api('/game'); GM = { pub: !!d.cfg.public, items: {}, def: d.items, ready: d.ready, soon: d.cfg.soon || { mini: [], mat: [] } }; d.items.forEach((it) => { const g = d.cfg.items[it.id] || {}; GM.items[it.id] = { mode: g.mode || 'open', from: g.from || null, until: g.until || null }; }); }
+    try { const d = await api('/game'); GM = { pub: !!d.cfg.public, items: {}, def: d.items, ready: d.ready, soon: d.cfg.soon || { mini: [], mat: [] }, menu: d.menu, pubUrl: d.pubUrl, busy: false }; d.items.forEach((it) => { const g = d.cfg.items[it.id] || {}; GM.items[it.id] = { mode: g.mode || 'open', from: g.from || null, until: g.until || null }; }); }
     catch (e) { $('body').innerHTML = '<p class="note warn">' + esc(e.message) + '</p>'; return; }
   }
   const paint = () => {
     $('body').innerHTML =
-      '<div class="box"><div class="toggle" style="margin-top:0"><div><b>Показывать игру всем</b><div class="small muted" style="margin-top:4px">' + (GM.pub ? 'Включено: игру видят все, кто выбрал «мини-курс» или «материалы». У них появится кнопка «Игра» рядом со строкой ввода.' : 'Выключено: игру открывают только админы.') + '</div></div><label class="sw"><input type="checkbox" id="gPub"' + (GM.pub ? ' checked' : '') + '><span></span></label></div>' +
-      '<p class="small muted" style="margin:10px 0 0">Уже выбрали: 🎓 мини-курс ' + GM.ready.course + ' · 📚 материалы ' + GM.ready.mat + '. Кто ещё не выбрал, игру не увидит: бот сначала спросит, что присылать.</p></div>' +
+      '<div class="box"><div class="toggle" style="margin-top:0"><div><b>Показывать игру всем</b><div class="small" style="margin-top:6px;font-weight:600;color:' + (GM.pub ? '#1f7a3d' : 'var(--muted)') + '">' + (GM.pub ? '● Сейчас включено для всех' : '○ Сейчас выключено: игру видят только админы') + '</div></div><label class="sw"><input type="checkbox" id="gPub"' + (GM.pub ? ' checked' : '') + '><span></span></label></div>' +
+      '<p class="small muted" style="margin:10px 0 0">Ползунок сохраняется сразу, жать «Сохранить» не нужно. ' + (GM.pub ? 'У тех, кто выбрал «мини-курс» или «материалы», рядом со строкой ввода появилась кнопка «Игра». Остальным она появится сразу после выбора.' : 'Когда включишь, у тех, кто выбрал «мини-курс» или «материалы», рядом со строкой ввода появится кнопка «Игра». Остальным она появится сразу после выбора.') + '</p>' +
+      '<p class="small muted" style="margin:8px 0 0">Уже выбрали: 🎓 мини-курс ' + GM.ready.course + ' · 📚 материалы ' + GM.ready.mat + '.' + (GM.menu && GM.menu.at ? ' Кнопка ' + (GM.menu.on ? 'добавлена' : 'убрана') + ' у ' + GM.menu.ok + ' из ' + GM.menu.total + (GM.menu.fail ? ', не вышло у ' + GM.menu.fail + (GM.menu.err ? '. Причина: ' + esc(GM.menu.err) : '') : '') + '.' : '') + '</p>' +
+      (GM.busy ? '<p class="small" style="margin:8px 0 0">Обновляю кнопку у людей…</p>' : '') +
+      (GM.pubUrl === false ? '<p class="note warn" style="margin:10px 0 0">В настройках бота не задан адрес (PUBLIC_URL), поэтому кнопка «Игра» не появится ни у кого.</p>' : '') + '</div>' +
       GM.def.map((it) => { const r = GM.items[it.id];
         return '<div class="box"><div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px"><div><b>' + esc(it.name) + '</b><div class="small muted">' + esc(it.track) + '</div></div><span class="tag">' + esc(gState(r)) + '</span></div>' +
           segHtml('gm_' + it.id, [['open', 'Открыто'], ['closed', 'Закрыто'], ['sched', 'По датам']], r.mode) +
@@ -498,7 +501,24 @@ async function renderGame() {
         GM.soon[k].map((x, i) => '<div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;padding-bottom:8px;border-bottom:1px solid var(--line)"><input type="text" maxlength="60" placeholder="Название" data-s="' + k + '" data-i="' + i + '" data-k="t" value="' + esc(x.t) + '"><div style="display:flex;gap:8px;align-items:center"><input type="date" data-s="' + k + '" data-i="' + i + '" data-k="d" value="' + esc(x.d || '') + '" style="flex:1;min-width:0"><button type="button" class="chip" data-sdel="' + k + ':' + i + '" aria-label="Убрать">Убрать</button></div></div>').join('') +
         (GM.soon[k].length < 8 ? '<button type="button" class="btn ghost" data-sadd="' + k + '" style="margin-top:8px;width:100%">＋ Добавить</button>' : '')).join('') + '</div>' +
       '<button type="button" class="btn" id="gSave" style="width:100%">Сохранить</button><div id="gMsg"></div>';
-    $('gPub').onchange = (e) => { GM.pub = e.target.checked; haptic(); paint(); };
+    $('gPub').onchange = async (e) => {
+      const v = e.target.checked, since = Math.floor(Date.now() / 1000);
+      e.target.disabled = true; haptic();
+      try {
+        const d = await api('/game', { public: v });
+        GM.pub = !!d.cfg.public; GM.ready = d.ready; GM.menu = d.menu; GM.pubUrl = d.pubUrl; GM.busy = true;
+        toast(v ? 'Игра включена для всех' : 'Игра выключена'); paint();
+        // кнопку у людей бот обновляет в фоне, ~20 человек в секунду: ждём итог до минуты
+        for (let i = 0; i < 20 && GM && GM.busy; i++) {
+          await new Promise((ok) => setTimeout(ok, 3000));
+          if (!GM || tab !== 'game') return;
+          const s = await api('/game'); GM.menu = s.menu;
+          if (s.menu && s.menu.at >= since) GM.busy = false;
+          paint();
+        }
+        if (GM) { GM.busy = false; paint(); }
+      } catch (err) { GM.pub = !v; GM.busy = false; toast(err.message); paint(); }
+    };
     GM.def.forEach((it) => segBind('gm_' + it.id, (v) => { GM.items[it.id].mode = v; haptic(); paint(); }));
     $('body').querySelectorAll('input[data-g]').forEach((i) => { i.onchange = () => { GM.items[i.dataset.g][i.dataset.k] = gFromMsk(i.value); paint(); }; });
     $('body').querySelectorAll('input[data-s]').forEach((i) => { i.oninput = i.onchange = () => { GM.soon[i.dataset.s][+i.dataset.i][i.dataset.k] = i.dataset.k === 'd' ? (i.value || null) : i.value; }; });
@@ -506,7 +526,7 @@ async function renderGame() {
     $('body').querySelectorAll('[data-sdel]').forEach((b) => { b.onclick = () => { const [k, i] = b.dataset.sdel.split(':'); GM.soon[k].splice(+i, 1); haptic(); paint(); }; });
     $('gSave').onclick = async () => {
       for (const it of GM.def) { const r = GM.items[it.id]; if (r.mode !== 'sched') continue; if (!r.from && !r.until) return gMsg(false, '«' + it.name + '»: выбери дату открытия или закрытия'); if (r.from && r.until && r.until <= r.from) return gMsg(false, '«' + it.name + '»: закрытие должно быть позже открытия'); }
-      const body = { public: GM.pub, items: {}, soon: GM.soon }; GM.def.forEach((it) => { const r = GM.items[it.id]; body.items[it.id] = { mode: r.mode, from: r.mode === 'sched' ? r.from : null, until: r.mode === 'sched' ? r.until : null }; });
+      const body = { items: {}, soon: GM.soon }; GM.def.forEach((it) => { const r = GM.items[it.id]; body.items[it.id] = { mode: r.mode, from: r.mode === 'sched' ? r.from : null, until: r.mode === 'sched' ? r.until : null }; });
       $('gSave').disabled = true;
       try { const d = await api('/game', body); GM = null; haptic(); await renderGame(); toast('Сохранено. Правила уже действуют'); }
       catch (e) { $('gSave').disabled = false; gMsg(false, e.message); }
