@@ -233,11 +233,6 @@ details a,.src a{color:var(--rose-text)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 /* ===== бренд Di Sign: слой поверх базовых правил ===== */
 body{background:var(--cream);color:var(--text)}
-.bgc{position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden}
-.bgc i{position:absolute;background:var(--dot);border-radius:52% 48% 50% 50%/49% 53% 47% 51%}
-.bgc i:nth-child(1){width:min(62vmin,300px);height:min(59vmin,285px);right:max(-22vmin,-110px);top:max(-16vmin,-80px)}
-.bgc i:nth-child(2){width:min(24vmin,120px);height:min(26vmin,126px);left:max(-9vmin,-44px);top:52vh;border-radius:48% 52% 55% 45%/52% 46% 54% 48%}
-.bgc i:nth-child(3){width:min(36vmin,170px);height:min(34vmin,162px);right:max(-13vmin,-64px);bottom:max(-9vmin,-44px);border-radius:46% 54% 49% 51%/53% 47% 53% 47%}
 
 /* шрифты: Inter Tight Medium для заголовков, Regular для текста; пиксельный только для латиницы и цифр */
 .h1{font:500 40px/37px var(--f-text);letter-spacing:-.035em;text-wrap:balance}
@@ -373,7 +368,6 @@ details a,.src a{color:var(--blue)}
 .vref{margin-top:var(--s3)}.vref .po{max-width:220px;margin:var(--s2) 0 0;border-radius:var(--r-m)}
 </style>
 
-<div class="bgc" aria-hidden="true"><i></i><i></i><i></i></div>
 <main class="app">
 
 <!-- выбор трека: только в прототипе -->
@@ -729,8 +723,8 @@ var GROUPS={h:'Иерархия и масштаб',c:'Контраст',p:'Бл�
 var S;
 var N=[6,8,4];
 var STAGE=[
- {lab:'Увидь принцип',img:'palette',msg:'Смотри на картинку. Какой принцип здесь главный?',
-  h:'Увидь принцип',p:'Шесть картинок без слов. Назови принцип, который в них главный. Три варианта, после ответа короткое пояснение.'},
+ {lab:'Принципы дизайна',img:'palette',msg:'Смотри на картинку. Какой принцип здесь главный?',
+  h:'Принципы дизайна',p:'Шесть картинок без слов. Назови принцип, который в них главный. Три варианта, после ответа короткое пояснение.'},
  {lab:'Годится или переделать',img:'magnifier',msg:'Секунда на макет. Решай: берём в проект или переделываем.',
   h:'Годится или переделать',p:'Восемь афиш. Тяни вправо, если годится, и влево, если надо переделать. Про неудачные покажу, как стало.'},
  {lab:'Собери сам',img:'clipboard',msg:'Сверху эталон. Собери свой макет так, чтобы работал тот же принцип. Готово? Нажми «Проверить».',
@@ -772,7 +766,7 @@ function chess(){var o='';for(var r=0;r<6;r++)for(var c=0;c<8;c++)o+='<rect clas
 function dots(){var o='';[20,47,74,101].forEach(function(x,i){[20,45,70].forEach(function(y,j){o+='<circle class="'+(i===2&&j===1?'r':'o')+'" cx="'+x+'" cy="'+y+'" r="'+(i===2&&j===1?9:7)+'"/>'})});return o}
 var AR={lilac:0.777,peach:0.67,cream:0.62,overalls:0.707,bear:0.63,lilac2:0.777,coffee:0.7,berry:0.6,dblue:.478,dsit:.619,dlie:1.056,dorange:1.131,dyellow:.522,dread:.688};
 function ob(k,cx,cy,h,op,f){var w=h*AR[k],i='<image href="'+IMG[k]+'" x="'+(cx-w/2).toFixed(1)+'" y="'+(cy-h/2).toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+h+'"'+(op?' opacity="'+op+'"':'')+'/>';return f?'<g transform="translate('+(2*cx)+',0) scale(-1,1)">'+i+'</g>':i}
-function tAccent(){var o='';[20,47,74,101].forEach(function(x,i){[20,45,70].forEach(function(y,j){if(!(i===2&&j===1))o+=ob('lilac',x,y,19,.4)})});return '<circle class="b" cx="74" cy="45" r="22"/>'+o+ob('bear',74,45,36)}
+function tAccent(){var o='';[20,47,74,101].forEach(function(x,i){[20,45,70].forEach(function(y,j){if(!(i===2&&j===1))o+=ob('lilac',x,y,19,.4)})});return o+ob('bear',74,45,38)}
 function tSym(){return ob('peach',60,45,38)+ob('dblue',24,48,34)+ob('dblue',96,48,34,0,1)+ob('dblue',60,13,22)+ob('dblue',60,77,22)}
 function tRhythm(){var o='';[14,30,50,74,102].forEach(function(x){o+=ob('dyellow',x,45,24)});return o}
 function tPattern(){var o='';[20,45,70].forEach(function(y,j){(j%2?[31,57,83,109]:[18,44,70,96]).forEach(function(x){o+=ob('cream',x,y,24)})});return o}
@@ -998,7 +992,7 @@ function pickChap(){
 }
 
 /* ---------- результат ---------- */
-var STN=['Увидь принцип','Годится или переделать','Собери сам'];
+var STN=['Принципы дизайна','Годится или переделать','Собери сам'];
 function showResult(){
   var hits=S.res.filter(function(r){return r.hit}).length,n=N[0]+N[1]+N[2];
   go('result');
