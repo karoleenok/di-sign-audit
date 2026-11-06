@@ -2,7 +2,7 @@ import { ZONES, LEVELS } from './texts.js';
 import { say, btn, msg as msgText, delayOf, linksOf, CB_BTN, btnExtra, isOff } from './msgs.js';
 import { sendPost, recordDeliveries, loadDocs, sendButtonFile, resolveFork } from './posts.js';
 import { isAdmin } from './admin.js';
-import { userMenu } from './appcfg.js';
+import { userMenu, openKb } from './appcfg.js';
 
 const CONSENT_VERSION = 'v1';
 
@@ -120,7 +120,7 @@ export async function onStart(ctx, msg, payload) {
     }
     if (u.status === 'stopped' || u.status === 'blocked') await ctx.db.run(`UPDATE users SET status = 'new' WHERE tg_id = ?`, [from.id]);
   }
-  if (st.track) await userMenu(ctx, from.id); // выбрал трек ещё в аудите: кнопка «Игра» сразу
+  await userMenu(ctx, from.id); // кнопка «Забрать материалы» у каждого, кто нажал «Старт» (если аппка включена для всех)
   // убираем саму команду /start и старые служебные сообщения (прошлое приветствие, вопросы, предложение теста)
   await delMsg(ctx, from.id, msg.message_id);
   await setUState(ctx, from.id, null);
@@ -129,7 +129,7 @@ export async function onStart(ctx, msg, payload) {
   const name = from.first_name || 'друг';
   // зона из теста запоминается только как отметка «прошёл тест» — посты и подарки по зонам не делим
   await pauseFor(ctx, from.id, st.zone ? 'helloTest' : 'hello');
-  await tech(ctx, from.id, say(ctx, from.id, st.zone ? 'helloTest' : 'hello', { имя: name }));
+  await tech(ctx, from.id, say(ctx, from.id, st.zone ? 'helloTest' : 'hello', { имя: name }, await openKb(ctx)));
   return nextStep(ctx, u);
 }
 
@@ -245,7 +245,7 @@ const STEP_RUN = {
 // показать шаг входа админу «как есть» (для предпросмотра полного пути): те же тексты и кнопки, но ничего не меняем в анкете
 export async function previewStep(ctx, id, k, u = {}) {
   const name = u.first_name || 'друг';
-  if (k === 'hello' || k === 'helloTest') return say(ctx, id, k, { имя: name });
+  if (k === 'hello' || k === 'helloTest') return say(ctx, id, k, { имя: name }, await openKb(ctx));
   if (k === 'consentPd') { const { vars, extra } = await consentView(ctx); return say(ctx, id, 'consentPd', vars, extra); }
   if (k === 'consentAds') return say(ctx, id, 'consentAds', {}, { reply_markup: kb([[{ text: await btn(ctx, 'consentAdsYes'), callback_data: 'c:ads:1' }, { text: await btn(ctx, 'consentAdsNo'), callback_data: 'c:ads:0' }]]) });
   if (k === 'askLevel') return say(ctx, id, 'askLevel', {}, { reply_markup: kb([[{ text: await btn(ctx, 'levelBtnStart'), callback_data: 'lv:start' }], [{ text: await btn(ctx, 'levelBtnPro'), callback_data: 'lv:pro' }]]) });

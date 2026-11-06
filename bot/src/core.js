@@ -7,7 +7,7 @@ import { onStart, onUserCallback, onUserCommand, onUserText, getUState } from '.
 import { isAdmin, envAdmins, onAdminCommand, onAdminMessage, onAdminCallback } from './admin.js';
 import { sendPost, dueUsers, recordDeliveries, loadDocs } from './posts.js';
 import { btn } from './msgs.js';
-import { loadCfg } from './appcfg.js';
+import { loadCfg, MENU_TEXT } from './appcfg.js';
 
 export function makeCtx({ db, env, publicUrl, fetchFn, now }) {
   const tg = makeTg({ token: env.BOT_TOKEN, root: env.TG_API_ROOT, relayKey: env.TG_RELAY_KEY, fetchFn });
@@ -126,7 +126,7 @@ export async function tick(ctx, budget, queryBudget) {
 // Зовём при каждом запуске бота и при смене «показывать всем»: ничего вручную делать не надо.
 // Админам кнопка есть всегда. Остальным она личная: появляется, когда человек выбрал трек и аппка открыта (см. userMenu).
 export async function syncMenu(ctx) {
-  const btnOf = () => ({ type: 'web_app', text: 'Игра', web_app: { url: ctx.publicUrl + '/app' } });
+  const btnOf = () => ({ type: 'web_app', text: MENU_TEXT, web_app: { url: ctx.publicUrl + '/app' } });
   await ctx.tg.call('setMyCommands', { commands: await userCommands(ctx) });
   await ctx.tg.call('setChatMenuButton', { menu_button: { type: 'commands' } }).catch(() => {});
   const admins = [...new Set([...envAdmins(ctx.env), ...(await ctx.db.all(`SELECT tg_id FROM admins`)).map((r) => r.tg_id)])];

@@ -85,8 +85,7 @@ const server = http.createServer(async (req, res) => {
       const __row = await __c.db.first(`SELECT track FROM users WHERE tg_id = ?`, [__u.id]);
       const __trk = __appTrack(__row && __row.track);
       if (!__admin && !__cfg.public) return send(403, 'Игра пока закрыта. Мы напишем в боте, когда она откроется.', 'text/plain; charset=utf-8', { 'cache-control': 'no-store' });
-      if (!__admin && !__trk) return send(403, 'Сначала выбери в боте, что присылать: мини-курс или материалы. После этого игра откроется здесь.', 'text/plain; charset=utf-8', { 'cache-control': 'no-store' });
-      const __view = { ...__viewFor(__cfg, Math.floor(Date.now() / 1000), __admin), track: __trk };
+      const __view = { ...__viewFor(__cfg, Math.floor(Date.now() / 1000), __admin), track: __trk, audit: env.TEST_URL || '' };
       const __html = __appHtml().replace('/*__APPCFG__*/null', () => JSON.stringify(__view).replace(/</g, '\\u003c'));
       return send(200, __html, 'text/html; charset=utf-8', { 'cache-control': 'no-store' });
     }

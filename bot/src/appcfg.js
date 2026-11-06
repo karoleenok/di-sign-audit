@@ -110,20 +110,26 @@ export function viewFor(cfg, now, admin) {
 // ---------- кнопка «Игра» у человека рядом со строкой ввода ----------
 // Есть только у тех, кто уже выбрал «мини-курс» или «материалы», и только когда админ открыл аппку для всех.
 export const appTrack = (t) => (t === 'course' ? 'mini' : t === 'mat' ? 'mat' : null);
+export const MENU_TEXT = 'Забрать материалы';
+// инлайн-кнопка под приветствием: открывает кабинет, пока аппка включена для всех
+export async function openKb(ctx) {
+  if (!ctx.publicUrl) return {};
+  const c = await loadCfg(ctx);
+  return c.public ? { reply_markup: { inline_keyboard: [[{ text: 'Открыть кабинет', web_app: { url: ctx.publicUrl + '/app' } }]] } } : {};
+}
 export async function userMenu(ctx, id, cfg) {
   if (!ctx.publicUrl) return false;
   try {
     const c = cfg || (await loadCfg(ctx));
-    const u = await ctx.db.first(`SELECT track FROM users WHERE tg_id = ?`, [id]);
-    const on = !!(c.public && u && appTrack(u.track));
-    await ctx.tg.call('setChatMenuButton', { chat_id: id, menu_button: on ? { type: 'web_app', text: 'Игра', web_app: { url: ctx.publicUrl + '/app' } } : { type: 'commands' } });
+    const on = !!c.public; // кнопка у всех: без выбранного трека аппка предложит пройти аудит
+    await ctx.tg.call('setChatMenuButton', { chat_id: id, menu_button: on ? { type: 'web_app', text: MENU_TEXT, web_app: { url: ctx.publicUrl + '/app' } } : { type: 'commands' } });
     return true;
   } catch (e) { return String((e && (e.description || e.message)) || e).slice(0, 140); /* кнопка не критична: причину покажем в панели */ }
 }
 // всем, кто выбрал трек: вызываем, когда админ включил или выключил «Показывать всем». Идём не быстрее ~20 человек в секунду
 export async function allUsersMenu(ctx) {
   const cfg = await loadCfg(ctx);
-  const rows = await ctx.db.all(`SELECT tg_id FROM users WHERE track IS NOT NULL AND status NOT IN ('blocked') LIMIT 5000`);
+  const rows = await ctx.db.all(`SELECT tg_id FROM users WHERE status NOT IN ('blocked') LIMIT 5000`);
   let ok = 0, fail = 0, err = null;
   for (const r of rows) { const x = await userMenu(ctx, r.tg_id, cfg); if (x === true) ok++; else { fail++; err = err || (x === false ? 'в боте не задан адрес PUBLIC_URL' : x); } await new Promise((res) => setTimeout(res, 50)); }
   // итог виден в панели: сколько человек получили кнопку и у скольких не вышло

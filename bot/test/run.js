@@ -1244,8 +1244,8 @@ step('расписание аппки: по умолчанию, открытие
   await saveCfg(C(), { public: true, items: {} });
   await userMenu(C(), 9001); await userMenu(C(), 9002);
   m = menu(n);
-  assert.ok(m.some((c) => c.body.chat_id === 9001 && c.body.menu_button.type === 'web_app' && c.body.menu_button.text === 'Игра'), 'выбрал трек и аппка открыта: кнопка есть');
-  assert.ok(m.some((c) => c.body.chat_id === 9002 && c.body.menu_button.type === 'commands'), 'без выбранного трека кнопки нет');
+  assert.ok(m.some((c) => c.body.chat_id === 9001 && c.body.menu_button.type === 'web_app' && c.body.menu_button.text === 'Забрать материалы'), 'аппка открыта: кнопка «Забрать материалы» есть');
+  assert.ok(m.some((c) => c.body.chat_id === 9002 && c.body.menu_button.type === 'web_app'), 'без выбранного трека кнопка тоже есть: аппка предложит пройти аудит');
   assert.equal(appTrack('course'), 'mini'); assert.equal(appTrack('mat'), 'mat'); assert.equal(appTrack(null), null);
   // выбор трека в боте включает кнопку сразу
   n = calls.length;
@@ -1254,7 +1254,23 @@ step('расписание аппки: по умолчанию, открытие
   await D.run(`DELETE FROM users WHERE tg_id IN (9001, 9002)`);
   await saveCfg(C(), { public: false, items: {} });
 }
-step('кнопка «Игра»: админам всегда, людям после выбора трека и при открытой аппке');
+// «Старт»: под приветствием кнопка «Открыть кабинет», у человека кнопка в меню
+{
+  const D = C().db; const n0 = calls.length;
+  await saveCfg(C(), { public: true, items: {} });
+  await handleUpdate(C(), { message: { message_id: 5, from: { id: 9100, first_name: 'Новая' }, chat: { id: 9100, type: 'private' }, date: NOW, text: '/start' } });
+  const sent = calls.slice(n0);
+  assert.ok(sent.some((c) => c.method === 'setChatMenuButton' && c.body.chat_id === 9100 && c.body.menu_button.type === 'web_app'), 'после «Старт» кнопка в меню');
+  const hi = sent.find((c) => c.method === 'sendMessage' && c.body.reply_markup && JSON.stringify(c.body.reply_markup).includes('Открыть кабинет'));
+  assert.ok(hi && hi.body.reply_markup.inline_keyboard[0][0].web_app.url === 'https://bot.test/app', 'под приветствием кнопка «Открыть кабинет»');
+  n0; await saveCfg(C(), { public: false, items: {} });
+  const n1 = calls.length;
+  await handleUpdate(C(), { message: { message_id: 6, from: { id: 9101, first_name: 'Вторая' }, chat: { id: 9101, type: 'private' }, date: NOW, text: '/start' } });
+  assert.ok(!calls.slice(n1).some((c) => c.method === 'sendMessage' && JSON.stringify(c.body.reply_markup || {}).includes('Открыть кабинет')), 'пока аппка закрыта, кнопки под приветствием нет');
+  await D.run(`DELETE FROM users WHERE tg_id IN (9100, 9101)`);
+}
+step('«Старт»: «Открыть кабинет» под приветствием и «Забрать материалы» в меню');
+step('кнопка «Игра»: админам всегда, людям при открытой аппке');
 
 {
   // панель: вкладка «Игра» и кнопка «Игра» в посте

@@ -81,6 +81,15 @@ img{display:block}
 .game img{width:104px;height:104px;object-fit:contain}
 .soon{display:flex;flex-direction:column;gap:var(--s2)}
 .soon li{list-style:none;display:flex;justify-content:space-between;gap:var(--s3);align-items:center;padding:var(--s3) var(--s4);border:1px dashed var(--line);border-radius:var(--r-l);color:var(--ink-soft);font-size:14px;line-height:20px}
+.hello{gap:var(--s5)}
+.hello .hero{gap:var(--s3)}
+.hello-img{display:flex;justify-content:center;padding-block:var(--s2)}
+.hello-img img{width:min(52vw,208px);height:auto;aspect-ratio:1;object-fit:contain}
+.bell{display:grid;grid-template-columns:44px minmax(0,1fr);gap:var(--s3);align-items:start;padding:var(--s4);border:1px solid var(--line);border-radius:var(--r-xl);background:var(--card)}
+.bell-ic{width:44px;height:44px;border-radius:50%;background:var(--lilac);display:grid;place-items:center;color:var(--ink)}
+.bell-ic svg{transform-origin:50% 8%;animation:ring 2.6s ease-in-out 1s 2}
+@keyframes ring{0%,100%{transform:rotate(0)}8%{transform:rotate(14deg)}16%{transform:rotate(-12deg)}24%{transform:rotate(8deg)}32%{transform:rotate(-5deg)}40%{transform:rotate(0)}}
+.bell .adm-t{margin:0 0 var(--s1)}
 .soon{padding:0;margin:0}
 .soon.week li{border:1px solid var(--line);background:var(--card,#fff);color:var(--ink);font-weight:500}
 .soon.week .pill{white-space:nowrap}
@@ -441,6 +450,34 @@ details a,.src a{color:var(--blue)}
   </div>
 </section>
 
+<!-- без трека: человек ещё не прошёл аудит -->
+<section id="s-audit" class="screen hello" data-screen="audit" hidden>
+  <div class="brandbar"><img class="logo" data-img="logo" alt="Di Sign University"></div>
+  <div class="hero">
+    <p class="px">free audit.</p>
+    <h1 class="h1">Мы подготовили для тебя <span class="mk-hl"><span style="white-space:nowrap">мини-курс</span> и полезные материалы</span></h1>
+    <p class="small">Пройди бесплатный аудит навыков, получи план из трёх шагов и забери бонусы.</p>
+  </div>
+  <div class="hello-img"><img data-img="glasses" alt=""></div>
+  <div class="dock"><button class="btn primary" id="auGo" type="button">Пройти аудит</button><p class="small" id="auNo" hidden style="text-align:center">Ссылка на аудит пока не готова. Напиши в боте, мы поможем.</p></div>
+</section>
+
+<!-- входной экран: один раз, после выбора трека -->
+<section id="s-hello" class="screen hello" data-screen="hello" hidden>
+  <div class="brandbar"><img class="logo" data-img="logo" alt="Di Sign University"></div>
+  <div class="hero">
+    <p class="px">welcome.</p>
+    <h1 class="h1">Привет! Очень рады, что ты <span class="mk-hl">с нами</span></h1>
+    <p class="small" id="heSub"></p>
+  </div>
+  <div class="hello-img"><img data-img="magnifier" data-track="mini" alt=""><img data-img="notebook" data-track="mat" alt=""></div>
+  <div class="bell">
+    <span class="bell-ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 0 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg></span>
+    <div><p class="adm-t">Не пропусти новое</p><p class="small" id="heBell"></p></div>
+  </div>
+  <div class="dock"><button class="btn primary" id="heGo" type="button">Открыть</button></div>
+</section>
+
 <!-- главная выбранного трека -->
 <section id="s-home" class="screen" data-screen="home" hidden>
   <div class="brandbar"><img class="logo" data-img="logo" alt="Di Sign University"></div>
@@ -740,10 +777,10 @@ function showClosed(id){
   want=null;go('locked');
 }
 var TRACKS={
-  mini:{name:'Мини-курс',sub:'Короткие игры и задания к постерам. Играй прямо в чате.',mods:['poster'],soon:['Рандомайзер ТЗ от таксёнышей','Промпты для мокапов','Шаблон кейсов']},
-  mat:{name:'Месяц материалов',sub:'Материалы по неделям: шрифты, Figma, портфолио, клиенты.',mods:['fonts'],soon:['Мокап-пак, сделанный ИИ','Калькулятор цены и КП','Красные флаги в брифе']}
+  mini:{name:'Мини-курс',sub:'Короткие игры и задания к постерам. Играй прямо в чате.',hello:'Здесь будут появляться полезные штучки по курсу: игры, постеры и задания.',mods:['poster'],soon:['Рандомайзер ТЗ от таксёнышей','Промпты для мокапов','Шаблон кейсов']},
+  mat:{name:'Месяц материалов',sub:'Материалы по неделям: шрифты, Figma, портфолио, клиенты.',hello:'Здесь будут появляться полезные материалы: шрифты, Figma, портфолио, клиенты.',mods:['fonts'],soon:['Мокап-пак, сделанный ИИ','Калькулятор цены и КП','Красные флаги в брифе']}
 };
-var TRACK=null,SCREENS=['pick','home','intro','poster','result','fonts','locked','adm'],cur='pick',want=null;
+var TRACK=null,SCREENS=['pick','audit','hello','home','intro','poster','result','fonts','locked','adm'],cur='pick',want=null;
 function show(n){SCREENS.forEach(function(s){$('#s-'+s).hidden=s!==n});window.scrollTo(0,0)}
 function parse(h){var m=/^(mini|mat)(?:-(poster|fonts))?$/.exec(h||'');return m?{t:m[1],m:m[2]||null}:null}
 function hashOf(n){
@@ -783,21 +820,35 @@ function paintHome(){
   ul.parentNode.hidden=!rest.length;
   paintDone();paintLocks();
 }
+var HELLO_KEY='dsu_hello_';
+function helloSeen(){try{return localStorage.getItem(HELLO_KEY+TRACK)==='1'}catch(e){return false}}
+function enterHome(){
+  if(!helloSeen()){
+    var t=TRACKS[TRACK];$('#heSub').textContent=t.hello;
+    $('#heBell').textContent='Оставь уведомления бота включёнными, и мы напишем, когда появится что-то новое.';
+    $$('#s-hello [data-track]').forEach(function(e){e.hidden=e.getAttribute('data-track')!==TRACK});
+    cur='hello';show('hello');return;
+  }
+  cur='home';show('home');
+}
 function route(){
+  if(APPCFG&&!APPCFG.admin&&!APPCFG.track){cur='audit';$('#auGo').hidden=!APPCFG.audit;$('#auNo').hidden=!!APPCFG.audit;show('audit');return}
   var p=parse((location.hash||'').slice(1)),mine=APPCFG&&APPCFG.track&&!APPCFG.admin?APPCFG.track:null;
   if(mine&&p&&p.t!==mine){p.t=mine;try{history.replaceState(null,'','#'+mine+(p.m?'-'+p.m:''))}catch(e){}}
   $('#swTrack').closest('.card').hidden=!!mine;
   var stu=!!(APPCFG&&!APPCFG.admin);$('#pkProto').hidden=stu;$('#swTrack').closest('.card').hidden=!!mine||stu;if(APPCFG&&APPCFG.admin)$('#swNote').textContent='Только для админов: ученик выбирает трек один раз, в боте.';
-  if(!p&&APPCFG&&APPCFG.track){TRACK=APPCFG.track;paintHome();go('home');return}
+  if(!p&&APPCFG&&APPCFG.track){TRACK=APPCFG.track;paintHome();enterHome();return}
   if(!p){TRACK=null;cur='pick';show('pick');return}
   TRACK=p.t;paintHome();
-  if(!p.m){cur='home';show('home');return}
+  if(!p.m){enterHome();return}
   if(TRACKS[TRACK].mods.indexOf(p.m)<0){want=location.hash.slice(1);cur='locked';lockOther();show('locked');return}
   if(p.m==='poster')startPoster();else startFonts();
 }
 window.addEventListener('hashchange',function(){var h=(location.hash||'').slice(1);if(h===hashOf(cur))return;route()});
 $$('[data-back]').forEach(function(b){b.addEventListener('click',function(){go('home')})});
 $$('[data-pick]').forEach(function(b){b.addEventListener('click',function(){TRACK=b.getAttribute('data-pick');paintHome();go('home')})});
+$('#auGo').addEventListener('click',function(){var u=APPCFG&&APPCFG.audit;if(!u)return;try{var w=window.Telegram&&window.Telegram.WebApp;if(w&&w.openLink){w.openLink(u);return}}catch(e){}window.open(u,'_blank')});
+$('#heGo').addEventListener('click',function(){try{localStorage.setItem(HELLO_KEY+TRACK,'1')}catch(e){}go('home')});
 $('#swTrack').addEventListener('click',function(){TRACK=null;go('pick')});
 $('#lkBack').addEventListener('click',function(){want=null;if(TRACK)go('home');else go('pick')});
 $('#g-poster').addEventListener('click',function(){startPoster()});
