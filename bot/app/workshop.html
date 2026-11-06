@@ -140,7 +140,7 @@ input[type=range]{width:100%;height:44px;margin:0;accent-color:var(--rose-text);
 .opt[disabled]{cursor:default}
 .opt.ok{background:var(--good-bg);border-color:var(--good);color:var(--good)}
 .opt.bad{background:var(--warn-bg);border-color:var(--warn);color:var(--warn)}
-.bwrap{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:var(--s4);align-items:start}
+.bwrap{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--s4);align-items:start}
 .bwrap .pill{height:auto;min-height:28px;padding:6px var(--s3);white-space:normal;line-height:1.2}
 @media (max-width:359px){.bwrap{grid-template-columns:minmax(0,1fr)}.bwrap .ref{max-width:200px}}
 #bDock{position:static;background:none;padding-block:var(--s2) var(--s4)}
@@ -370,7 +370,7 @@ details a,.src a{color:var(--blue)}
 .meter{margin-top:var(--s3)}
 .chips{display:flex;gap:var(--s2);flex-wrap:wrap}
 .chip[aria-pressed="true"]{border-color:var(--pink);background:var(--pill-pink)}
-.bwrap .ref .po{border-radius:var(--r-m)}
+.vref{margin-top:var(--s3)}.vref .po{max-width:220px;margin:var(--s2) 0 0;border-radius:var(--r-m)}
 </style>
 
 <div class="bgc" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -492,8 +492,7 @@ details a,.src a{color:var(--blue)}
 
   <div class="stg" id="pBuild" hidden>
     <div class="card bwrap">
-      <div class="ref"><p class="lab" style="margin-bottom:var(--s2)">Эталон</p><div id="bRef"></div></div>
-      <div class="task"><span class="pill" id="bPr"></span><p class="small" id="bTask" style="margin-top:var(--s2)"></p></div>
+            <div class="task"><span class="pill" id="bPr"></span><p class="small" id="bTask" style="margin-top:var(--s2)"></p></div>
     </div>
     <div id="bArea"></div>
     <div id="bCtl"></div>
@@ -860,10 +859,10 @@ var BT=[
 ];
 var SW=['#ffd3ec','#66b8ff','#1f73c4','#b82e85','#2c0d02'];
 var B;
+function refHTML(t){return '<div class="vref"><p class="lab">Эталон</p>'+posterHTML(t.key,t.ref)+'</div>'}
 function bDeal(){
   var t=BT[S.i];count();S.busy=false;
-  $('#bRef').innerHTML=posterHTML(t.key,t.ref);
-  $('#bPr').textContent=t.pr;$('#bTask').textContent=t.task;
+    $('#bPr').textContent=t.pr;$('#bTask').textContent=t.task;
   $('#bVerdict').hidden=true;$('#bDock').hidden=false;$('#bCheck').disabled=false;
   B={att:0,rank:{t:1,b:2,p:0},sel:null,gaps:[true,true,true],col:SW[0],cell:2};
   [bHier,bProx,bContr,bBal][S.i]();
@@ -933,13 +932,13 @@ $('#bCheck').addEventListener('click',function(){
   if(S.busy||!B)return;var t=BT[S.i],ok=B.right(),last=S.i===N[2]-1,v=$('#bVerdict');haptic();B.att++;
   if(ok){
     S.busy=true;S.res.push({st:2,g:t.g,hit:B.att===1,name:t.pr});
-    v.hidden=false;v.innerHTML=statusHTML(true,(B.att===1?'С первой попытки. ':'Получилось со второй. ')+t.ok)+nextBtn(last,'bNext');
+    v.hidden=false;v.innerHTML=statusHTML(true,(B.att===1?'С первой попытки. ':'Получилось со второй. ')+t.ok)+refHTML(t)+nextBtn(last,'bNext');
     $('#bDock').hidden=true;$('#bNext').addEventListener('click',advance);
   }else if(B.att<2){
     v.hidden=false;v.innerHTML=statusHTML(false,t.hint+' Поправь и проверь ещё раз.');
   }else{
     S.busy=true;S.res.push({st:2,g:t.g,hit:false,name:t.pr});B.solve();
-    v.hidden=false;v.innerHTML=statusHTML(false,'Показываю, как собрать. '+t.ok)+nextBtn(last,'bNext');
+    v.hidden=false;v.innerHTML=statusHTML(false,'Показываю, как собрать. '+t.ok)+refHTML(t)+nextBtn(last,'bNext');
     $('#bDock').hidden=true;$('#bNext').addEventListener('click',advance);
   }
   v.scrollIntoView({block:'nearest',behavior:reduce?'auto':'smooth'});
