@@ -62,9 +62,18 @@ function __appHtml() {
   if (m !== __appCache.m) __appCache = { m, html: fs.readFileSync(f, 'utf8') };
   return __appCache.html;
 }
+// сравнение ключа за постоянное время
+const keyOk = (k) => { const a = Buffer.from(String(k || '')), b = Buffer.from(String(env.SETUP_KEY || '')); return b.length > 0 && a.length === b.length && crypto.timingSafeEqual(a, b); };
 const testCache = { html: '', at: 0 };
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, env.PUBLIC_URL || 'http://localhost');
+  // защитные заголовки на все ответы (файловая страница ниже ставит свои, более строгие)
+  res.setHeader('x-content-type-options', 'nosniff');
+  res.setHeader('referrer-policy', 'no-referrer');
+  res.setHeader('permissions-policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  // встраивать страницы можно только в Телеграм (в веб-версии он открывает аппку во фрейме); остальным нельзя
+  res.setHeader('content-security-policy', "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org https://telegram.org; base-uri 'self'; object-src 'none'");
+  if (/^https:/i.test(env.PUBLIC_URL || '')) res.setHeader('strict-transport-security', 'max-age=31536000');
   const send = (code, body, type = 'text/html; charset=utf-8', headers = {}) => {
     // страницы сжимаем: 300 КБ теста превращаются в ~60 КБ
     if (typeof body === 'string' && body.length > 2000 && /\bgzip\b/.test(req.headers['accept-encoding'] || '')) {
@@ -189,14 +198,13 @@ const server = http.createServer(async (req, res) => {
       return send(200, 'ok');
     }
     if (url.pathname === '/setup') {
-      if (!env.SETUP_KEY || url.searchParams.get('key') !== env.SETUP_KEY) return send(403, 'Нужен ключ');
+      if (!keyOk(url.searchParams.get('key'))) return send(403, 'Нужен ключ');
       const out = await setup(ctxFor(), { webhookUrl: (env.PUBLIC_URL || '') + '/tg', polling });
       return send(200, '<meta charset=utf-8><h2>Готово</h2><ul>' + out.map((x) => `<li>${x}</li>`).join('') + '</ul>');
     }
-    if (url.pathname === '/export') {
-      if (!env.SETUP_KEY || url.searchParams.get('key') !== env.SETUP_KEY) return send(403, 'Нужен ключ');
-      return send(200, JSON.stringify(await exportAll(db)), 'application/json', { 'content-disposition': 'attachment; filename="bot-backup.json"' });
-    }
+    // выгрузка всей базы по ссылке с ключом отключена: ключ попадал бы в логи и историю браузера.
+    // Выгрузки (таблицей) делаются из панели; ссылка нужна только старому боту на Cloudflare при переезде.
+    if (url.pathname === '/export') return send(404, 'not found');
     const r = /^\/r\/(\d+)\/(\d+-\d+)\/(\d+)$/.exec(url.pathname);
     if (r) { const to = await clickRedirect(ctxFor(), +r[1], r[2], r[3]); return to ? send(302, '', 'text/plain', { location: to }) : send(404, 'not found'); }
     return send(200, 'Di Sign University bot');
