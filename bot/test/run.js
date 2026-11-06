@@ -1289,4 +1289,33 @@ step('кнопка «Игра»: админам всегда, людям пос�
 }
 step('панель: расписание игр и кнопка «Игра» в посте');
 
+{
+  // «Что уйдёт на этой неделе»
+  const { handlePanelApi } = await import('../src/panel-api.js');
+  const crypto = await import('node:crypto');
+  const pp = new URLSearchParams({ auth_date: String(NOW), user: JSON.stringify({ id: 100, first_name: 'Админ' }) });
+  const dcs = [...pp.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, v]) => `${k}=${v}`).join('\n');
+  const secret = crypto.createHmac('sha256', 'WebAppData').update(env.BOT_TOKEN).digest();
+  pp.set('hash', crypto.createHmac('sha256', secret).update(dcs).digest('hex'));
+  const call = async (path, body) => { const req = new Request('https://bot.test/api/panel' + path, { method: body ? 'POST' : 'GET', headers: { 'x-init-data': pp.toString(), 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }); const r = await handlePanelApi(C(), req, new URL(req.url)); return r.json(); };
+  const D = C().db;
+  for (const [id, trk] of [[9201, 'course'], [9202, 'mat']]) await D.run(`INSERT INTO users (tg_id, first_name, track, status, consent_ads_at, joined_at, created_at) VALUES (?, 'u', ?, 'active', ?, ?, ?)`, [id, trk, NOW - 3600, NOW - 3600, NOW - 3600]);
+  const before = await call('/upcoming');
+  const d1 = await call('/post/new', { kind: 'date', md: 'Анонс эфира ЮНИТ', status: 'active', run_at: NOW + 2 * 86400, audience: 'all', track: 'course' });
+  const l1 = await call('/post/new', { kind: 'drip', md: 'Урок про шрифты ЮНИТ', status: 'active', day: 2, time: '11:00', track: 'mat' });
+  const out = await call('/upcoming');
+  const all = out.days.flatMap((d) => d.items);
+  const date = all.find((x) => x.id === d1.post.id), drip = all.find((x) => x.id === l1.post.id);
+  assert.ok(date && date.n >= 1 && date.kind === 'date', 'пост на дату в расписании');
+  assert.ok(drip && drip.n >= 1 && drip.kind === 'drip', 'пост ленты в расписании, считаем людей с нужным треком');
+  assert.ok(all.length > before.days.flatMap((d) => d.items).length, 'новые посты добавились к расписанию');
+  assert.equal(out.warns.filter((w) => w.id === d1.post.id).length, 0, 'без дублей предупреждений нет');
+  await call('/post/new', { kind: 'date', md: 'Анонс эфира ЮНИТ', status: 'active', run_at: NOW + 3 * 86400, track: 'course' });
+  assert.ok((await call('/upcoming')).warns.some((w) => /Одинаковых/.test(w.text)), 'одинаковые включённые посты помечены');
+  await call('/post/' + d1.post.id, { status: 'paused' });
+  assert.ok(!(await call('/upcoming')).days.flatMap((d) => d.items).some((x) => x.id === d1.post.id), 'пост на паузе в расписание не попадает');
+  await D.run(`DELETE FROM users WHERE tg_id IN (9201, 9202)`);
+}
+step('панель: «Что уйдёт на этой неделе»');
+
 console.log('\nВсе сценарии прошли. Запросов к фейковому Telegram:', calls.length);

@@ -81,15 +81,15 @@ export async function sendPost(tg, chatId, post, { uid, publicUrl, arrow, docs, 
 }
 
 // ----- кому отправлять -----
-function audienceSql(post) {
+export function audienceSql(post) {
   let c = '';
   const p = [];
   // трек из аудита: мини-курс или материалы
   if (post.track === 'course' || post.track === 'mat') { c += ` AND u.track = ?`; p.push(post.track); }
   return { c, p };
 }
-const BASE = `u.status = 'active' AND u.consent_ads_at IS NOT NULL AND u.joined_at IS NOT NULL AND u.paid_at IS NULL`;
-const NOT_SENT = `NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.post_id = ? AND d.tg_id = u.tg_id)`;
+export const BASE = `u.status = 'active' AND u.consent_ads_at IS NOT NULL AND u.joined_at IS NOT NULL AND u.paid_at IS NULL`;
+export const NOT_SENT = `NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.post_id = ? AND d.tg_id = u.tg_id)`;
 
 // Лента по дням: когда этому человеку положен пост
 //   день 0  -> сразу после входа

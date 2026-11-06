@@ -516,11 +516,35 @@ async function renderGame() {
   paint();
 }
 
+
+// ---------- главная: что уйдёт на этой неделе ----------
+function upcomingHtml(up) {
+  if (!up) return '';
+  const W = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'], M = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+  const dl = (iso) => { const d = new Date(iso + 'T00:00:00Z'), t = new Date(up.today + 'T00:00:00Z'), k = Math.round((d - t) / 864e5); return (k === 0 ? 'Сегодня' : k === 1 ? 'Завтра' : W[d.getUTCDay()]) + ', ' + d.getUTCDate() + ' ' + M[d.getUTCMonth()]; };
+  const hm = (at) => { const d = new Date((at + 10800) * 1000); return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0'); };
+  const delay = (m) => m >= 60 && m % 60 === 0 ? m / 60 + ' ч' : m + ' мин';
+  let h = '<div class="box" style="margin:0"><h3>Что уйдёт на этой неделе</h3>';
+  if (up.warns.length) h += '<div class="note warn" style="margin:0 0 8px">' + up.warns.map((w) => '<button type="button" class="hm-a" data-hm="post:' + w.id + '">' + esc(w.text) + ' →</button>').join('') + '</div>';
+  if (!up.days.length) h += '<p class="small muted" style="margin:0">На 7 дней вперёд ничего не запланировано. Посты ленты и на дату появятся здесь, когда будут включены.</p>';
+  up.days.forEach((d) => {
+    h += '<div class="small muted" style="margin:10px 0 2px"><b>' + dl(d.date) + '</b></div>';
+    d.items.forEach((it) => {
+      const when = it.now ? 'сейчас' : it.timer !== null ? 'через ' + delay(it.timer) + ' после входа' : hm(it.at);
+      h += '<button type="button" class="hm-r" data-hm="post:' + it.id + '" style="width:100%;text-align:left;background:none;border:0;padding:6px 0;cursor:pointer;min-height:44px"><span style="min-width:0"><span class="small muted">' + (it.kind === 'date' ? '🕒 ' : '📅 ') + when + '</span><br><b>' + esc(it.title) + '</b></span><span class="small muted" style="white-space:nowrap">' + it.n + ' чел.</span></button>';
+    });
+  });
+  h += '<p class="small muted" style="margin:10px 0 0">Считаю тех, кто уже в боте. Время по Москве.' + (up.afterN ? ' Постов «после другого поста»: ' + up.afterN + ', их время зависит от человека, в список они не входят.' : '') + '</p></div>';
+  return h;
+}
+
 // ---------- главная: что важно сейчас ----------
 async function renderHome() {
   $('body').innerHTML = '<p class="muted" style="margin-top:16px">Загружаю…</p>';
   let c = null;
+  let up = null;
   try { c = await api('/crm'); crmData = c; } catch (e) { $('body').innerHTML = '<div class="note warn">' + esc(e.message) + '</div>'; return; }
+  try { up = await api('/upcoming'); } catch (e) { up = null; }
   const now = Math.floor(Date.now() / 1000), wk = now - 7 * 86400;
   const ppl = c.people.filter((u) => !u.tech);
   const nLead = ppl.filter((u) => u.lead && u.lead.at > wk).length, nRev = ppl.filter((u) => u.review && u.review.at > wk).length, nNew = ppl.filter((u) => u.created_at > wk).length;
@@ -542,8 +566,7 @@ async function renderHome() {
   const recent = ppl.filter((u) => u.lead).sort((a, b) => b.lead.at - a.lead.at).slice(0, 3);
   h += '<div class="box" style="margin:0"><h3>Последние заявки</h3>' + (recent.length ? recent.map((u) => '<div class="hm-r"><span><b>' + esc(u.name || 'без имени') + '</b><br><span class="small muted">' + esc([u.phone, u.track === 'mat' ? 'материалы' : u.track === 'course' ? 'мини-курс' : '', fmt(u.lead.at)].filter(Boolean).join(' · ')) + '</span></span>' + (u.username ? '<a class="chip" href="https://t.me/' + esc(u.username) + '" target="_blank" rel="noopener">написать</a>' : '') + '</div>').join('') : '<p class="small muted" style="margin:6px 0 0">Заявок пока нет.</p>') +
     '<div class="btns" style="margin:8px 0 0"><button type="button" class="btn ghost" data-hm="reviews">Все заявки и отзывы</button><button type="button" class="btn ghost" data-hm="pv">👁 Смотреть таблицу</button><button type="button" class="btn ghost" data-hm="dl">📥 Скачать Excel</button></div></div>';
-  const today = S.posts.filter((p) => p.kind === 'date' && p.status === 'active' && p.run_at && p.run_at > now - 3600 && p.run_at < now + 86400);
-  if (today.length) h += '<div class="box" style="margin:0"><h3>Ближайшие сутки</h3>' + today.map((p) => '<div class="hm-r"><span>' + esc(postName(p).slice(0, 40)) + '</span><span class="small muted">' + fmt(p.run_at) + '</span></div>').join('') + '</div>';
+  h += upcomingHtml(up);
   h += '<div class="meta"><span class="tag ' + (bk && bk.sent ? 'ok' : '') + '">' + (bk ? 'копия базы: ' + fmt(bk.at / 1000) + (bk.sent ? ' · в телеграме' : ' · только на сервере') : 'копии базы ещё нет') + '</span><span class="tag">версия панели ' + esc(/@@/.test(BUILD) ? 'dev' : BUILD.slice(0, 4)) + '</span></div></div>';
   $('body').innerHTML = h;
   document.querySelectorAll('[data-hm]').forEach((b) => b.onclick = () => {

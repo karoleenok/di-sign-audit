@@ -11,6 +11,7 @@ import { onStart, docVars, consentView, backfillFb, loadFlow, normFlow, FLOW_OPT
 import { MSK, DAY } from './time.js';
 import { exportXlsx, sheetRows, LEAD_HEAD, REVIEW_HEAD } from './export.js';
 import { techSet, addTech, removeTech } from './tech.js';
+import { upcoming } from './upcoming.js';
 import { ITEMS as GAME_ITEMS, loadCfg, saveCfgAndMenu, viewFor as gameView } from './appcfg.js';
 import { saveMsgExtra, saveBtnExtra, setMsgOff, linksOf } from './msgs.js';
 import { listMsgs, saveMsg, resetMsg, btn, say, setMsgMedia, canMedia, msgInfo, loadMsgs } from './msgs.js';
@@ -555,6 +556,9 @@ async function panelRest(ctx, request, url, user, path, body) {
   }
 
   // ссылки на документы (политика, согласие, оферта) и данные владельца
+  // что уйдёт в ближайшие 7 дней
+  if (path === '/upcoming') return json(await upcoming(ctx, ctx.now, 7));
+
   // игра-прогрев: когда открыть и закрыть, показывать ли всем
   if (path === '/game') {
     const view = async () => {
