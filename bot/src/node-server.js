@@ -6,6 +6,9 @@
 //   PUBLIC_URL — внешний адрес сервера (для кнопок и вебхука)
 //   MODE      — webhook (по умолчанию) или polling (если Telegram не достучится до сервера)
 import http from 'node:http';
+import { checkInitData as __checkInit } from './panel-api.js';
+import { isAdmin as __isAdmin } from './admin.js';
+import __GATE from './workshop-gate.js';
 import net from 'node:net';
 import dns from 'node:dns';
 // На этом сервере node 22 при «автоподборе IPv4/IPv6» зависал на 10 секунд при подключении к Cloudflare-мосту
@@ -64,6 +67,14 @@ const server = http.createServer(async (req, res) => {
   try {
     // панель админа (кнопка в боте) и её API
     if (url.pathname === '/admin/build') return send(200, BUILD, 'text/plain; charset=utf-8', { 'cache-control': 'no-store' });
+    // игра-прогрев: пока только админам. Ворота пустые, игра отдаётся после проверки подписи Telegram
+    if (url.pathname === '/app' || url.pathname === '/app/') return send(200, __GATE, 'text/html; charset=utf-8', { 'cache-control': 'no-store', 'x-robots-tag': 'noindex' });
+    if (url.pathname === '/api/app/load' && req.method === 'POST') {
+      const __u = await __checkInit(String(req.headers['x-init-data'] || ''), env.BOT_TOKEN, Math.floor(Date.now() / 1000));
+      if (!__u) return send(401, 'unauthorized', 'text/plain; charset=utf-8', { 'cache-control': 'no-store' });
+      if (!(await __isAdmin(ctxFor(), __u.id))) return send(403, 'forbidden', 'text/plain; charset=utf-8', { 'cache-control': 'no-store' });
+      return send(200, fs.readFileSync(new URL('../app/workshop.html', import.meta.url), 'utf8'), 'text/html; charset=utf-8', { 'cache-control': 'no-store' });
+    }
     if (url.pathname === '/admin' || url.pathname === '/admin/') return send(200, PANEL, 'text/html; charset=utf-8', { 'cache-control': 'no-store' });
     // большие файлы для кнопок: кладём на диск сервера (Telegram принимает от бота не больше 50 МБ)
     if (url.pathname === '/api/panel/bigfile' && req.method === 'POST') {

@@ -71,6 +71,7 @@ export async function onAdminCommand(ctx, msg, cmd, arg) {
     case 'check': return check(ctx, id);
     case 'texts': return textsMenu(ctx, id);
     case 'admin': case 'panel': return panelLink(ctx, id);
+    case 'game': case 'workshop': return gameLink(ctx, id);
     default: return null; // не админская команда
   }
 }
@@ -603,5 +604,14 @@ export async function panelLink(ctx, id) {
   if (!ctx.publicUrl) return say(ctx, id, 'Панель откроется, когда у бота будет адрес в интернете.');
   return say(ctx, id, 'Панель: лента постов по дням (можно перетаскивать), даты, подарки и все тексты бота.', {
     reply_markup: kb([[{ text: '🗂 Открыть панель', web_app: { url: ctx.publicUrl + '/admin?v=' + Date.now().toString(36) } }]]),
+  });
+}
+
+
+// ---------- игра-прогрев (пока только админам) ----------
+export async function gameLink(ctx, id) {
+  if (!ctx.publicUrl) return say(ctx, id, 'Игра откроется, когда у бота будет адрес в интернете.');
+  return say(ctx, id, 'Игра-прогрев, тестовая версия. Её видят только админы.', {
+    reply_markup: kb([[{ text: '🎮 Открыть игру', web_app: { url: ctx.publicUrl + '/app' } }]]),
   });
 }
