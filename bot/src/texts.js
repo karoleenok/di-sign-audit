@@ -73,6 +73,7 @@ export const USER_COMMANDS = [
 ];
 export const ADMIN_COMMANDS = [
   { command: 'admin', description: 'Панель: лента, порядок, тексты' },
+  { command: 'game', description: 'Игра-прогрев (тест)' },
   { command: 'new', description: 'Новый пост' },
   { command: 'posts', description: 'Все посты' },
   { command: 'stats', description: 'Статистика' },

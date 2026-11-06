@@ -603,7 +603,7 @@ async function showMsg(ctx, id, key, note) {
 export async function panelLink(ctx, id) {
   if (!ctx.publicUrl) return say(ctx, id, 'Панель откроется, когда у бота будет адрес в интернете.');
   return say(ctx, id, 'Панель: лента постов по дням (можно перетаскивать), даты, подарки и все тексты бота.', {
-    reply_markup: kb([[{ text: '🗂 Открыть панель', web_app: { url: ctx.publicUrl + '/admin?v=' + Date.now().toString(36) } }]]),
+    reply_markup: kb([[{ text: '🗂 Открыть панель', web_app: { url: ctx.publicUrl + '/admin?v=' + Date.now().toString(36) } }], [{ text: '🎮 Игра-прогрев (тест)', web_app: { url: ctx.publicUrl + '/app' } }]]),
   });
 }
 
