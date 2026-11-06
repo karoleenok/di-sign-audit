@@ -1245,7 +1245,7 @@ step('расписание аппки: по умолчанию, открытие
   await userMenu(C(), 9001); await userMenu(C(), 9002);
   m = menu(n);
   assert.ok(m.some((c) => c.body.chat_id === 9001 && c.body.menu_button.type === 'web_app' && c.body.menu_button.text === 'Забрать материалы'), 'аппка открыта: кнопка «Забрать материалы» есть');
-  assert.ok(m.some((c) => c.body.chat_id === 9002 && c.body.menu_button.type === 'web_app'), 'без выбранного трека кнопка тоже есть: аппка предложит пройти аудит');
+  assert.ok(m.some((c) => c.body.chat_id === 9002 && c.body.menu_button.type === 'web_app' && c.body.menu_button.text === 'Пройти аудит'), 'без выбранного трека кнопка «Пройти аудит»: аппка покажет аудит');
   assert.equal(appTrack('course'), 'mini'); assert.equal(appTrack('mat'), 'mat'); assert.equal(appTrack(null), null);
   // выбор трека в боте включает кнопку сразу
   n = calls.length;
@@ -1261,12 +1261,12 @@ step('расписание аппки: по умолчанию, открытие
   await handleUpdate(C(), { message: { message_id: 5, from: { id: 9100, first_name: 'Новая' }, chat: { id: 9100, type: 'private' }, date: NOW, text: '/start' } });
   const sent = calls.slice(n0);
   assert.ok(sent.some((c) => c.method === 'setChatMenuButton' && c.body.chat_id === 9100 && c.body.menu_button.type === 'web_app'), 'после «Старт» кнопка в меню');
-  const hi = sent.find((c) => c.method === 'sendMessage' && c.body.reply_markup && JSON.stringify(c.body.reply_markup).includes('Забрать материалы'));
-  assert.ok(hi && hi.body.reply_markup.inline_keyboard[0][0].web_app.url === 'https://bot.test/app', 'под приветствием кнопка «Забрать материалы»');
+  const hi = sent.find((c) => c.method === 'sendMessage' && c.body.reply_markup && JSON.stringify(c.body.reply_markup).includes('Пройти аудит'));
+  assert.ok(hi && hi.body.reply_markup.inline_keyboard[0][0].web_app.url === 'https://bot.test/app', 'под приветствием у нового человека кнопка «Пройти аудит»');
   n0; await saveCfg(C(), { public: false, items: {} });
   const n1 = calls.length;
   await handleUpdate(C(), { message: { message_id: 6, from: { id: 9101, first_name: 'Вторая' }, chat: { id: 9101, type: 'private' }, date: NOW, text: '/start' } });
-  assert.ok(!calls.slice(n1).some((c) => c.method === 'sendMessage' && JSON.stringify(c.body.reply_markup || {}).includes('Забрать материалы')), 'пока аппка закрыта, кнопки под приветствием нет');
+  assert.ok(!calls.slice(n1).some((c) => c.method === 'sendMessage' && JSON.stringify(c.body.reply_markup || {}).includes('Пройти аудит')), 'пока аппка закрыта, кнопки под приветствием нет');
   await D.run(`DELETE FROM users WHERE tg_id IN (9100, 9101)`);
 }
 step('«Старт»: «Забрать материалы» под приветствием и в меню');

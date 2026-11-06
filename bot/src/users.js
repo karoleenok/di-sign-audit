@@ -129,7 +129,7 @@ export async function onStart(ctx, msg, payload) {
   const name = from.first_name || 'друг';
   // зона из теста запоминается только как отметка «прошёл тест» — посты и подарки по зонам не делим
   await pauseFor(ctx, from.id, st.zone ? 'helloTest' : 'hello');
-  await tech(ctx, from.id, say(ctx, from.id, st.zone ? 'helloTest' : 'hello', { имя: name }, await openKb(ctx)));
+  await tech(ctx, from.id, say(ctx, from.id, st.zone ? 'helloTest' : 'hello', { имя: name }, await openKb(ctx, u && u.track)));
   return nextStep(ctx, u);
 }
 
@@ -245,7 +245,7 @@ const STEP_RUN = {
 // показать шаг входа админу «как есть» (для предпросмотра полного пути): те же тексты и кнопки, но ничего не меняем в анкете
 export async function previewStep(ctx, id, k, u = {}) {
   const name = u.first_name || 'друг';
-  if (k === 'hello' || k === 'helloTest') return say(ctx, id, k, { имя: name }, await openKb(ctx));
+  if (k === 'hello' || k === 'helloTest') return say(ctx, id, k, { имя: name }, await openKb(ctx, u.track));
   if (k === 'consentPd') { const { vars, extra } = await consentView(ctx); return say(ctx, id, 'consentPd', vars, extra); }
   if (k === 'consentAds') return say(ctx, id, 'consentAds', {}, { reply_markup: kb([[{ text: await btn(ctx, 'consentAdsYes'), callback_data: 'c:ads:1' }, { text: await btn(ctx, 'consentAdsNo'), callback_data: 'c:ads:0' }]]) });
   if (k === 'askLevel') return say(ctx, id, 'askLevel', {}, { reply_markup: kb([[{ text: await btn(ctx, 'levelBtnStart'), callback_data: 'lv:start' }], [{ text: await btn(ctx, 'levelBtnPro'), callback_data: 'lv:pro' }]]) });

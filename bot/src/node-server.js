@@ -31,6 +31,7 @@ import PANEL, { BUILD } from './panel-html.js';
 import { filePage, mimeOf, kindOf } from './filepage.js';
 
 const env = process.env;
+if (!env.TEST_URL) env.TEST_URL = 'https://di-sign-bot.karolinabelikova90.workers.dev/test'; // ссылка на аудит, если на сервере не задана своя
 const file = env.DB_FILE || './data/bot.db';
 fs.mkdirSync(path.dirname(file), { recursive: true });
 const db = await nodeSqliteAdapter(file);

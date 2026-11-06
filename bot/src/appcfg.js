@@ -110,19 +110,21 @@ export function viewFor(cfg, now, admin) {
 // ---------- кнопка «Игра» у человека рядом со строкой ввода ----------
 // Есть только у тех, кто уже выбрал «мини-курс» или «материалы», и только когда админ открыл аппку для всех.
 export const appTrack = (t) => (t === 'course' ? 'mini' : t === 'mat' ? 'mat' : null);
-export const MENU_TEXT = 'Забрать материалы';
+export const MENU_TEXT = 'Забрать материалы'; // у тех, кто уже выбрал трек
+export const AUDIT_TEXT = 'Пройти аудит'; // у тех, кто ещё без трека: аппка покажет экран с аудитом
 // инлайн-кнопка под приветствием: открывает кабинет, пока аппка включена для всех
-export async function openKb(ctx) {
+export async function openKb(ctx, track) {
   if (!ctx.publicUrl) return {};
   const c = await loadCfg(ctx);
-  return c.public ? { reply_markup: { inline_keyboard: [[{ text: 'Забрать материалы', web_app: { url: ctx.publicUrl + '/app' } }]] } } : {};
+  return c.public ? { reply_markup: { inline_keyboard: [[{ text: appTrack(track) ? MENU_TEXT : AUDIT_TEXT, web_app: { url: ctx.publicUrl + '/app' } }]] } } : {};
 }
 export async function userMenu(ctx, id, cfg) {
   if (!ctx.publicUrl) return false;
   try {
     const c = cfg || (await loadCfg(ctx));
+    const u = await ctx.db.first(`SELECT track FROM users WHERE tg_id = ?`, [id]);
     const on = !!c.public; // кнопка у всех: без выбранного трека аппка предложит пройти аудит
-    await ctx.tg.call('setChatMenuButton', { chat_id: id, menu_button: on ? { type: 'web_app', text: MENU_TEXT, web_app: { url: ctx.publicUrl + '/app' } } : { type: 'commands' } });
+    await ctx.tg.call('setChatMenuButton', { chat_id: id, menu_button: on ? { type: 'web_app', text: appTrack(u && u.track) ? MENU_TEXT : AUDIT_TEXT, web_app: { url: ctx.publicUrl + '/app' } } : { type: 'commands' } });
     return true;
   } catch (e) { return String((e && (e.description || e.message)) || e).slice(0, 140); /* кнопка не критична: причину покажем в панели */ }
 }
