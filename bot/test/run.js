@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { nodeSqliteAdapter } from '../src/db-node.js';
 import { migrate } from '../src/schema.js';
-import { makeCtx, handleUpdate, tick, clickRedirect } from '../src/core.js';
+import { makeCtx, handleUpdate, tick, clickRedirect, syncMenu } from '../src/core.js';
 import { parseWhen, fmtWhen } from '../src/time.js';
 import { saveBtnExtra, setMsgOff } from '../src/msgs.js';
 import { loadCfg, saveCfg, viewFor, isOpen, normalize } from '../src/appcfg.js';
@@ -1225,5 +1225,22 @@ step('технические аккаунты: разбор ника/ID, доб�
   assert.deepEqual(normalize('мусор').items.poster, { mode: 'open', from: null, until: null }, 'мусор превращается в значения по умолчанию');
 }
 step('расписание аппки: по умолчанию, открытие по дате, закрытие, проверка дат, чужие ключи');
+
+{
+  // кнопка «Игра» в меню: всем при public=true, админам всегда
+  const menu = (from) => calls.slice(from).filter((c) => c.method === 'setChatMenuButton');
+  let n = calls.length;
+  await saveCfg(C(), { public: false, items: {} });
+  await syncMenu(C());
+  let m = menu(n);
+  assert.ok(m.some((c) => !c.body.chat_id && c.body.menu_button.type === 'commands'), 'всем обычное меню, пока аппка закрыта');
+  assert.ok(m.some((c) => c.body.chat_id === 777 && c.body.menu_button.type === 'web_app' && c.body.menu_button.web_app.url === 'https://bot.test/app'), 'админу кнопка есть всегда');
+  n = calls.length;
+  await saveCfg(C(), { public: true, items: {} });
+  await syncMenu(C());
+  m = menu(n);
+  assert.ok(m.some((c) => !c.body.chat_id && c.body.menu_button.type === 'web_app' && c.body.menu_button.text === 'Игра'), 'всем кнопка «Игра», когда аппка открыта');
+}
+step('кнопка «Игра» в меню: всем при открытой аппке, админам всегда');
 
 console.log('\nВсе сценарии прошли. Запросов к фейковому Telegram:', calls.length);

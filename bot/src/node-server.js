@@ -22,7 +22,7 @@ import zlib from 'node:zlib';
 import crypto from 'node:crypto';
 import { nodeSqliteAdapter } from './db-node.js';
 import { migrate } from './schema.js';
-import { makeCtx, handleUpdate, tick, setup, clickRedirect, exportAll } from './core.js';
+import { makeCtx, handleUpdate, tick, setup, syncMenu, clickRedirect, exportAll } from './core.js';
 import { handlePanelApi, panelAdmin } from './panel-api.js';
 import { stepRuns } from './testrun.js';
 import { backupTick, makeBackup } from './backup.js';
@@ -93,6 +93,7 @@ const server = http.createServer(async (req, res) => {
       let input; try { input = JSON.parse(body || '{}'); } catch { return J(400, { error: 'Не получилось прочитать данные' }); }
       const r = await __saveCfg(__c, input);
       if (r.error) return J(400, { error: r.error });
+      syncMenu(__c).catch((e) => console.error('menu', e));
       return J(200, { ok: true, view: __viewFor(r.cfg, Math.floor(Date.now() / 1000), true) });
     }
     if (url.pathname === '/admin' || url.pathname === '/admin/') return send(200, PANEL, 'text/html; charset=utf-8', { 'cache-control': 'no-store' });
@@ -192,6 +193,9 @@ const server = http.createServer(async (req, res) => {
   } catch (e) { console.error(e); return send(500, 'error'); }
 });
 server.listen(Number(env.PORT) || 8080, () => console.log('bot listening', Number(env.PORT) || 8080, polling ? '(polling)' : '(webhook)'));
+
+// при каждом запуске обновляем меню и кнопку игры (после автообновления это единственный способ, чтобы они появились)
+setTimeout(() => syncMenu(ctxFor()).catch((e) => console.error('menu', e)), 3000);
 
 // расписание раз в минуту
 setInterval(async () => {

@@ -354,6 +354,9 @@ details a,.src a{color:var(--blue)}
 .po.C .ptitle{font-size:calc(var(--t-s,141)*var(--u))}
 .po.C .ppill{margin-top:calc(var(--g2,67)*var(--u))}
 .po .tap{cursor:pointer;outline-offset:calc(6*var(--u));-webkit-tap-highlight-color:transparent}
+.btn.primary[disabled]{background:var(--track);color:var(--ink-soft);border-color:transparent}
+.po .tap{position:relative}
+.po .rk{position:absolute;left:calc(-40*var(--u));top:calc(-26*var(--u));min-width:calc(64*var(--u));height:calc(64*var(--u));border-radius:50%;background:var(--ink);color:var(--cream);font:500 calc(36*var(--u))/calc(64*var(--u)) var(--f-text);text-align:center;font-style:normal;letter-spacing:0;text-indent:0;z-index:2}
 .po .tap.sel{outline:calc(5*var(--u)) solid var(--pink)}
 
 .fcard .po,#bArea .po{max-width:340px;margin-inline:auto;width:100%}
@@ -826,7 +829,7 @@ function pvars(m){var s='';for(var k in (m||{}))s+='--'+k+':'+m[k]+';';return s}
 function posterHTML(key,mods,extra){
   var P=POSTERS[key],st=pvars(mods),x=extra||{};
   var logo='<img class="plogo" alt="" src="'+IMG.logo+'">';
-  function T(a,id,cls,html){return '<'+(cls==='ppill'?'span':'p')+' class="'+cls+(x.tap?' tap'+(x.sel===id?' sel':''):'')+'"'+(x.tap?' data-el="'+id+'" role="button" tabindex="0"':'')+'>'+html+'</'+(cls==='ppill'?'span':'p')+'>'}
+  function T(a,id,cls,html){return '<'+(cls==='ppill'?'span':'p')+' class="'+cls+(x.tap?' tap'+(x.sel===id?' sel':''):'')+'"'+(x.tap?' data-el="'+id+'" role="button" tabindex="0"':'')+'>'+html+(x.rk&&x.rk[id]?'<i class="rk" aria-label="место '+x.rk[id]+'">'+x.rk[id]+'</i>':'')+'</'+(cls==='ppill'?'span':'p')+'>'}
   if(key==='A')return '<div class="po A" style="'+st+'" role="img" aria-label="Постер: welcome to di sign university, двери открыты, старт в декабре">'+
     '<img class="hills" alt="" src="'+IMG.hills+'">'+logo+
     '<div class="stack">'+T(0,'t','ptitle',P.title)+T(0,'b','pbody',P.body)+T(0,'p','ppill',P.pill)+'</div>'+
@@ -983,7 +986,7 @@ document.addEventListener('keydown',function(e){if(cur!=='poster'||!S||S.st!==1|
 /* ---------- этап 3: сборка по эталону ---------- */
 var TIGHT=40,LOOSE=76;
 var BT=[
- {key:'A',pr:'Иерархия и масштаб',g:'h',ref:{},task:'Расставь размеры: главное должно быть самым крупным. Выбери два элемента, и они поменяются размерами.',
+ {key:'A',pr:'Иерархия и масштаб',g:'h',ref:{},task:'Расставь важность: тапай элементы постера по порядку, от главного к второстепенному. Размеры подстроятся сами.',
   hint:'Крупнее всего название, текст средний, плашка самая мелкая.',
   ok:'Три уровня видны сразу: название, текст, плашка. Взгляд идёт сверху вниз.'},
  {key:'C',pr:'Близость',g:'p',ref:{g0:TIGHT,g1:LOOSE,g2:TIGHT},task:'Реши, что держать вместе, а что отделить воздухом: название и фото, фото и текст, текст и плашку.',
@@ -1011,22 +1014,27 @@ function elKey(e,fn){e.addEventListener('keydown',function(ev){if(ev.key==='Ente
 /* 1. иерархия */
 var LV={t:[160,105,70],b:[62,46,36],p:[44,36,30]},EN={t:'Название',b:'Текст',p:'Плашка'};
 function bHier(){
-  function mods(){var m={};['t','b','p'].forEach(function(k){m[k+'-s']=LV[k][B.rank[k]]});return m}
+  B.order=[];
+  function rk(k){var i=B.order.indexOf(k);if(i>=0)return i;return B.order.length>=2?2:1}
+  function ranks(){var r={};['t','b','p'].forEach(function(k){r[k]=rk(k)});return r}
+  function mods(){var m={};['t','b','p'].forEach(function(k){m[k+'-s']=LV[k][rk(k)]});return m}
   function pick(k){
-    if(S.busy)return;haptic();
-    if(B.sel===null)B.sel=k;else{if(B.sel!==k){var x=B.rank[B.sel];B.rank[B.sel]=B.rank[k];B.rank[k]=x}B.sel=null}
+    if(S.busy||B.order.indexOf(k)>=0||B.order.length>=2)return;haptic();
+    B.order.push(k);
+    if(B.order.length===2)B.order.push(['t','b','p'].filter(function(x){return B.order.indexOf(x)<0})[0]);
     paint();
   }
   function paint(){
-    $('#bArea').innerHTML=posterHTML('A',mods(),{tap:true,sel:B.sel});
-    $('#bCtl').innerHTML='<p class="small">Выбери элемент на постере или кнопкой. Второй выбор меняет их размеры местами.</p><div class="chips">'+
-      ['t','b','p'].map(function(k){return '<button class="chip" type="button" data-k="'+k+'" aria-pressed="'+(B.sel===k)+'">'+EN[k]+'</button>'}).join('')+'</div>';
-    $$('#bCtl .chip').forEach(function(b){b.addEventListener('click',function(){pick(b.getAttribute('data-k'))})});
+    var n=B.order.length,rkv={};B.order.forEach(function(k,i){rkv[k]=i+1});
+    $('#bArea').innerHTML=posterHTML('A',mods(),{tap:true,rk:rkv});
+    $('#bCtl').innerHTML='<p class="small" aria-live="polite">'+(n===0?'Что на постере главное? Тапни его, он станет самым крупным.':n===1?'А что второе по важности? Тапни его.':'Готово: 1 самый крупный, 3 самый мелкий. Проверь или расставь заново.')+'</p>'+(n?'<button class="btn ghost sm" id="bReset" type="button" style="align-self:flex-start">Расставить заново</button>':'');
+    $('#bCheck').disabled=n<3;
+    var rs=$('#bReset');if(rs)rs.addEventListener('click',function(){if(S.busy)return;B.order=[];haptic();paint()});
     $$('#bArea [data-el]').forEach(function(e){var k=e.getAttribute('data-el');e.addEventListener('click',function(){pick(k)});elKey(e,function(){pick(k)})});
   }
   B.paint=paint;paint();
-  B.right=function(){return B.rank.t===0&&B.rank.b===1&&B.rank.p===2};
-  B.solve=function(){B.rank={t:0,b:1,p:2};B.sel=null;paint()};
+  B.right=function(){return B.order[0]==='t'&&B.order[1]==='b'};
+  B.solve=function(){B.order=['t','b','p'];paint()};
 }
 /* 2. близость */
 var PN=['Название и фото','Фото и текст','Текст и плашка'];

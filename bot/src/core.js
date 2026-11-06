@@ -7,6 +7,7 @@ import { onStart, onUserCallback, onUserCommand, onUserText, getUState } from '.
 import { isAdmin, envAdmins, onAdminCommand, onAdminMessage, onAdminCallback } from './admin.js';
 import { sendPost, dueUsers, recordDeliveries, loadDocs } from './posts.js';
 import { btn } from './msgs.js';
+import { loadCfg } from './appcfg.js';
 
 export function makeCtx({ db, env, publicUrl, fetchFn, now }) {
   const tg = makeTg({ token: env.BOT_TOKEN, root: env.TG_API_ROOT, relayKey: env.TG_RELAY_KEY, fetchFn });
@@ -120,6 +121,24 @@ export async function tick(ctx, budget, queryBudget) {
   return { sent, queries: q };
 }
 
+
+// ---------- меню: команды и кнопка «Игра» рядом со строкой ввода ----------
+// Зовём при каждом запуске бота и при смене «показывать всем»: ничего вручную делать не надо.
+// Админам кнопка есть всегда, остальным только когда аппка открыта для всех.
+export async function syncMenu(ctx) {
+  const btnOf = () => ({ type: 'web_app', text: 'Игра', web_app: { url: ctx.publicUrl + '/app' } });
+  const cfg = await loadCfg(ctx);
+  await ctx.tg.call('setMyCommands', { commands: await userCommands(ctx) });
+  await ctx.tg.call('setChatMenuButton', { menu_button: ctx.publicUrl && cfg.public ? btnOf() : { type: 'commands' } }).catch(() => {});
+  const admins = [...new Set([...envAdmins(ctx.env), ...(await ctx.db.all(`SELECT tg_id FROM admins`)).map((r) => r.tg_id)])];
+  const ac = await adminCommands(ctx);
+  for (const a of admins) {
+    await ctx.tg.call('setMyCommands', { commands: ac, scope: { type: 'chat', chat_id: a } }).catch(() => {});
+    if (ctx.publicUrl) await ctx.tg.call('setChatMenuButton', { chat_id: a, menu_button: btnOf() }).catch(() => {});
+  }
+  return admins;
+}
+
 // ---------- первая настройка: база, вебхук, меню команд ----------
 export async function setup(ctx, { webhookUrl, polling }) {
   const out = [];
@@ -135,11 +154,8 @@ export async function setup(ctx, { webhookUrl, polling }) {
     });
     out.push('Вебхук установлен: ' + webhookUrl);
   }
-  await ctx.tg.call('setMyCommands', { commands: await userCommands(ctx) });
-  const admins = [...envAdmins(ctx.env), ...(await ctx.db.all(`SELECT tg_id FROM admins`)).map((r) => r.tg_id)];
-  const ac = await adminCommands(ctx);
-  for (const a of new Set(admins)) await ctx.tg.call('setMyCommands', { commands: ac, scope: { type: 'chat', chat_id: a } }).catch(() => {});
-  out.push('Меню команд обновлено, админов: ' + new Set(admins).size);
+  const admins = await syncMenu(ctx);
+  out.push('Меню команд и кнопка игры обновлены, админов: ' + admins.length);
   const me = await ctx.tg.call('getMe');
   out.push('Бот: @' + me.username);
   return out;
