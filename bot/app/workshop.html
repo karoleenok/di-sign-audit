@@ -1,3 +1,4 @@
+<!doctype html><html lang="ru" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex">
 <title>Мастерская таксы</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@300..800&display=swap">
@@ -925,7 +926,9 @@ $('#f3home').addEventListener('click',function(){go('home')});
 $('#f3again').addEventListener('click',startFonts);
 
 /* ---------- старт ---------- */
-try{var tw=window.Telegram&&window.Telegram.WebApp;if(tw){tw.ready();tw.expand();if(tw.disableVerticalSwipes)tw.disableVerticalSwipes()}}catch(e){}
+try{var tw=window.Telegram&&window.Telegram.WebApp;if(tw){tw.ready();tw.expand();try{tw.setHeaderColor('#fffbf7');tw.setBackgroundColor('#fffbf7')}catch(_){}if(tw.disableVerticalSwipes)tw.disableVerticalSwipes()}}catch(e){}
 route();
 })();
 </script>
+
+</html>
