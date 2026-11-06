@@ -84,10 +84,15 @@ img{display:block}
 .hello{gap:var(--s5)}
 .hello .hero{gap:var(--s3)}
 .hello-img{display:flex;justify-content:center;padding-block:var(--s2)}
-.hello-img img{width:min(74vw,300px,27dvh);height:auto;aspect-ratio:1;object-fit:contain}
+.hello-img img{width:min(74vw,300px,28dvh);height:auto;aspect-ratio:1;object-fit:contain}
 .hello{text-align:center}
 .hello .brandbar{justify-content:center}
 .hello .hero{align-items:center}
+.hello .px{display:inline-block;background:var(--pb);padding:2px var(--s2);border-radius:var(--r-s)}
+.hello-sub{font-size:17px;line-height:24px;max-width:300px;margin-inline:auto}
+.hello-img.big img{width:min(78vw,320px,34dvh)}
+.hello-img img{transform-origin:50% 92%;animation:waddle 2.4s ease-in-out infinite}
+@keyframes waddle{0%,100%{transform:translateX(-12px) rotate(-5deg)}25%{transform:translateX(0) rotate(0) translateY(-6px)}50%{transform:translateX(12px) rotate(5deg)}75%{transform:translateX(0) rotate(0) translateY(-6px)}}
 .hello .bell{display:flex;flex-direction:column;align-items:center;gap:var(--s2);text-align:center}
 .hello .dock{align-items:stretch}
 .bell{display:grid;grid-template-columns:44px minmax(0,1fr);gap:var(--s3);align-items:start;padding:var(--s4);border:1px solid var(--line);border-radius:var(--r-xl);background:var(--card)}
@@ -461,9 +466,9 @@ details a,.src a{color:var(--blue)}
   <div class="hero">
     <p class="px">free audit.</p>
     <h1 class="h1">Мы подготовили для тебя <span class="mk-hl"><span style="white-space:nowrap">мини-курс</span> и полезные материалы</span></h1>
-    <p class="small">Пройди бесплатный аудит навыков, получи план из трёх шагов и забери бонусы.</p>
   </div>
-  <div class="hello-img"><img data-img="glasses" alt=""></div>
+  <div class="hello-img big"><img data-img="glasses" alt=""></div>
+  <p class="small hello-sub">Пройди бесплатный аудит навыков, получи план из трёх шагов и забери бонусы.</p>
   <div class="dock"><button class="btn primary" id="auGo" type="button">Пройти аудит</button><p class="small" id="auNo" hidden style="text-align:center">Ссылка на аудит пока не готова. Напиши в боте, мы поможем.</p></div>
 </section>
 
@@ -473,9 +478,9 @@ details a,.src a{color:var(--blue)}
   <div class="hero">
     <p class="px">welcome.</p>
     <h1 class="h1">Привет! Очень рады, что ты <span class="mk-hl">с нами</span></h1>
-    <p class="small" id="heSub"></p>
   </div>
   <div class="hello-img"><img data-img="magnifier" data-track="mini" alt=""><img data-img="notebook" data-track="mat" alt=""></div>
+  <p class="small hello-sub" id="heSub"></p>
   <div class="bell">
     <span class="bell-ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 0 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg></span>
     <div><p class="adm-t">Не пропусти новое</p><p class="small" id="heBell"></p></div>
