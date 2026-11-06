@@ -115,7 +115,7 @@ export const MENU_TEXT = 'Забрать материалы';
 export async function openKb(ctx) {
   if (!ctx.publicUrl) return {};
   const c = await loadCfg(ctx);
-  return c.public ? { reply_markup: { inline_keyboard: [[{ text: 'Открыть кабинет', web_app: { url: ctx.publicUrl + '/app' } }]] } } : {};
+  return c.public ? { reply_markup: { inline_keyboard: [[{ text: 'Забрать материалы', web_app: { url: ctx.publicUrl + '/app' } }]] } } : {};
 }
 export async function userMenu(ctx, id, cfg) {
   if (!ctx.publicUrl) return false;

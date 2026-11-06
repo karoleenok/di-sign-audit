@@ -1261,15 +1261,15 @@ step('расписание аппки: по умолчанию, открытие
   await handleUpdate(C(), { message: { message_id: 5, from: { id: 9100, first_name: 'Новая' }, chat: { id: 9100, type: 'private' }, date: NOW, text: '/start' } });
   const sent = calls.slice(n0);
   assert.ok(sent.some((c) => c.method === 'setChatMenuButton' && c.body.chat_id === 9100 && c.body.menu_button.type === 'web_app'), 'после «Старт» кнопка в меню');
-  const hi = sent.find((c) => c.method === 'sendMessage' && c.body.reply_markup && JSON.stringify(c.body.reply_markup).includes('Открыть кабинет'));
-  assert.ok(hi && hi.body.reply_markup.inline_keyboard[0][0].web_app.url === 'https://bot.test/app', 'под приветствием кнопка «Открыть кабинет»');
+  const hi = sent.find((c) => c.method === 'sendMessage' && c.body.reply_markup && JSON.stringify(c.body.reply_markup).includes('Забрать материалы'));
+  assert.ok(hi && hi.body.reply_markup.inline_keyboard[0][0].web_app.url === 'https://bot.test/app', 'под приветствием кнопка «Забрать материалы»');
   n0; await saveCfg(C(), { public: false, items: {} });
   const n1 = calls.length;
   await handleUpdate(C(), { message: { message_id: 6, from: { id: 9101, first_name: 'Вторая' }, chat: { id: 9101, type: 'private' }, date: NOW, text: '/start' } });
-  assert.ok(!calls.slice(n1).some((c) => c.method === 'sendMessage' && JSON.stringify(c.body.reply_markup || {}).includes('Открыть кабинет')), 'пока аппка закрыта, кнопки под приветствием нет');
+  assert.ok(!calls.slice(n1).some((c) => c.method === 'sendMessage' && JSON.stringify(c.body.reply_markup || {}).includes('Забрать материалы')), 'пока аппка закрыта, кнопки под приветствием нет');
   await D.run(`DELETE FROM users WHERE tg_id IN (9100, 9101)`);
 }
-step('«Старт»: «Открыть кабинет» под приветствием и «Забрать материалы» в меню');
+step('«Старт»: «Забрать материалы» под приветствием и в меню');
 step('кнопка «Игра»: админам всегда, людям при открытой аппке');
 
 {
