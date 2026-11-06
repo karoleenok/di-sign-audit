@@ -770,17 +770,24 @@ function statusHTML(hit,txt){return '<div class="status '+(hit?'good':'warn')+'"
 function bars(){var w=[4,6,9,13,18],x=14,o='';w.forEach(function(v,i){o+='<rect class="'+(i%2?'r':'k')+'" x="'+x+'" y="14" width="'+v+'" height="62"/>';x+=v+7});return o}
 function chess(){var o='';for(var r=0;r<6;r++)for(var c=0;c<8;c++)o+='<rect class="'+((r+c)%2?'b':'k')+'" x="'+c*15+'" y="'+r*15+'" width="15" height="15"/>';return o}
 function dots(){var o='';[20,47,74,101].forEach(function(x,i){[20,45,70].forEach(function(y,j){o+='<circle class="'+(i===2&&j===1?'r':'o')+'" cx="'+x+'" cy="'+y+'" r="'+(i===2&&j===1?9:7)+'"/>'})});return o}
+var AR={magnifier:.98,typewriter:.747,palette:.725,teapot:1.53,notebook:.834,clipboard:.6375,dog:.678};
+function ob(k,cx,cy,h,op){var w=h*AR[k];return '<image href="'+IMG[k]+'" x="'+(cx-w/2).toFixed(1)+'" y="'+(cy-h/2).toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+h+'"'+(op?' opacity="'+op+'"':'')+'/>'}
+function tAccent(){var o='';[20,47,74,101].forEach(function(x,i){[20,45,70].forEach(function(y,j){if(!(i===2&&j===1))o+=ob('notebook',x,y,20,.38)})});return '<circle class="b" cx="74" cy="45" r="21"/>'+o+ob('palette',74,45,34)}
+function tSym(){return ob('teapot',60,45,30)+ob('magnifier',60,14,17)+ob('magnifier',60,76,17)+ob('magnifier',22,45,17)+ob('magnifier',98,45,17)}
+function tRhythm(){var o='';[14,30,50,74,102].forEach(function(x){o+=ob('notebook',x,45,18)});return o}
+function tPattern(){var o='';[20,45,70].forEach(function(y,j){(j%2?[31,57,83,109]:[18,44,70,96]).forEach(function(x){o+=ob('typewriter',x,y,22)})});return o}
+var TBG=['#c0d8f0','#f8e4f4','#e0dcfc','#dce8f4','#fce0f4','#d4dcf4'];
 var TILES=[
- {pr:'Акцент',svg:dots(),opts:['Ритм','Акцент','Баланс'],a:1,note:'Одна форма выделена цветом, остальные тихие. Взгляд попадает на неё первой.'},
- {pr:'Симметрия',svg:'<circle class="k" cx="60" cy="45" r="14"/><circle class="r" cx="60" cy="15" r="7"/><circle class="r" cx="60" cy="75" r="7"/><circle class="r" cx="30" cy="45" r="7"/><circle class="r" cx="90" cy="45" r="7"/>',opts:['Симметрия','Асимметрия','Ритм'],a:0,note:'Левая и правая части зеркальны. Композиция выглядит устойчиво и спокойно.'},
- {pr:'Пространство',svg:'<circle class="k" cx="26" cy="68" r="6"/>',opts:['Ритм','Паттерн','Пространство'],a:2,note:'Пустота вокруг формы тоже работает. Она даёт форме воздух и делает её заметнее.'},
- {pr:'Ритм',svg:bars(),opts:['Акцент','Симметрия','Ритм'],a:2,note:'Форма повторяется, а шаг меняется. От этого появляется движение.'},
- {pr:'Асимметрия',svg:'<circle class="k" cx="84" cy="32" r="22"/><circle class="r" cx="24" cy="68" r="8"/>',opts:['Симметрия','Асимметрия','Паттерн'],a:1,note:'Стороны разные, но вес распределён: большое и близкое уравновешено маленьким и далёким.'},
- {pr:'Паттерн',svg:chess(),opts:['Контраст','Ритм','Паттерн'],a:2,note:'Один элемент повторяется без изменений. Получается узор.'}
+ {pr:'Акцент',svg:tAccent(),opts:['Ритм','Акцент','Баланс'],a:1,note:'Одна форма выделена цветом, остальные тихие. Взгляд попадает на неё первой.'},
+ {pr:'Симметрия',svg:tSym(),opts:['Симметрия','Асимметрия','Ритм'],a:0,note:'Левая и правая части зеркальны. Композиция выглядит устойчиво и спокойно.'},
+ {pr:'Пространство',svg:ob('dog',26,66,20),opts:['Ритм','Паттерн','Пространство'],a:2,note:'Пустота вокруг формы тоже работает. Она даёт форме воздух и делает её заметнее.'},
+ {pr:'Ритм',svg:tRhythm(),opts:['Акцент','Симметрия','Ритм'],a:2,note:'Форма повторяется, а шаг меняется. От этого появляется движение.'},
+ {pr:'Асимметрия',svg:ob('palette',84,38,60)+ob('clipboard',24,66,22),opts:['Симметрия','Асимметрия','Паттерн'],a:1,note:'Стороны разные, но вес распределён: большое и близкое уравновешено маленьким и далёким.'},
+ {pr:'Паттерн',svg:tPattern(),opts:['Контраст','Ритм','Паттерн'],a:2,note:'Один элемент повторяется без изменений. Получается узор.'}
 ];
 function tDeal(){
   var t=TILES[S.i];count();S.busy=false;
-  $('#tTile').innerHTML='<svg viewBox="0 0 120 90" preserveAspectRatio="xMidYMid slice" aria-hidden="true">'+t.svg+'</svg>';
+  $('#tTile').style.background=TBG[S.i%6];$('#tTile').innerHTML='<svg viewBox="0 0 120 90" preserveAspectRatio="xMidYMid slice" aria-hidden="true">'+t.svg+'</svg>';
   $('#tOpts').innerHTML=t.opts.map(function(o,j){return '<button class="opt" type="button" data-j="'+j+'">'+o+'</button>'}).join('');
   $('#tVerdict').hidden=true;window.scrollTo(0,0);
   $$('#tOpts .opt').forEach(function(b){b.addEventListener('click',function(){tPick(+b.getAttribute('data-j'))})});
