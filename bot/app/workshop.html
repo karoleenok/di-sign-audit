@@ -321,6 +321,16 @@ details a,.src a{color:var(--blue)}
 .chip[aria-pressed="true"]{background:var(--ink);color:var(--cream)}
 :focus-visible{outline-color:var(--blue)}
 
+.chap{position:relative;display:flex;flex-direction:column;gap:var(--s2)}
+.chap .small{line-height:20px}
+.les{display:flex;flex-wrap:wrap;gap:var(--s2)}
+.les .pill{transform:none;height:auto;min-height:30px;padding:6px var(--s3);white-space:normal;line-height:1.2}
+.sheet{display:flex;flex-direction:column;gap:var(--s2)}
+.rules{list-style:none;margin:var(--s2) 0 0;padding:0;display:flex;flex-direction:column;gap:var(--s3)}
+.rules li{display:flex;flex-direction:column;gap:2px;font-size:14px;line-height:20px;padding-bottom:var(--s3);border-bottom:1px solid var(--line)}
+.rules li:last-child{border-bottom:0;padding-bottom:0}
+.rules .lab{display:flex;align-items:center;gap:var(--s2)}
+.rules .pill{transform:none;height:22px;font-size:12px;padding:0 var(--s2);background:var(--pp);color:var(--text)}
 </style>
 
 <div class="bgc" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -462,7 +472,7 @@ details a,.src a{color:var(--blue)}
   <p class="score num" id="rN"></p>
   <p class="small" id="rT"></p>
   <ul class="facts" id="rList"></ul>
-  <div class="card" id="rMiss" hidden><p class="h3">Что подтянуть</p><p class="small" id="rMissT" style="margin-top:var(--s2)"></p></div>
+  <div class="card sheet" id="rSheet"></div>
   <details>
     <summary>Откуда принципы</summary>
     <ol>
@@ -470,10 +480,7 @@ details a,.src a{color:var(--blue)}
       <li>Порог контраста 4,5 : 1 для обычного текста и 3 : 1 для крупного: <a href="https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html" target="_blank" rel="noopener">WCAG 1.4.3</a>, W3C.</li>
     </ol>
   </details>
-  <div class="card course">
-    <img data-img="clipboard" alt="">
-    <div><p class="h3">Это целая глава курса</p><p class="small" style="margin-top:4px">«Композиция: всё на глаз?» Золотые правила, сетка, советы по применению.</p></div>
-  </div>
+  <div class="card chap" id="rCourse"></div>
   <div class="dock">
     <button class="btn primary" id="rShare" type="button">Сохранить для сторис</button>
     <button class="btn ghost" id="rAgain" type="button">Сыграть ещё раз</button>
@@ -546,10 +553,7 @@ details a,.src a{color:var(--blue)}
       </ol>
       <p class="small src" style="margin-bottom:12px">Тот же источник: <a href="https://fonts.google.com/knowledge/choosing_type/pairing_typefaces" target="_blank" rel="noopener">Google Fonts Knowledge</a>.</p>
     </details>
-    <div class="card course">
-      <img data-img="typewriter" alt="">
-      <div><p class="h3">Это тоже глава курса</p><p class="small" style="margin-top:4px">«Типографика (не типография)»: шрифты в мире дикой природы и краткое пособие по применению.</p></div>
-    </div>
+    <div class="card chap" id="fCourse"></div>
     <div class="dock">
       <button class="btn primary" id="f3home" type="button">К материалам</button>
       <button class="btn ghost" id="f3again" type="button">Сыграть ещё раз</button>
@@ -874,6 +878,52 @@ $('#bCheck').addEventListener('click',function(){
   v.scrollIntoView({block:'nearest',behavior:reduce?'auto':'smooth'});
 });
 
+
+/* ---------- шпаргалка и глава курса (названия глав и уроков из программы) ---------- */
+var RULES=[
+ {k:'h',n:'Иерархия и масштаб',t:'Три уровня: название крупнее всего, дата и место средние, мелочь мелкая. Прищурься: первым должно читаться главное.'},
+ {k:'p',n:'Близость',t:'Связанное держи рядом, разные группы разделяй воздухом. Между группами пустоты заметно больше, чем внутри.'},
+ {k:'c',n:'Контраст',t:'Для обычного текста контраст не меньше 4,5 : 1. Дизайнерское «и так видно» на телефоне на солнце не работает.'},
+ {k:'b',n:'Баланс',t:'Тяжёлый блок слева сверху уравновешивай предметом справа снизу. Центр не уравновешивает.'}
+];
+var CH={
+ comp:{no:'02',t:'Композиция (всё на глаз?)',l:['Что такое и зачем надо','Золотые правила и сетка','Советы по применению'],
+   hook:function(m){return (m.length?'Промахи были в темах «'+m.join('», «')+'». ':'')+'Всё это про композицию: в главе разбирают золотые правила и сетку, на которых держится порядок на листе.'}},
+ color:{no:'04',t:'Цвет (вырвиглазный)',l:['Основа','Как подобрать оттенок','Маленькие хитрости'],
+   hook:function(){return 'Контраст ты проверял на цифрах, а в главе про цвет учат подбирать сами оттенки, чтобы текст читался и макет не слепил.'}},
+ dist:{no:'15',t:'Подготовка к вёрстке',l:['Наводим шмон','Отношения и расстояния','Чек-лист'],
+   hook:function(){return 'Близость превращается в расстояния между блоками. В главе перед вёрсткой их выстраивают системой, а не на глаз.'}},
+ err:{no:'11',t:'Самые частые ошибки',l:['Какие они и почему возникают','Как с ними работать','Чек-лист перед первым показом клиенту'],
+   hook:function(){return 'Глаз у тебя уже цепкий. Следующий шаг: найти такие промахи у себя до того, как макет увидит клиент. Для этого в главе есть чек-лист.'}},
+ type:{no:'03',t:'Типографика (не типография)',l:['Шрифты: в мире дикой природы','Краткое пособие по применению'],
+   hook:function(){return 'В игре три приёма: сначала один шрифт, потом пара по характеру и по настроению макета. Шрифты разбирают подробнее, с примерами.'}}
+};
+function chapHTML(c,m){
+  return '<img data-img="clipboard" alt="" style="width:56px;height:56px;object-fit:contain;position:absolute;right:16px;top:12px">'+
+    '<p class="px sm">chapter '+c.no+'.</p>'+
+    '<p class="h3" style="padding-right:64px">Глава '+parseInt(c.no,10)+'. «'+c.t+'»</p>'+
+    '<p class="small">'+c.hook(m||[])+'</p>'+
+    '<p class="lab">В главе</p><div class="les">'+c.l.map(function(x){return '<span class="pill">'+x+'</span>'}).join('')+'</div>';
+}
+function paintChap(el,key,m){var e=$(el);e.innerHTML=chapHTML(CH[key],m);$$('[data-img]',e).forEach(function(i){i.src=IMG[i.getAttribute('data-img')]})}
+function sheetHTML(miss){
+  var byG={};S.res.forEach(function(r){if(!r.hit)byG[r.g]=1});
+  var h='<p class="px sm">cheat sheet.</p><p class="h3">Шпаргалка: четыре правила на минуту</p><ul class="rules">';
+  RULES.forEach(function(r){var m=S.res.some(function(x){return !x.hit&&x.name===r.n});
+    h+='<li><span class="lab">'+r.n+(m?' <i class="pill pink">промах</i>':'')+'</span><span>'+r.t+'</span></li>'});
+  h+='</ul>';
+  var shape=TILES.filter(function(t){return S.res.some(function(x){return !x.hit&&x.name===t.pr})});
+  if(shape.length){h+='<p class="lab" style="margin-top:var(--s3)">Ещё про форму</p><ul class="rules">'+shape.map(function(t){return '<li><span class="lab">'+t.pr+' <i class="pill pink">промах</i></span><span>'+t.note+'</span></li>'}).join('')+'</ul>'}
+  return h;
+}
+function pickChap(){
+  var pri=[['c','color'],['p','dist'],['h','comp'],['b','comp']],score={};
+  S.res.forEach(function(r){if(!r.hit){var k=r.g;if(r.st===0)k='comp';score[k]=(score[k]||0)+1}});
+  var best=null,bn=0;pri.forEach(function(p){if((score[p[0]]||0)>bn){bn=score[p[0]];best=p[1]}});
+  if(!best&&(score.comp||0)>0)best='comp';
+  return best||'err';
+}
+
 /* ---------- результат ---------- */
 var STN=['Увидь принцип','Годится или переделать','Собери сам'];
 function showResult(){
@@ -888,7 +938,8 @@ function showResult(){
   });
   $('#rList').innerHTML=html;
   var miss=[];S.res.forEach(function(r){if(!r.hit&&miss.indexOf(r.name)<0)miss.push(r.name)});
-  $('#rMiss').hidden=!miss.length;$('#rMissT').textContent=miss.join(', ')+'.';
+  $('#rSheet').innerHTML=sheetHTML(miss);
+  var ck=pickChap();paintChap('#rCourse',ck,ck==='comp'?miss.filter(function(n){return n!=='Контраст'&&n!=='Близость'}):[]);
   remember('poster');paintDone();if(hits>=14)confetti(80);haptic();
 }
 
@@ -999,6 +1050,7 @@ function css(t,b){
   return '/* в проекте для России шрифты лучше хранить у себя */\n<link rel="stylesheet" href="https://fonts.googleapis.com/css2?'+q+'&display=swap">\nh1, h2 { font-family: \''+t.n+'\', '+t.fb+'; font-weight: '+t.w+'; }\nbody { font-family: \''+b.n+'\', '+b.fb+'; font-weight: 400; }';
 }
 function f3(){
+  paintChap('#fCourse','type');
   $('#f1').hidden=true;$('#f2').hidden=true;$('#f3').hidden=false;setDots(3);
   var hits=(F.step1?1:0)+F.res.filter(function(t){return t.hit}).length;
   $('#f3n').innerHTML='<span class="px">'+hits+'</span><span>из 4</span>';
