@@ -42,6 +42,8 @@ h1 i{font-style:italic}
 .up.done .fl2{animation:none;background:#9ed38a}
 @keyframes upIn{from{transform:translateY(20px);opacity:0}to{transform:none;opacity:1}}
 @keyframes upSh{to{background-position:-200% 0}}
+.dtp{display:flex;flex-direction:column;gap:8px}.dtr{display:flex;gap:8px;align-items:center}.dtr .dd{flex:1 1 0;min-width:0}.dtr .dtm{flex:0 0 112px;width:112px}.dtr .dx{min-width:44px;min-height:44px}.dtq{display:flex;gap:8px;flex-wrap:wrap}
+input[type=date]{width:100%;border:1px solid var(--line);background:var(--card);border-radius:12px;padding:11px 12px;outline:none;min-height:44px}
 .chip{flex:none;border:1px solid var(--line);background:var(--card);border-radius:99px;padding:6px 12px;font-size:13px;cursor:pointer}
 .chip.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .box{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;margin:14px 0}
@@ -468,6 +470,30 @@ function render() {
 
 // ---------- игра-прогрев: открытие уроков ----------
 let GM = null;
+/* выбор даты и времени: дата + время списком (шаг 30 мин) + быстрые кнопки; значение лежит в скрытом input в формате YYYY-MM-DDTHH:mm по Москве */
+const dtp = (attrs, val, now) => {
+  const [d, t] = (val || '').split('T'); const ts = []; for (let i = 0; i < 48; i++) ts.push(String(i >> 1).padStart(2, '0') + ':' + (i % 2 ? '30' : '00'));
+  if (t && ts.indexOf(t) < 0) { ts.push(t); ts.sort(); }
+  return '<div class="dtp"><input type="hidden" ' + attrs + ' value="' + (val || '') + '"><div class="dtr"><input type="date" class="dd" value="' + (d || '') + '"><select class="dtm" aria-label="Время">' + (t ? '' : '<option value="">время</option>') + ts.map((x) => '<option' + (x === t ? ' selected' : '') + '>' + x + '</option>').join('') + '</select><button type="button" class="chip dx" aria-label="Очистить">×</button></div>' +
+    '<div class="dtq">' + (now ? '<button type="button" class="chip" data-q="now">Сейчас</button>' : '') + '<button type="button" class="chip" data-q="tom">Завтра 10:00</button><button type="button" class="chip" data-q="wk">Через неделю</button></div></div>';
+};
+document.addEventListener('input', (e) => dtpSync(e.target)); document.addEventListener('change', (e) => dtpSync(e.target));
+document.addEventListener('click', (e) => {
+  const b = e.target.closest && e.target.closest('.dtp .chip'); if (!b) return; const w = b.closest('.dtp'); if (b.classList.contains('dx')) return dtpSet(w, '');
+  const n = Math.floor(Date.now() / 1000); dtpSet(w, b.dataset.q === 'now' ? gToMsk(n) : gToMsk(n + (b.dataset.q === 'tom' ? 86400 : 604800)).slice(0, 10) + 'T10:00');
+});
+function dtpSet(w, v) {
+  const [d, t] = v.split('T'), sel = w.querySelector('.dtm'); w.querySelector('.dd').value = d || '';
+  if (t && ![].some.call(sel.options, (o) => o.value === t)) { const o = document.createElement('option'); o.textContent = t; sel.add(o); }
+  if (!t && !sel.querySelector('option[value=""]')) { const o = document.createElement('option'); o.value = ''; o.textContent = 'время'; sel.insertBefore(o, sel.firstChild); }
+  sel.value = t || ''; dtpSync(sel);
+}
+function dtpSync(el) {
+  const w = el && el.closest && el.closest('.dtp'); if (!w || el.type === 'hidden') return;
+  const d = w.querySelector('.dd').value, sel = w.querySelector('.dtm'), h = w.querySelector('input[type=hidden]');
+  if (d && !sel.value) sel.value = '10:00';
+  const v = d ? d + 'T' + (sel.value || '10:00') : ''; if (h.value !== v) { h.value = v; h.dispatchEvent(new Event('change', { bubbles: true })); }
+}
 const gToMsk = (ts) => ts ? new Date((ts + 10800) * 1000).toISOString().slice(0, 16) : '';
 const gFromMsk = (v) => { const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(v || ''); return m ? Math.floor(Date.UTC(+m[1], m[2] - 1, +m[3], +m[4], +m[5]) / 1000) - 10800 : null; };
 const gWhen = (ts) => { const d = new Date((ts + 10800) * 1000), M = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'], p = (n) => (n < 10 ? '0' : '') + n; return d.getUTCDate() + ' ' + M[d.getUTCMonth()] + ', ' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes()); };
@@ -495,7 +521,7 @@ async function renderGame() {
       GM.def.map((it) => { const r = GM.items[it.id];
         return '<div class="box"><div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px"><div><b>' + esc(it.name) + '</b><div class="small muted">' + esc(it.track) + '</div></div><span class="tag">' + esc(gState(r)) + '</span></div>' +
           segHtml('gm_' + it.id, [['open', 'Открыто'], ['closed', 'Закрыто'], ['sched', 'По датам']], r.mode) +
-          (r.mode === 'sched' ? '<label class="f">Открыть</label><input type="datetime-local" data-g="' + it.id + '" data-k="from" value="' + gToMsk(r.from) + '"><label class="f">Закрыть (можно не заполнять)</label><input type="datetime-local" data-g="' + it.id + '" data-k="until" value="' + gToMsk(r.until) + '">' : '') + '</div>'; }).join('') +
+          (r.mode === 'sched' ? '<label class="f">Открыть</label>' + dtp('data-g="' + it.id + '" data-k="from"', gToMsk(r.from), true) + '<label class="f">Закрыть (можно не заполнять)</label>' + dtp('data-g="' + it.id + '" data-k="until"', gToMsk(r.until), false) + '' : '') + '</div>'; }).join('') +
       '<div class="box"><b>Дальше в ноябре</b><div class="small muted" style="margin-top:4px">Список на главном экране игры. Дату можно не ставить, тогда будет «скоро».</div>' +
       [['mini', '🎓 Мини-курс'], ['mat', '📚 Месяц материалов']].map(([k, t]) => '<div class="small muted" style="margin:12px 0 2px"><b>' + t + '</b></div>' +
         GM.soon[k].map((x, i) => '<div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;padding-bottom:8px;border-bottom:1px solid var(--line)"><input type="text" maxlength="60" placeholder="Название" data-s="' + k + '" data-i="' + i + '" data-k="t" value="' + esc(x.t) + '"><div style="display:flex;gap:8px;align-items:center"><input type="date" data-s="' + k + '" data-i="' + i + '" data-k="d" value="' + esc(x.d || '') + '" style="flex:1;min-width:0"><button type="button" class="chip" data-sdel="' + k + ':' + i + '" aria-label="Убрать">Убрать</button></div></div>').join('') +
@@ -1987,7 +2013,7 @@ function openPost(id, opt) {
         : '<p class="small muted">Других постов пока нет.</p>') + '</div>' +
       '<div class="toggle"><span><b>Догонять опоздавших</b><br><span class="small muted">Пост получат и те, у кого этот день уже прошёл</span></span><label class="sw"><input type="checkbox" id="fCatch" ' + (st.catchup ? 'checked' : '') + '><span></span></label></div>';
   }
-  if (p.kind === 'date') h += '<label class="f">Дата и время (по Москве)</label><input type="datetime-local" id="fRun" value="' + toLocal(st.run_at) + '">';
+  if (p.kind === 'date') h += '<label class="f">Дата и время (по Москве)</label>' + dtp('id="fRun"', toLocal(st.run_at), false) + '';
   if (p.kind === 'node') h += '<div class="note">' + (parents.length ? 'Сюда ведут: ' + parents.map((x) => '«' + esc(postName(x.p).slice(0, 30)) + '» → кнопка «' + esc(x.b.text) + '»').join('; ') : 'Пока сюда не ведёт ни одна кнопка. Привяжи его: в нужном посте добавь кнопку → «Пост» → выбери этот.') + '</div>';
   // кнопки
   h += '<label class="f" id="btnsLbl">Кнопки под постом</label><div id="bEd"></div>' +
