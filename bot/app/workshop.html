@@ -82,6 +82,8 @@ img{display:block}
 .soon{display:flex;flex-direction:column;gap:var(--s2)}
 .soon li{list-style:none;display:flex;justify-content:space-between;gap:var(--s3);align-items:center;padding:var(--s3) var(--s4);border:1px dashed var(--line);border-radius:var(--r-l);color:var(--ink-soft);font-size:14px;line-height:20px}
 .soon{padding:0;margin:0}
+.soon.week li{border:1px solid var(--line);background:var(--card,#fff);color:var(--ink);font-weight:500}
+.soon.week .pill{white-space:nowrap}
 
 /* афиша: все размеры в cqw, поэтому она тянется вместе с экраном */
 
@@ -467,8 +469,12 @@ details a,.src a{color:var(--blue)}
       <img data-img="notebook" alt="">
     </button>
   </div>
-  <div>
-    <p class="lab" style="margin-bottom:8px">Дальше в ноябре</p>
+  <div id="weekBox" hidden>
+    <p class="lab" style="margin-bottom:8px">Что уйдёт на этой неделе</p>
+    <ul class="soon week" id="weekList"></ul>
+  </div>
+  <div id="soonBox">
+    <p class="lab" style="margin-bottom:8px" id="soonLab">Дальше в ноябре</p>
     <ul class="soon" id="soonList"></ul>
   </div>
   <div class="card" id="admCard" hidden style="display:flex;flex-direction:column;gap:12px">
@@ -755,14 +761,26 @@ function paintHome(){
   $$('[data-track]').forEach(function(e){e.hidden=e.getAttribute('data-track')!==TRACK});
   var sl=(APPCFG&&APPCFG.soon&&APPCFG.soon[TRACK])||t.soon.map(function(x){return {t:x,d:null}}),ul=$('#soonList');
   ul.textContent='';
+  var wl=$('#weekList'),wk=[],rest=[],now=new Date(),T0=Date.UTC.apply(null,new Date(now).toLocaleDateString('sv-SE',{timeZone:'Europe/Moscow'}).split('-').map(function(v,i){return i==1?v-1:+v}));
+  wl.textContent='';
   sl.forEach(function(x){
-    var li=document.createElement('li'),a=document.createElement('span'),b=document.createElement('span');
-    a.textContent=x.t;b.className='pill';
-    var m=x.d&&/^(\d{4})-(\d{2})-(\d{2})$/.exec(x.d);
-    b.textContent=m?(+m[3])+' '+MON[+m[2]-1]:'скоро';
-    li.appendChild(a);li.appendChild(b);ul.appendChild(li);
+    var m=x.d&&/^(\d{4})-(\d{2})-(\d{2})$/.exec(x.d),k=m?Math.round((Date.UTC(+m[1],+m[2]-1,+m[3])-T0)/864e5):null;
+    if(k!==null&&k<0)return;
+    (k!==null&&k<7?wk:rest).push({x:x,m:m,k:k});
   });
-  ul.parentNode.hidden=!sl.length;
+  function fill(list,arr,wkmode){
+    arr.forEach(function(r){
+      var li=document.createElement('li'),a=document.createElement('span'),b=document.createElement('span');
+      a.textContent=r.x.t;b.className='pill';
+      b.textContent=!r.m?'скоро':(wkmode&&r.k===0?'сегодня':wkmode&&r.k===1?'завтра':(+r.m[3])+' '+MON[+r.m[2]-1]);
+      li.appendChild(a);li.appendChild(b);list.appendChild(li);
+    });
+  }
+  wk.sort(function(a,b){return a.k-b.k});
+  fill(wl,wk,true);fill(ul,rest,false);
+  $('#weekBox').hidden=!wk.length;
+  $('#soonLab').textContent=wk.length?'Ещё в ноябре':'Дальше в ноябре';
+  ul.parentNode.hidden=!rest.length;
   paintDone();paintLocks();
 }
 function route(){
