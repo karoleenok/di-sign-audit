@@ -557,7 +557,7 @@ export async function onUserCallback(ctx, cq) {
   if (d === 'del:yes') {
     await answer();
     await cleanAll(ctx, id); await delMsg(ctx, id, mid);
-    for (const t of ['users', 'consents', 'deliveries', 'clicks', 'states']) await ctx.db.run(`DELETE FROM ${t} WHERE tg_id = ?`, [id]);
+    for (const t of ['users', 'consents', 'deliveries', 'clicks', 'states', 'leads']) await ctx.db.run(`DELETE FROM ${t} WHERE tg_id = ?`, [id]);
     await ctx.db.run(`DELETE FROM settings WHERE key = ? OR key LIKE ? OR key LIKE ?`, ['nogift:' + id, 'start:' + id + ':%', 'go:' + id + ':%']);
     return say(ctx, id, 'deleted');
   }
