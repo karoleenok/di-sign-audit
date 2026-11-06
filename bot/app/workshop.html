@@ -250,7 +250,6 @@ body{background:var(--cream);color:var(--text)}
 /* шапка бренда: логотип слева, такса справа. Логотип не меньше 90 px и не растягивается */
 .brandbar{display:flex;justify-content:space-between;align-items:flex-end;gap:var(--s4);padding-top:var(--s2)}
 .brandbar .logo{width:136px;height:auto;flex:none}
-.brandbar .dog{width:84px;height:auto;margin-bottom:-4px}
 .hero{gap:var(--s3)}
 
 /* плашки и кнопки */
@@ -421,10 +420,10 @@ details a,.src a{color:var(--blue)}
 
 <!-- выбор трека: только в прототипе -->
 <section id="s-pick" class="screen" data-screen="pick">
-  <div class="brandbar"><img class="logo" data-img="logo" alt="Di Sign University"><img class="dog" data-img="dog" alt=""></div>
+  <div class="brandbar"><img class="logo" data-img="logo" alt="Di Sign University"></div>
   <div class="hero">
     <p class="px">starter pack.</p>
-    <span class="pill">только в прототипе</span>
+    <span class="pill" id="pkProto">только в прототипе</span>
     <h1 class="h1">Какой трек <span class="mk-hl">выбрал</span> человек?</h1>
     <p class="small">В боте это решает кнопка под постом. Каждый трек видит только своё: материал из соседнего не откроется, даже по ссылке.</p>
   </div>
@@ -442,7 +441,7 @@ details a,.src a{color:var(--blue)}
 
 <!-- главная выбранного трека -->
 <section id="s-home" class="screen" data-screen="home" hidden>
-  <div class="brandbar"><img class="logo" data-img="logo" alt="Di Sign University"><img class="dog" data-img="dog" alt=""></div>
+  <div class="brandbar"><img class="logo" data-img="logo" alt="Di Sign University"></div>
   <div class="hero">
     <p class="px" id="hEy">starter pack 01.</p>
     <h1 class="h1" id="hTitle"></h1>
@@ -477,7 +476,7 @@ details a,.src a{color:var(--blue)}
     <button class="btn ghost sm" id="openAdm" type="button" style="align-self:flex-start">Расписание открытия</button>
   </div>
   <div class="card" style="display:flex;flex-direction:column;gap:12px">
-    <p class="small">Только в прототипе: в боте этой кнопки нет, трек выбирается один раз.</p>
+    <p class="small" id="swNote">Только в прототипе: в боте этой кнопки нет, трек выбирается один раз.</p>
     <button class="btn ghost sm" id="swTrack" type="button" style="align-self:flex-start">Посмотреть другой трек</button>
   </div>
 </section>
@@ -770,6 +769,7 @@ function route(){
   var p=parse((location.hash||'').slice(1)),mine=APPCFG&&APPCFG.track&&!APPCFG.admin?APPCFG.track:null;
   if(mine&&p&&p.t!==mine){p.t=mine;try{history.replaceState(null,'','#'+mine+(p.m?'-'+p.m:''))}catch(e){}}
   $('#swTrack').closest('.card').hidden=!!mine;
+  var stu=!!(APPCFG&&!APPCFG.admin);$('#pkProto').hidden=stu;$('#swTrack').closest('.card').hidden=!!mine||stu;if(APPCFG&&APPCFG.admin)$('#swNote').textContent='Только для админов: ученик выбирает трек один раз, в боте.';
   if(!p&&APPCFG&&APPCFG.track){TRACK=APPCFG.track;paintHome();go('home');return}
   if(!p){TRACK=null;cur='pick';show('pick');return}
   TRACK=p.t;paintHome();
