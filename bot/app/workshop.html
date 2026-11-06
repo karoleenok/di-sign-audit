@@ -448,6 +448,15 @@ details a,.src a{color:var(--blue)}
 .adm-dt{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--s2)}
 .adm-dt label{display:flex;flex-direction:column;gap:var(--s1);font:500 13px/16px var(--f-text);color:var(--blue)}
 .adm-dt input{min-height:44px;width:100%;border:1px solid rgba(44,13,2,.32);border-radius:var(--r-m);background:var(--cream);padding:0 var(--s3);font:400 16px/24px var(--f-text);color:var(--text)}
+.adm-dt{gap:var(--s4)}
+.dtb{display:flex;flex-direction:column;gap:var(--s2)}
+.dtl{margin:0;font:500 13px/16px var(--f-text);color:var(--blue)}
+.dtb .row{display:flex;gap:var(--s2);align-items:center}
+.dtb .dtd{flex:1 1 0;min-width:0}
+.dtb .dtt{flex:0 0 112px}
+.dtb input,.dtb select{min-height:44px;border:1px solid rgba(44,13,2,.32);border-radius:var(--r-m);background:var(--cream);padding:0 var(--s3);font:400 16px/24px var(--f-text);color:var(--text)}
+.dtq{display:flex;gap:var(--s2);flex-wrap:wrap}
+.dtq .chip{min-height:36px;font-size:13px;padding:0 var(--s3)}
 .adm-dt .row{display:flex;gap:var(--s2);align-items:flex-end}
 .adm-dt .row label{flex:1;min-width:0}
 .adm-x{min-height:44px;min-width:44px;border-radius:50%;border:1px solid rgba(44,13,2,.32);background:transparent;cursor:pointer;font:500 18px/1 var(--f-text);flex:none}
@@ -886,6 +895,19 @@ var AD=null;
 var ADI=[['poster','Принципы дизайна','Мини-курс'],['fonts','Шрифтовая примерочная','Месяц материалов']];
 function toMsk(ts){return ts?new Date((ts+10800)*1000).toISOString().slice(0,16):''}
 function fromMsk(v){if(!v)return null;var m=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(v);if(!m)return null;return Math.floor(Date.UTC(+m[1],m[2]-1,+m[3],+m[4],+m[5])/1000)-10800}
+function mskNow(){return nowSec()}
+function dtSet(id,k,ts){AD.items[id][k]=ts;adDirty();adPaint()}
+function dayStart(ts){var d=toMsk(ts).slice(0,10);return fromMsk(d+'T00:00')}
+function dtBlock(id,k,label,ts){
+  var d=ts?toMsk(ts).slice(0,10):'',t=ts?toMsk(ts).slice(11,16):'',opts='',seen=!t;
+  for(var h=0;h<24;h++)for(var m=0;m<60;m+=30){var v=(h<10?'0':'')+h+':'+(m?'30':'00');if(v===t)seen=true;opts+='<option value="'+v+'"'+(v===t?' selected':'')+'>'+v+'</option>'}
+  if(!seen)opts+='<option value="'+t+'" selected>'+t+'</option>';
+  var q=k==='from'?[['now','Сейчас'],['tom','Завтра 10:00'],['wk','Через неделю']]:[['tom','Завтра 10:00'],['wk','Через неделю']];
+  return '<div class="dtb" data-id="'+id+'" data-k="'+k+'"><p class="dtl">'+label+'</p>'+
+    '<div class="row"><input type="date" class="dtd" aria-label="'+label+': день" value="'+d+'"><select class="dtt" aria-label="'+label+': время">'+(t?'':'<option value="" selected>время</option>')+opts+'</select>'+
+    (ts?'<button class="adm-x" type="button" data-clr="'+id+':'+k+'" aria-label="Очистить">×</button>':'')+'</div>'+
+    '<div class="dtq">'+q.map(function(x){return '<button type="button" class="chip" data-q="'+x[0]+'">'+x[1]+'</button>'}).join('')+'</div></div>';
+}
 function adState(r){
   var n=nowSec();
   if(r.mode==='open')return 'открыто';
@@ -906,11 +928,21 @@ function adPaint(){
   $('#admList').innerHTML=ADI.map(function(a){
     var r=AD.items[a[0]],id=a[0];
     var seg=[['open','Открыто'],['closed','Закрыто'],['sched','По датам']].map(function(m){return '<button type="button" data-id="'+id+'" data-m="'+m[0]+'" aria-pressed="'+(r.mode===m[0])+'">'+m[1]+'</button>'}).join('');
-    var dt=r.mode==='sched'?'<div class="adm-dt"><div class="row"><label>Открыть<input type="datetime-local" data-id="'+id+'" data-k="from" value="'+toMsk(r.from)+'"></label><button class="adm-x" type="button" data-clr="'+id+':from" aria-label="Очистить дату открытия">×</button></div><div class="row"><label>Закрыть (можно не заполнять)<input type="datetime-local" data-id="'+id+'" data-k="until" value="'+toMsk(r.until)+'"></label><button class="adm-x" type="button" data-clr="'+id+':until" aria-label="Очистить дату закрытия">×</button></div></div>':'';
+    var dt=r.mode==='sched'?'<div class="adm-dt">'+dtBlock(id,'from','Открыть',r.from)+dtBlock(id,'until','Закрыть (можно не заполнять)',r.until)+'</div>':'';
     return '<div class="card adm-it"><div class="adm-hd"><div><p class="adm-t">'+a[1]+'</p><p class="small">'+a[2]+'</p></div><span class="pill adm-st">'+adState(r)+'</span></div><div class="adm-seg" role="group" aria-label="'+a[1]+'">'+seg+'</div>'+dt+'</div>';
   }).join('');
   $$('#admList .adm-seg button').forEach(function(b){b.addEventListener('click',function(){var r=AD.items[b.getAttribute('data-id')];r.mode=b.getAttribute('data-m');adDirty();adPaint()})});
-  $$('#admList input').forEach(function(i){i.addEventListener('change',function(){AD.items[i.getAttribute('data-id')][i.getAttribute('data-k')]=fromMsk(i.value);adDirty();adPaint()})});
+  $$('#admList .dtb').forEach(function(b){
+    var id=b.getAttribute('data-id'),k=b.getAttribute('data-k'),cur=AD.items[id][k];
+    function today(){return toMsk(nowSec()).slice(0,10)}
+    b.querySelector('.dtd').addEventListener('change',function(){var d=this.value;if(!d){dtSet(id,k,null);return}var t=cur?toMsk(cur).slice(11,16):'10:00';dtSet(id,k,fromMsk(d+'T'+t))});
+    b.querySelector('.dtt').addEventListener('change',function(){if(!this.value)return;var d=cur?toMsk(cur).slice(0,10):today();dtSet(id,k,fromMsk(d+'T'+this.value))});
+    $$('.dtq .chip',b).forEach(function(c){c.addEventListener('click',function(){
+      var q=c.getAttribute('data-q'),n=nowSec(),ts;
+      if(q==='now'){ts=Math.floor(n/60)*60}
+      else{var base=fromMsk(today()+'T10:00');ts=q==='tom'?base+86400:base+7*86400}
+      dtSet(id,k,ts)})});
+  });
   $$('#admList [data-clr]').forEach(function(b){b.addEventListener('click',function(){var p=b.getAttribute('data-clr').split(':');AD.items[p[0]][p[1]]=null;adDirty();adPaint()})});
 }
 function adDirty(){$('#admMsg').hidden=true}
