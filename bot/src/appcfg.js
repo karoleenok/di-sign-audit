@@ -8,10 +8,32 @@ const KEY = 'app_cfg';
 const MODES = ['open', 'closed', 'sched'];
 const MAX_TS = 4102444800; // 2100 год: всё, что больше, считаем мусором
 
+// «Дальше в ноябре»: что скоро появится на главном экране аппки. d — дата показа в формате ГГГГ-ММ-ДД или null («скоро»)
+const SOON_DEFAULT = {
+  mini: [{ t: 'Рандомайзер ТЗ от таксёнышей', d: null }, { t: 'Промпты для мокапов', d: null }, { t: 'Шаблон кейсов', d: null }],
+  mat: [{ t: 'Мокап-пак, сделанный ИИ', d: null }, { t: 'Калькулятор цены и КП', d: null }, { t: 'Красные флаги в брифе', d: null }],
+};
+const clone = (o) => JSON.parse(JSON.stringify(o));
+const validDay = (s) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || ''));
+  if (!m) return null;
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  return d.getUTCFullYear() === +m[1] && d.getUTCMonth() === +m[2] - 1 && d.getUTCDate() === +m[3] && +m[1] >= 2024 && +m[1] <= 2100 ? String(s) : null;
+};
+export function normalizeSoon(v, fallback) {
+  const out = {};
+  const src = v && typeof v === 'object' ? v : {};
+  for (const k of ['mini', 'mat']) {
+    if (!Array.isArray(src[k])) { out[k] = clone(fallback[k]); continue; }
+    out[k] = src[k].slice(0, 8).map((x) => ({ t: String((x && x.t) || '').replace(/\s+/g, ' ').trim().slice(0, 60), d: validDay(x && x.d) })).filter((x) => x.t);
+  }
+  return out;
+}
+
 export function defaults() {
   const items = {};
   for (const it of ITEMS) items[it.id] = { mode: 'open', from: null, until: null };
-  return { public: false, items };
+  return { public: false, items, soon: clone(SOON_DEFAULT) };
 }
 
 const ts = (v) => {
@@ -25,6 +47,7 @@ export function normalize(raw) {
   const d = defaults();
   const src = raw && typeof raw === 'object' ? raw : {};
   d.public = src.public === true;
+  d.soon = normalizeSoon(src.soon, d.soon);
   const items = src.items && typeof src.items === 'object' ? src.items : {};
   for (const it of ITEMS) {
     const r = items[it.id];
@@ -63,6 +86,7 @@ export async function loadCfg(ctx) {
 
 export async function saveCfg(ctx, input) {
   const cfg = normalize(input);
+  if (!input || input.soon === undefined) cfg.soon = (await loadCfg(ctx)).soon; // аппка и бот шлют только расписание, список «Дальше» не трогаем
   const err = validate(cfg);
   if (err) return { error: err };
   await ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [KEY, JSON.stringify(cfg)]);
@@ -79,7 +103,7 @@ export function viewFor(cfg, now, admin) {
       ? { open, mode: r.mode, from: r.from, until: r.until, name: it.name, track: it.track }
       : { open, from: r.mode === 'sched' && !open && r.from && now < r.from ? r.from : null };
   }
-  return { admin: !!admin, now, public: cfg.public, items };
+  return { admin: !!admin, now, public: cfg.public, items, soon: cfg.soon };
 }
 
 // ---------- кнопка «Игра» у человека рядом со строкой ввода ----------

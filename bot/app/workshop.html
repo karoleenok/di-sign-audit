@@ -735,7 +735,7 @@ function showClosed(id){
   want=null;go('locked');
 }
 var TRACKS={
-  mini:{name:'Мини-курс',sub:'Короткие игры и задания к постерам. Играй прямо в чате.',mods:['poster'],soon:['Рандомайзер ТЗ от таксёнышей','Промты для мокапов','Шаблон кейсов']},
+  mini:{name:'Мини-курс',sub:'Короткие игры и задания к постерам. Играй прямо в чате.',mods:['poster'],soon:['Рандомайзер ТЗ от таксёнышей','Промпты для мокапов','Шаблон кейсов']},
   mat:{name:'Месяц материалов',sub:'Материалы по неделям: шрифты, Figma, портфолио, клиенты.',mods:['fonts'],soon:['Мокап-пак, сделанный ИИ','Калькулятор цены и КП','Красные флаги в брифе']}
 };
 var TRACK=null,SCREENS=['pick','home','intro','poster','result','fonts','locked','adm'],cur='pick',want=null;
@@ -754,7 +754,16 @@ function paintHome(){
   $('#hTitle').innerHTML='<span class="mk-hl">'+t.name+'</span>';
   $('#hSub').textContent=t.sub;
   $$('[data-track]').forEach(function(e){e.hidden=e.getAttribute('data-track')!==TRACK});
-  $('#soonList').innerHTML=t.soon.map(function(x){return '<li><span>'+x+'</span><span class="pill">скоро</span></li>'}).join('');
+  var sl=(APPCFG&&APPCFG.soon&&APPCFG.soon[TRACK])||t.soon.map(function(x){return {t:x,d:null}}),ul=$('#soonList');
+  ul.textContent='';
+  sl.forEach(function(x){
+    var li=document.createElement('li'),a=document.createElement('span'),b=document.createElement('span');
+    a.textContent=x.t;b.className='pill';
+    var m=x.d&&/^(\d{4})-(\d{2})-(\d{2})$/.exec(x.d);
+    b.textContent=m?(+m[3])+' '+MON[+m[2]-1]:'скоро';
+    li.appendChild(a);li.appendChild(b);ul.appendChild(li);
+  });
+  ul.parentNode.hidden=!sl.length;
   paintDone();paintLocks();
 }
 function route(){

@@ -1275,6 +1275,13 @@ step('кнопка «Игра»: админам всегда, людям пос�
   g = await call('/game', { items: { poster: { mode: 'sched', from: NOW + 10, until: NOW + 5 } } });
   assert.match(g.error, /позже/, 'панель не принимает закрытие раньше открытия');
   await call('/game', { public: false, items: { poster: { mode: 'open' }, fonts: { mode: 'open' } } });
+  g = await call('/game', { soon: { mini: [{ t: '  Новый   материал  ', d: '2026-11-13' }, { t: '', d: null }, { t: 'С кривой датой', d: '2026-13-45' }], mat: 'мусор' } });
+  assert.deepEqual(g.cfg.soon.mini, [{ t: 'Новый материал', d: '2026-11-13' }, { t: 'С кривой датой', d: null }], 'названия чистятся, пустые уходят, кривая дата сбрасывается');
+  assert.equal(g.cfg.soon.mat.length, 3, 'мусор вместо списка заменяется исходным списком');
+  await call('/game', { public: false, items: { poster: { mode: 'open' } } });
+  assert.equal((await call('/game')).cfg.soon.mini[0].t, 'Новый материал', 'сохранение расписания без списка «Дальше» его не стирает');
+  await call('/game', { soon: { mini: [], mat: [] } });
+  assert.deepEqual((await call('/game')).cfg.soon, { mini: [], mat: [] }, 'список можно очистить совсем');
   const np = await call('/post/new', { kind: 'node', md: 'Играем', status: 'active', rows: [[{ text: 'Открыть игру', app: true }]] });
   assert.ok(np.post, 'пост с кнопкой «Игра» сохранился');
   const kb = keyboard({ id: np.post.id, buttons: JSON.stringify(np.post.rows) }, 1, 'https://bot.test', {});

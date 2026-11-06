@@ -482,7 +482,7 @@ function gState(r) {
 async function renderGame() {
   if (!GM) {
     $('body').innerHTML = '<p class="muted" style="margin-top:16px">Загружаю…</p>';
-    try { const d = await api('/game'); GM = { pub: !!d.cfg.public, items: {}, def: d.items, ready: d.ready }; d.items.forEach((it) => { const g = d.cfg.items[it.id] || {}; GM.items[it.id] = { mode: g.mode || 'open', from: g.from || null, until: g.until || null }; }); }
+    try { const d = await api('/game'); GM = { pub: !!d.cfg.public, items: {}, def: d.items, ready: d.ready, soon: d.cfg.soon || { mini: [], mat: [] } }; d.items.forEach((it) => { const g = d.cfg.items[it.id] || {}; GM.items[it.id] = { mode: g.mode || 'open', from: g.from || null, until: g.until || null }; }); }
     catch (e) { $('body').innerHTML = '<p class="note warn">' + esc(e.message) + '</p>'; return; }
   }
   const paint = () => {
@@ -493,13 +493,20 @@ async function renderGame() {
         return '<div class="box"><div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px"><div><b>' + esc(it.name) + '</b><div class="small muted">' + esc(it.track) + '</div></div><span class="tag">' + esc(gState(r)) + '</span></div>' +
           segHtml('gm_' + it.id, [['open', 'Открыто'], ['closed', 'Закрыто'], ['sched', 'По датам']], r.mode) +
           (r.mode === 'sched' ? '<label class="f">Открыть</label><input type="datetime-local" data-g="' + it.id + '" data-k="from" value="' + gToMsk(r.from) + '"><label class="f">Закрыть (можно не заполнять)</label><input type="datetime-local" data-g="' + it.id + '" data-k="until" value="' + gToMsk(r.until) + '">' : '') + '</div>'; }).join('') +
+      '<div class="box"><b>Дальше в ноябре</b><div class="small muted" style="margin-top:4px">Список на главном экране игры. Дату можно не ставить, тогда будет «скоро».</div>' +
+      [['mini', '🎓 Мини-курс'], ['mat', '📚 Месяц материалов']].map(([k, t]) => '<div class="small muted" style="margin:12px 0 2px"><b>' + t + '</b></div>' +
+        GM.soon[k].map((x, i) => '<div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;padding-bottom:8px;border-bottom:1px solid var(--line)"><input type="text" maxlength="60" placeholder="Название" data-s="' + k + '" data-i="' + i + '" data-k="t" value="' + esc(x.t) + '"><div style="display:flex;gap:8px;align-items:center"><input type="date" data-s="' + k + '" data-i="' + i + '" data-k="d" value="' + esc(x.d || '') + '" style="flex:1;min-width:0"><button type="button" class="chip" data-sdel="' + k + ':' + i + '" aria-label="Убрать">Убрать</button></div></div>').join('') +
+        (GM.soon[k].length < 8 ? '<button type="button" class="btn ghost" data-sadd="' + k + '" style="margin-top:8px;width:100%">＋ Добавить</button>' : '')).join('') + '</div>' +
       '<button type="button" class="btn" id="gSave" style="width:100%">Сохранить</button><div id="gMsg"></div>';
     $('gPub').onchange = (e) => { GM.pub = e.target.checked; haptic(); paint(); };
     GM.def.forEach((it) => segBind('gm_' + it.id, (v) => { GM.items[it.id].mode = v; haptic(); paint(); }));
     $('body').querySelectorAll('input[data-g]').forEach((i) => { i.onchange = () => { GM.items[i.dataset.g][i.dataset.k] = gFromMsk(i.value); paint(); }; });
+    $('body').querySelectorAll('input[data-s]').forEach((i) => { i.oninput = i.onchange = () => { GM.soon[i.dataset.s][+i.dataset.i][i.dataset.k] = i.dataset.k === 'd' ? (i.value || null) : i.value; }; });
+    $('body').querySelectorAll('[data-sadd]').forEach((b) => { b.onclick = () => { GM.soon[b.dataset.sadd].push({ t: '', d: null }); haptic(); paint(); }; });
+    $('body').querySelectorAll('[data-sdel]').forEach((b) => { b.onclick = () => { const [k, i] = b.dataset.sdel.split(':'); GM.soon[k].splice(+i, 1); haptic(); paint(); }; });
     $('gSave').onclick = async () => {
       for (const it of GM.def) { const r = GM.items[it.id]; if (r.mode !== 'sched') continue; if (!r.from && !r.until) return gMsg(false, '«' + it.name + '»: выбери дату открытия или закрытия'); if (r.from && r.until && r.until <= r.from) return gMsg(false, '«' + it.name + '»: закрытие должно быть позже открытия'); }
-      const body = { public: GM.pub, items: {} }; GM.def.forEach((it) => { const r = GM.items[it.id]; body.items[it.id] = { mode: r.mode, from: r.mode === 'sched' ? r.from : null, until: r.mode === 'sched' ? r.until : null }; });
+      const body = { public: GM.pub, items: {}, soon: GM.soon }; GM.def.forEach((it) => { const r = GM.items[it.id]; body.items[it.id] = { mode: r.mode, from: r.mode === 'sched' ? r.from : null, until: r.mode === 'sched' ? r.until : null }; });
       $('gSave').disabled = true;
       try { const d = await api('/game', body); GM = null; haptic(); await renderGame(); toast('Сохранено. Правила уже действуют'); }
       catch (e) { $('gSave').disabled = false; gMsg(false, e.message); }
