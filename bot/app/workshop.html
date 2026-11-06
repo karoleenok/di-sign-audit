@@ -96,6 +96,10 @@ img{display:block}
 .hello .brandbar .logo{width:108px}
 .hello .h1{font-size:32px;line-height:33px}
 .hello .hero{gap:var(--s2)}
+.hello{justify-content:space-between}
+.hello .dock{margin-top:0}
+.hello .hello-img{flex:1 1 0;display:flex;align-items:center;justify-content:center;min-height:90px;padding-block:0}
+.hello .hello-img img,.hello .hello-img.big img{width:auto!important;height:100%;aspect-ratio:1;max-height:min(340px,46dvh);max-width:78vw}
 .hello .brandbar{justify-content:center}
 .hello .hero{align-items:center}
 .hello .px{display:inline-block;background:var(--pb);padding:2px var(--s2);border-radius:var(--r-s)}
@@ -103,7 +107,7 @@ img{display:block}
 .hello-img.big img{width:min(76vw,320px,34dvh)}
 .hello-img img{transform-origin:50% 92%;animation:waddle 2.4s ease-in-out infinite}
 @keyframes waddle{0%,100%{transform:translateX(-12px) rotate(-5deg)}25%{transform:translateX(0) rotate(0) translateY(-6px)}50%{transform:translateX(12px) rotate(5deg)}75%{transform:translateX(0) rotate(0) translateY(-6px)}}
-@media (max-height:720px){.hello .bell-ic{display:none}.hello .bell{padding:var(--s3) var(--s4)}.hello-img img{width:min(50vw,200px,22dvh)!important}.hello .brandbar .logo{width:92px}.hello .h1{font-size:28px;line-height:29px}.hello-sub{font-size:15px;line-height:20px}}
+@media (max-height:720px){.hello .bell-ic{display:none}.hello .bell{padding:var(--s3) var(--s4)}.hello .brandbar .logo{width:92px}.hello .h1{font-size:28px;line-height:29px}.hello-sub{font-size:15px;line-height:20px}}
 @media (max-height:620px){.hello .bell{display:none}}
 .hello .bell{display:flex;flex-direction:column;align-items:center;gap:var(--s2);text-align:center}
 .hello .dock{align-items:stretch}
