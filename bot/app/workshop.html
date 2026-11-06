@@ -355,6 +355,9 @@ details a,.src a{color:var(--blue)}
 .po.C .ppill{margin-top:calc(var(--g2,67)*var(--u))}
 .po .tap{cursor:pointer;outline-offset:calc(6*var(--u));-webkit-tap-highlight-color:transparent}
 .btn.primary[disabled]{background:var(--track);color:var(--ink-soft);border-color:transparent}
+.szrow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:var(--s1);padding:var(--s1);border-radius:999px;background:var(--track)}
+.szrow button{min-height:44px;border:0;border-radius:999px;background:transparent;color:var(--ink);cursor:pointer;padding:0;font-family:var(--f-text);font-weight:500;line-height:1}
+.szrow button[aria-pressed="true"]{background:var(--ink);color:var(--cream)}
 .po .tap{position:relative}
 .po .rk{position:absolute;left:calc(-40*var(--u));top:calc(-26*var(--u));min-width:calc(64*var(--u));height:calc(64*var(--u));border-radius:50%;background:var(--ink);color:var(--cream);font:500 calc(36*var(--u))/calc(64*var(--u)) var(--f-text);text-align:center;font-style:normal;letter-spacing:0;text-indent:0;z-index:2}
 .po .tap.sel{outline:calc(5*var(--u)) solid var(--pink)}
@@ -389,8 +392,9 @@ details a,.src a{color:var(--blue)}
 .sw-btn[aria-checked="true"] i{left:28px}
 .adm-list{display:flex;flex-direction:column;gap:var(--s3)}
 .adm-it{display:flex;flex-direction:column;gap:var(--s3)}
-.adm-hd{display:flex;justify-content:space-between;gap:var(--s3);align-items:flex-start}
-.adm-st{white-space:nowrap}
+.adm-hd{display:flex;flex-wrap:wrap;justify-content:space-between;gap:var(--s2) var(--s3);align-items:flex-start}
+.adm-hd>div{min-width:0}
+.adm-st{max-width:100%}
 .adm-seg{display:flex;gap:var(--s1);padding:var(--s1);border-radius:999px;background:var(--track)}
 .adm-seg button{flex:1;min-height:44px;border:0;border-radius:999px;background:transparent;font:500 14px/1 var(--f-text);cursor:pointer;padding:0 var(--s2)}
 .adm-seg button[aria-pressed="true"]{background:var(--ink);color:var(--cream)}
@@ -986,7 +990,7 @@ document.addEventListener('keydown',function(e){if(cur!=='poster'||!S||S.st!==1|
 /* ---------- этап 3: сборка по эталону ---------- */
 var TIGHT=40,LOOSE=76;
 var BT=[
- {key:'A',pr:'Иерархия и масштаб',g:'h',ref:{},task:'Расставь важность: тапай элементы постера по порядку, от главного к второстепенному. Размеры подстроятся сами.',
+ {key:'A',pr:'Иерархия и масштаб',g:'h',ref:{},task:'Подбери размеры: тапни элемент на постере и выбери ему размер. Главное должно быть крупнее всего.',
   hint:'Крупнее всего название, текст средний, плашка самая мелкая.',
   ok:'Три уровня видны сразу: название, текст, плашка. Взгляд идёт сверху вниз.'},
  {key:'C',pr:'Близость',g:'p',ref:{g0:TIGHT,g1:LOOSE,g2:TIGHT},task:'Реши, что держать вместе, а что отделить воздухом: название и фото, фото и текст, текст и плашку.',
@@ -1012,29 +1016,23 @@ function bDeal(){
 }
 function elKey(e,fn){e.addEventListener('keydown',function(ev){if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();fn()}})}
 /* 1. иерархия */
-var LV={t:[160,105,70],b:[62,46,36],p:[44,36,30]},EN={t:'Название',b:'Текст',p:'Плашка'};
+var SZ=[34,46,64,100,150],EN={t:'Название',b:'Текст',p:'Плашка'},SZN=['Самый мелкий','Мелкий','Средний','Крупный','Самый крупный'];
 function bHier(){
-  B.order=[];
-  function rk(k){var i=B.order.indexOf(k);if(i>=0)return i;return B.order.length>=2?2:1}
-  function ranks(){var r={};['t','b','p'].forEach(function(k){r[k]=rk(k)});return r}
-  function mods(){var m={};['t','b','p'].forEach(function(k){m[k+'-s']=LV[k][rk(k)]});return m}
-  function pick(k){
-    if(S.busy||B.order.indexOf(k)>=0||B.order.length>=2)return;haptic();
-    B.order.push(k);
-    if(B.order.length===2)B.order.push(['t','b','p'].filter(function(x){return B.order.indexOf(x)<0})[0]);
-    paint();
-  }
+  B.lv={t:2,b:2,p:2};B.sel='t';
+  function mods(){var m={};['t','b','p'].forEach(function(k){m[k+'-s']=SZ[B.lv[k]]});return m}
+  function setLv(i){if(S.busy)return;B.lv[B.sel]=i;haptic();paint()}
+  function pick(k){if(S.busy)return;B.sel=k;haptic();paint()}
   function paint(){
-    var n=B.order.length,rkv={};B.order.forEach(function(k,i){rkv[k]=i+1});
-    $('#bArea').innerHTML=posterHTML('A',mods(),{tap:true,rk:rkv});
-    $('#bCtl').innerHTML='<p class="small" aria-live="polite">'+(n===0?'Что на постере главное? Тапни его, он станет самым крупным.':n===1?'А что второе по важности? Тапни его.':'Готово: 1 самый крупный, 3 самый мелкий. Проверь или расставь заново.')+'</p>'+(n?'<button class="btn ghost sm" id="bReset" type="button" style="align-self:flex-start">Расставить заново</button>':'');
-    $('#bCheck').disabled=n<3;
-    var rs=$('#bReset');if(rs)rs.addEventListener('click',function(){if(S.busy)return;B.order=[];haptic();paint()});
+    $('#bArea').innerHTML=posterHTML('A',mods(),{tap:true,sel:B.sel});
+    $('#bCtl').innerHTML='<p class="small">Размер: <b>'+EN[B.sel]+'</b>. Сменить элемент можно тапом по постеру.</p><div class="szrow" role="group" aria-label="Размер: '+EN[B.sel]+'">'+
+      SZ.map(function(v,i){return '<button type="button" data-i="'+i+'" aria-pressed="'+(B.lv[B.sel]===i)+'" aria-label="'+SZN[i]+'"><span style="font-size:'+(12+i*3.5)+'px">А</span></button>'}).join('')+'</div>';
+    $$('#bCtl .szrow button').forEach(function(b){b.addEventListener('click',function(){setLv(+b.getAttribute('data-i'))})});
     $$('#bArea [data-el]').forEach(function(e){var k=e.getAttribute('data-el');e.addEventListener('click',function(){pick(k)});elKey(e,function(){pick(k)})});
   }
   B.paint=paint;paint();
-  B.right=function(){return B.order[0]==='t'&&B.order[1]==='b'};
-  B.solve=function(){B.order=['t','b','p'];paint()};
+  B.right=function(){return B.lv.t>B.lv.b&&B.lv.b>B.lv.p};
+  B.why=function(){return B.lv.t<=B.lv.b?'Название не крупнее текста, поэтому главное не видно.':'Плашка не мельче текста, поэтому она спорит с ним за внимание.'};
+  B.solve=function(){B.lv={t:4,b:2,p:0};B.sel='t';paint()};
 }
 /* 2. близость */
 var PN=['Название и фото','Фото и текст','Текст и плашка'];
@@ -1082,7 +1080,7 @@ $('#bCheck').addEventListener('click',function(){
     v.hidden=false;v.innerHTML=statusHTML(true,(B.att===1?'С первой попытки. ':'Получилось со второй. ')+t.ok)+refHTML(t)+nextBtn(last,'bNext');
     $('#bDock').hidden=true;$('#bNext').addEventListener('click',advance);
   }else if(B.att<2){
-    v.hidden=false;v.innerHTML=statusHTML(false,t.hint+' Поправь и проверь ещё раз.');
+    v.hidden=false;v.innerHTML=statusHTML(false,(B.why?B.why()+' ':'')+t.hint+' Поправь и проверь ещё раз.');
   }else{
     S.busy=true;S.res.push({st:2,g:t.g,hit:false,name:t.pr});B.solve();
     v.hidden=false;v.innerHTML=statusHTML(false,'Показываю, как собрать. '+t.ok)+refHTML(t)+nextBtn(last,'bNext');

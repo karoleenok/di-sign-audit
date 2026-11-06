@@ -54,6 +54,13 @@ async function tgFetch(url, opts) {
 const ctxFor = () => makeCtx({ db, env, publicUrl: env.PUBLIC_URL, fetchFn: tgFetch });
 const polling = (env.MODE || 'webhook') === 'polling';
 
+// файл аппки ~2 МБ: читаем с диска только когда он изменился (после автообновления)
+let __appCache = { m: 0, html: '' };
+function __appHtml() {
+  const f = new URL('../app/workshop.html', import.meta.url), m = fs.statSync(f).mtimeMs;
+  if (m !== __appCache.m) __appCache = { m, html: fs.readFileSync(f, 'utf8') };
+  return __appCache.html;
+}
 const testCache = { html: '', at: 0 };
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, env.PUBLIC_URL || 'http://localhost');
@@ -77,7 +84,7 @@ const server = http.createServer(async (req, res) => {
       // не админам аппка открыта только когда админ включил «Показывать всем»
       if (!__admin && !__cfg.public) return send(403, 'forbidden', 'text/plain; charset=utf-8', { 'cache-control': 'no-store' });
       const __view = __viewFor(__cfg, Math.floor(Date.now() / 1000), __admin);
-      const __html = fs.readFileSync(new URL('../app/workshop.html', import.meta.url), 'utf8').replace('/*__APPCFG__*/null', () => JSON.stringify(__view).replace(/</g, '\\u003c'));
+      const __html = __appHtml().replace('/*__APPCFG__*/null', () => JSON.stringify(__view).replace(/</g, '\\u003c'));
       return send(200, __html, 'text/html; charset=utf-8', { 'cache-control': 'no-store' });
     }
     // расписание открытия игр: сохраняет только админ
