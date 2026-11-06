@@ -22,6 +22,7 @@ export function keyboard(post, uid, publicUrl, docs) {
     if (b.pay) return { text: b.text, callback_data: post.id ? `buy:${post.id}:${ri}-${bi}` : 'buy:x' };
     if (b.lead) return { text: b.text, callback_data: post.id ? `ld:p:${post.id}` : 'ld:x' };
     if (b.fb) return { text: b.text, callback_data: 'fb:p' };
+    if (b.app) return publicUrl ? { text: b.text, web_app: { url: publicUrl + '/app' } } : null;
     if (b.file && b.file.type !== 'link') return { text: b.text, callback_data: post.id ? `fl:${post.id}:${ri}-${bi}` : 'fl:x' };
     if (b.doc) { const u = docs && docs[b.doc]; return u ? { text: b.text, url: u } : null; }
     return { text: b.text, url: publicUrl && post.id ? `${publicUrl}/r/${post.id}/${ri}-${bi}/${uid || 0}` : b.url };

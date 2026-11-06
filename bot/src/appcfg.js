@@ -81,3 +81,31 @@ export function viewFor(cfg, now, admin) {
   }
   return { admin: !!admin, now, public: cfg.public, items };
 }
+
+// ---------- кнопка «Игра» у человека рядом со строкой ввода ----------
+// Есть только у тех, кто уже выбрал «мини-курс» или «материалы», и только когда админ открыл аппку для всех.
+export const appTrack = (t) => (t === 'course' ? 'mini' : t === 'mat' ? 'mat' : null);
+export async function userMenu(ctx, id, cfg) {
+  if (!ctx.publicUrl) return;
+  try {
+    const c = cfg || (await loadCfg(ctx));
+    const u = await ctx.db.first(`SELECT track FROM users WHERE tg_id = ?`, [id]);
+    const on = !!(c.public && u && appTrack(u.track));
+    await ctx.tg.call('setChatMenuButton', { chat_id: id, menu_button: on ? { type: 'web_app', text: 'Игра', web_app: { url: ctx.publicUrl + '/app' } } : { type: 'commands' } });
+  } catch { /* кнопка не критична */ }
+}
+// всем, кто выбрал трек: вызываем, когда админ включил или выключил «Показывать всем». Идём не быстрее ~20 человек в секунду
+export async function allUsersMenu(ctx) {
+  const cfg = await loadCfg(ctx);
+  const rows = await ctx.db.all(`SELECT tg_id FROM users WHERE track IS NOT NULL AND status NOT IN ('blocked') LIMIT 5000`);
+  for (const r of rows) { await userMenu(ctx, r.tg_id, cfg); await new Promise((ok) => setTimeout(ok, 50)); }
+  return rows.length;
+}
+
+// сохранить расписание; если «Показывать всем» поменялось, обновляем кнопку «Игра» у людей в фоне
+export async function saveCfgAndMenu(ctx, input) {
+  const before = (await loadCfg(ctx)).public;
+  const r = await saveCfg(ctx, input);
+  if (r.cfg && r.cfg.public !== before) allUsersMenu(ctx).catch((e) => console.error('menu users', e));
+  return r;
+}

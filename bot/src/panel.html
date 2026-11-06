@@ -448,20 +448,65 @@ function render() {
       : tab === 'feed' ? '<h1>Лента <i>постов</i></h1><p class="lead">Что уходит и когда: по дням после входа, на дату, подарки и бонус за отзыв.</p>'
       : tab === 'flow' ? '<h1>Путь <i>ученика</i></h1><p class="lead" hidden>Вход, подарок, лента по дням, даты и бонус за отзыв — в одном месте. Тяни за ⋮⋮, нажми на пост или шаг — откроется редактор.</p>'
       : tab === 'reviews' ? '<h1>Люди</h1><p class="lead">Кто оставил заявку на предзапись или отзыв о кабинете и как с ним связаться.</p>'
+      : tab === 'game' ? '<h1>Игра <i>прогрева</i></h1><p class="lead">Когда открыть уроки и показывать ли игру всем. Время по Москве.</p>'
       : tab === 'tasks' ? '<h1>Задачи таксиков</h1><p class="lead">Кто что делает до 25 ноября. Отметь своё, шкала заполнится сама.</p>'
       : tab === 'texts' ? '<h1>Настройки</h1><p class="lead">Документы, команды ученика, профиль бота и остальные тексты.</p>'
       : '<h1>Весь путь <i>ученика</i></h1><p class="lead">Вход, лента, даты и бонус — в одном месте.</p>') +
     '<div class="tabs"><div class="seg" id="tabs">' +
-    [['home','Главная'],['path','Путь · ' + (counts.feed + counts.dates + counts.gifts + counts.fb0)],['reviews','Люди · ' + (S.leadCount || 0)],['tasks','Задачи'],['texts','Настройки']].map(([k,t]) => '<button data-t="' + k + '" class="' + (tab === k ? 'on' : '') + '">' + t + '</button>').join('') +
+    [['home','Главная'],['path','Путь · ' + (counts.feed + counts.dates + counts.gifts + counts.fb0)],['reviews','Люди · ' + (S.leadCount || 0)],['game','Игра'],['tasks','Задачи'],['texts','Настройки']].map(([k,t]) => '<button data-t="' + k + '" class="' + (tab === k ? 'on' : '') + '">' + t + '</button>').join('') +
     '</div></div><div id="body"></div>';
   $('tabs').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; tab = b.dataset.t; if (tab === 'tasks') TD = null; haptic(); render(); window.scrollTo(0, 0); };
   { const on = $('tabs').querySelector('.on'); if (on && on.scrollIntoView) on.scrollIntoView({ inline: 'nearest', block: 'nearest' }); }
   if (tab === 'entry' || tab === 'feed' || tab === 'flow') tab = 'path';
   if (tab !== 'path' && view.selMode) { view.selMode = false; sel.clear(); document.body.classList.remove('selmode'); }
-  ({ home: renderHome, path: renderFlow, reviews: renderReviews, tasks: renderTasks, texts: renderTexts })[tab]();
+  ({ home: renderHome, path: renderFlow, reviews: renderReviews, game: renderGame, tasks: renderTasks, texts: renderTexts })[tab]();
   if ($('undoBtn')) $('undoBtn').onclick = doUndo;
   bindHelp();
   setTimeout(() => loadThumbs($('body')), 0);
+}
+
+
+// ---------- игра-прогрев: открытие уроков ----------
+let GM = null;
+const gToMsk = (ts) => ts ? new Date((ts + 10800) * 1000).toISOString().slice(0, 16) : '';
+const gFromMsk = (v) => { const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(v || ''); return m ? Math.floor(Date.UTC(+m[1], m[2] - 1, +m[3], +m[4], +m[5]) / 1000) - 10800 : null; };
+const gWhen = (ts) => { const d = new Date((ts + 10800) * 1000), M = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'], p = (n) => (n < 10 ? '0' : '') + n; return d.getUTCDate() + ' ' + M[d.getUTCMonth()] + ', ' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes()); };
+function gState(r) {
+  const n = Math.floor(Date.now() / 1000);
+  if (r.mode === 'open') return 'открыто';
+  if (r.mode === 'closed') return 'закрыто';
+  if (r.from && n < r.from) return 'откроется ' + gWhen(r.from);
+  if (r.until && n >= r.until) return 'закрыто с ' + gWhen(r.until);
+  return r.until ? 'открыто до ' + gWhen(r.until) : 'открыто';
+}
+async function renderGame() {
+  if (!GM) {
+    $('body').innerHTML = '<p class="muted" style="margin-top:16px">Загружаю…</p>';
+    try { const d = await api('/game'); GM = { pub: !!d.cfg.public, items: {}, def: d.items, ready: d.ready }; d.items.forEach((it) => { const g = d.cfg.items[it.id] || {}; GM.items[it.id] = { mode: g.mode || 'open', from: g.from || null, until: g.until || null }; }); }
+    catch (e) { $('body').innerHTML = '<p class="note warn">' + esc(e.message) + '</p>'; return; }
+  }
+  const paint = () => {
+    $('body').innerHTML =
+      '<div class="box"><div class="toggle" style="margin-top:0"><div><b>Показывать игру всем</b><div class="small muted" style="margin-top:4px">' + (GM.pub ? 'Включено: игру видят все, кто выбрал «мини-курс» или «материалы». У них появится кнопка «Игра» рядом со строкой ввода.' : 'Выключено: игру открывают только админы.') + '</div></div><label class="sw"><input type="checkbox" id="gPub"' + (GM.pub ? ' checked' : '') + '><span></span></label></div>' +
+      '<p class="small muted" style="margin:10px 0 0">Уже выбрали: 🎓 мини-курс ' + GM.ready.course + ' · 📚 материалы ' + GM.ready.mat + '. Кто ещё не выбрал, игру не увидит: бот сначала спросит, что присылать.</p></div>' +
+      GM.def.map((it) => { const r = GM.items[it.id];
+        return '<div class="box"><div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px"><div><b>' + esc(it.name) + '</b><div class="small muted">' + esc(it.track) + '</div></div><span class="tag">' + esc(gState(r)) + '</span></div>' +
+          segHtml('gm_' + it.id, [['open', 'Открыто'], ['closed', 'Закрыто'], ['sched', 'По датам']], r.mode) +
+          (r.mode === 'sched' ? '<label class="f">Открыть</label><input type="datetime-local" data-g="' + it.id + '" data-k="from" value="' + gToMsk(r.from) + '"><label class="f">Закрыть (можно не заполнять)</label><input type="datetime-local" data-g="' + it.id + '" data-k="until" value="' + gToMsk(r.until) + '">' : '') + '</div>'; }).join('') +
+      '<button type="button" class="btn" id="gSave" style="width:100%">Сохранить</button><div id="gMsg"></div>';
+    $('gPub').onchange = (e) => { GM.pub = e.target.checked; haptic(); paint(); };
+    GM.def.forEach((it) => segBind('gm_' + it.id, (v) => { GM.items[it.id].mode = v; haptic(); paint(); }));
+    $('body').querySelectorAll('input[data-g]').forEach((i) => { i.onchange = () => { GM.items[i.dataset.g][i.dataset.k] = gFromMsk(i.value); paint(); }; });
+    $('gSave').onclick = async () => {
+      for (const it of GM.def) { const r = GM.items[it.id]; if (r.mode !== 'sched') continue; if (!r.from && !r.until) return gMsg(false, '«' + it.name + '»: выбери дату открытия или закрытия'); if (r.from && r.until && r.until <= r.from) return gMsg(false, '«' + it.name + '»: закрытие должно быть позже открытия'); }
+      const body = { public: GM.pub, items: {} }; GM.def.forEach((it) => { const r = GM.items[it.id]; body.items[it.id] = { mode: r.mode, from: r.mode === 'sched' ? r.from : null, until: r.mode === 'sched' ? r.until : null }; });
+      $('gSave').disabled = true;
+      try { const d = await api('/game', body); GM = null; haptic(); await renderGame(); toast('Сохранено. Правила уже действуют'); }
+      catch (e) { $('gSave').disabled = false; gMsg(false, e.message); }
+    };
+  };
+  const gMsg = (ok, t) => { $('gMsg').innerHTML = '<p class="note' + (ok ? '' : ' warn') + '">' + esc(t) + '</p>'; };
+  paint();
 }
 
 // ---------- главная: что важно сейчас ----------
@@ -939,7 +984,7 @@ function pickBtnFile(done) {
 }
 // редактор кнопок шага: ссылка / пост / документ / оплата (как у постов)
 function stepBtnEditor(el, rowsIn) {
-  let rows = rowsIn.map((row) => row.map((b) => Object.assign({ t: b.go ? 'go' : b.doc ? 'doc' : b.pay ? 'pay' : b.lead ? 'lead' : b.fb ? 'fb' : b.file ? 'file' : 'url' }, b)));
+  let rows = rowsIn.map((row) => row.map((b) => Object.assign({ t: b.go ? 'go' : b.doc ? 'doc' : b.pay ? 'pay' : b.lead ? 'lead' : b.fb ? 'fb' : b.app ? 'app' : b.file ? 'file' : 'url' }, b)));
   const sync = () => { el.querySelectorAll('[data-f]').forEach((i) => { const r = +i.dataset.r, k = +i.dataset.i; if (rows[r] && rows[r][k]) rows[r][k][i.dataset.f] = i.value; }); };
   const optPosts = (cur) => '<option value="">— выбери пост —</option>' + ['node', 'drip', 'date', 'gift'].map((k) => { const l = S.posts.filter((x) => x.kind === k); return l.length ? '<optgroup label="' + KIND[k] + '">' + l.map((x) => '<option value="' + x.id + '"' + (+cur === x.id ? ' selected' : '') + '>' + esc(postName(x).slice(0, 44)) + '</option>').join('') + '</optgroup>' : ''; }).join('');
   const field = (b, r, i) => {
@@ -947,6 +992,7 @@ function stepBtnEditor(el, rowsIn) {
     if (b.t === 'go') return '<select ' + a + ' data-f="go">' + optPosts(b.go) + '</select>';
     if (b.t === 'doc') return '<select ' + a + ' data-f="doc">' + Object.keys(S.docNames).map((k) => '<option value="' + k + '"' + (b.doc === k ? ' selected' : '') + '>' + esc(S.docNames[k]) + (S.docs[k] ? '' : ' — ссылка не задана') + '</option>').join('') + '</select>';
     if (b.t === 'file') return '<div class="small" style="margin:4px 2px">' + (b.file ? '📎 ' + esc(b.file.name || b.file.type) : 'файл не выбран') + '</div><button type="button" class="chip" data-pick="' + r + ':' + i + '">' + (b.file ? 'заменить файл' : '＋ выбрать файл') + '</button><p class="small muted" style="margin:4px 2px 0">По нажатию откроется страница с предпросмотром (картинка, видео, pdf, аудио) и кнопкой «Скачать». Файл до 1 ГБ.</p>';
+    if (b.t === 'app') return '<div class="small muted" style="margin:4px 2px">Кнопка открывает игру прямо в Телеграме. Работает у тех, кто уже выбрал «мини-курс» или «материалы», и только когда игра открыта для всех (вкладка «Игра»).</div>';
     if (b.t === 'fb') return '<div class="small muted" style="margin:4px 2px">Человек нажимает — бот задаёт 2 вопроса про кабинет и присылает бонус за отзыв (посты «💬 Бонус за отзыв»). Один раз на человека.</div>';
     if (b.t === 'lead') return '<div class="small muted" style="margin:4px 2px">Человек нажимает — заявка сохраняется, тебе приходит карточка, ему «Заявка принята» (текст — во вкладке «Тексты»).</div>';
     if (b.t === 'pay') return '<select ' + a + ' data-f="pay">' + Object.keys(TARIFF).map((k) => '<option value="' + k + '"' + (b.pay === k ? ' selected' : '') + '>' + TARIFF[k] + '</option>').join('') + '</select>';
@@ -956,7 +1002,7 @@ function stepBtnEditor(el, rowsIn) {
     el.innerHTML = (rows.length ? rows.map((row, r) => '<div class="brow"><div class="row" style="justify-content:space-between;margin-bottom:6px"><span class="small muted">Ряд ' + (r + 1) + '</span><span>' +
       (r > 0 ? '<button type="button" class="chip" data-up="' + r + '">↑</button> ' : '') + (r < rows.length - 1 ? '<button type="button" class="chip" data-down="' + r + '">↓</button>' : '') + '</span></div>' +
       row.map((b, i) => '<div class="bcard"><div style="display:grid;grid-template-columns:1fr auto;gap:6px"><input type="text" placeholder="Текст кнопки" maxlength="60" data-r="' + r + '" data-i="' + i + '" data-f="text" value="' + esc(b.text || '') + '"><button type="button" class="chip" data-del="' + r + ':' + i + '">✕</button></div>' +
-        '<div class="btype">' + [['url', '🔗 Ссылка'], ['go', '➡️ Пост'], ['doc', '📄 Документ'], ['pay', '💳 Оплата'], ['lead', '📝 Заявка'], ['fb', '💬 Отзыв'], ['file', '📎 Файл']].map(([k, t]) => '<button type="button" data-type="' + k + '" data-r="' + r + '" data-i="' + i + '" class="' + (b.t === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>' + field(b, r, i) + '</div>').join('') +
+        '<div class="btype">' + [['url', '🔗 Ссылка'], ['go', '➡️ Пост'], ['doc', '📄 Документ'], ['pay', '💳 Оплата'], ['lead', '📝 Заявка'], ['fb', '💬 Отзыв'], ['app', '🎮 Игра'], ['file', '📎 Файл']].map(([k, t]) => '<button type="button" data-type="' + k + '" data-r="' + r + '" data-i="' + i + '" class="' + (b.t === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>' + field(b, r, i) + '</div>').join('') +
       (row.length < 4 ? '<button type="button" class="chip" data-add="' + r + '">＋ кнопка рядом</button>' : '') + '</div>').join('') : '<p class="small muted" style="margin:2px">Своих кнопок нет.</p>') +
       '<button type="button" class="btn ghost" data-newrow="1" style="margin-top:6px">＋ Кнопка</button>';
   };
@@ -974,7 +1020,7 @@ function stepBtnEditor(el, rowsIn) {
     haptic(); draw();
   });
   draw();
-  return () => { sync(); return rows.map((row) => row.map((b) => b.t === 'go' ? { text: b.text, go: +b.go || null } : b.t === 'doc' ? { text: b.text, doc: b.doc } : b.t === 'lead' ? { text: b.text, lead: true } : b.t === 'fb' ? { text: b.text, fb: true } : b.t === 'pay' ? { text: b.text, pay: b.pay } : b.t === 'file' ? { text: b.text, file: b.file || null } : { text: b.text, url: b.url })); };
+  return () => { sync(); return rows.map((row) => row.map((b) => b.t === 'go' ? { text: b.text, go: +b.go || null } : b.t === 'doc' ? { text: b.text, doc: b.doc } : b.t === 'lead' ? { text: b.text, lead: true } : b.t === 'fb' ? { text: b.text, fb: true } : b.t === 'app' ? { text: b.text, app: true } : b.t === 'pay' ? { text: b.text, pay: b.pay } : b.t === 'file' ? { text: b.text, file: b.file || null } : { text: b.text, url: b.url })); };
 }
 
 function bindCards() {
@@ -1031,6 +1077,7 @@ function makeNode(shown) {
       else if (b.doc) kids += '<div class="fb"><span class="fb-l">📄 ' + esc(b.text) + '</span><span class="fb-r">' + esc(S.docNames[b.doc] || '') + (S.docs[b.doc] ? '' : ' · <b class="warn-t">ссылка не задана</b>') + '</span></div>';
       else if (b.lead) kids += '<div class="fb"><span class="fb-l">📝 ' + esc(b.text) + '</span><span class="fb-r">заявка</span></div>';
       else if (b.fb) kids += '<div class="fb"><span class="fb-l">💬 ' + esc(b.text) + '</span><span class="fb-r">отзыв и бонус</span></div>';
+      else if (b.app) kids += '<div class="fb"><span class="fb-l">🎮 ' + esc(b.text) + '</span><span class="fb-r">открывает игру</span></div>';
       else if (b.pay) kids += '<div class="fb"><span class="fb-l">💳 ' + esc(b.text) + '</span><span class="fb-r">' + esc(TARIFF[b.pay] || 'оплата') + ' · подключим позже</span></div>';
       else kids += '<div class="fb"><span class="fb-l">🔗 ' + esc(b.text) + '</span><span class="fb-r">' + esc(domainOf(b.url)) + '</span></div>';
     }));
@@ -1982,7 +2029,7 @@ function openPost(id, opt) {
   segBind('fSt', (v) => st.status = v);
 
   // кнопки: ссылка / пост / документ / оплата
-  let rows = JSON.parse(JSON.stringify(p.rows || [])).map((row) => row.map((b) => Object.assign({ t: b.go ? 'go' : b.doc ? 'doc' : b.pay ? 'pay' : b.lead ? 'lead' : b.fb ? 'fb' : b.file ? 'file' : 'url' }, b)));
+  let rows = JSON.parse(JSON.stringify(p.rows || [])).map((row) => row.map((b) => Object.assign({ t: b.go ? 'go' : b.doc ? 'doc' : b.pay ? 'pay' : b.lead ? 'lead' : b.fb ? 'fb' : b.app ? 'app' : b.file ? 'file' : 'url' }, b)));
   const targets = S.posts.filter((x) => x.id !== p.id);
   const optPosts = (cur) => '<option value="">— выбери пост —</option><option value="new"' + (cur === 'new' ? ' selected' : '') + '>＋ Новый пост-ответ (создам пустой)</option>' +
     ['node', 'drip', 'date', 'gift'].map((k) => { const l = targets.filter((x) => x.kind === k); return l.length ? '<optgroup label="' + KIND[k] + '">' + l.map((x) => '<option value="' + x.id + '"' + (+cur === x.id ? ' selected' : '') + '>' + esc(postName(x).slice(0, 44)) + (x.status !== 'active' ? ' · ' + (x.status === 'draft' ? 'черновик' : 'пауза') : '') + '</option>').join('') + '</optgroup>' : ''; }).join('');
@@ -1991,6 +2038,7 @@ function openPost(id, opt) {
     if (b.t === 'go') return '<select ' + a + ' data-f="go">' + optPosts(b.go) + '</select>';
     if (b.t === 'doc') return '<select ' + a + ' data-f="doc">' + Object.keys(S.docNames).map((k) => '<option value="' + k + '"' + (b.doc === k ? ' selected' : '') + '>' + esc(S.docNames[k]) + (S.docs[k] ? '' : ' — ссылка не задана') + '</option>').join('') + '</select>';
     if (b.t === 'file') return '<div class="small" style="margin:4px 2px">' + (b.file ? '📎 ' + esc(b.file.name || b.file.type) : 'файл не выбран') + '</div><button type="button" class="chip" data-pick="' + r + ':' + i + '">' + (b.file ? 'заменить файл' : '＋ выбрать файл') + '</button><p class="small muted" style="margin:4px 2px 0">По нажатию бот пришлёт этот файл в чат (до 50 МБ).</p>';
+    if (b.t === 'app') return '<div class="small muted" style="margin:4px 2px">Кнопка открывает игру прямо в Телеграме. Работает у тех, кто уже выбрал «мини-курс» или «материалы», и только когда игра открыта для всех (вкладка «Игра»).</div>';
     if (b.t === 'fb') return '<div class="small muted" style="margin:4px 2px">Человек нажимает — бот задаёт 2 вопроса про кабинет и присылает бонус за отзыв (посты «💬 Бонус за отзыв»). Один раз на человека.</div>';
     if (b.t === 'lead') return '<div class="small muted" style="margin:4px 2px">Человек нажимает — заявка сохраняется, тебе приходит карточка, ему «Заявка принята» (текст — во вкладке «Тексты»).</div>';
     if (b.t === 'pay') return '<select ' + a + ' data-f="pay">' + Object.keys(TARIFF).map((k) => '<option value="' + k + '"' + (b.pay === k ? ' selected' : '') + '>' + TARIFF[k] + '</option>').join('') + '</select><p class="small muted" style="margin:2px">Оплату через продамус подключим позже — пока кнопка отвечает «откроется в день продаж».</p>';
@@ -2002,7 +2050,7 @@ function openPost(id, opt) {
       '<div class="brow"><div class="row" style="justify-content:space-between;margin-bottom:6px"><span class="small muted">' + (row.length > 1 ? 'Ряд ' + (r + 1) + ' · кнопки рядом' : 'Ряд ' + (r + 1)) + '</span><span>' +
       (r > 0 ? '<button type="button" class="chip" data-up="' + r + '" aria-label="выше">↑</button> ' : '') + (r < rows.length - 1 ? '<button type="button" class="chip" data-down="' + r + '" aria-label="ниже">↓</button>' : '') + '</span></div>' +
       row.map((b, i) => '<div class="bcard"><div style="display:grid;grid-template-columns:1fr auto;gap:6px"><input type="text" placeholder="Текст кнопки" maxlength="60" data-r="' + r + '" data-i="' + i + '" data-f="text" value="' + esc(b.text || '') + '"><button type="button" class="chip" data-del="' + r + ':' + i + '" aria-label="убрать кнопку">✕</button></div>' +
-        '<div class="btype">' + [['url', '🔗 Ссылка'], ['go', '➡️ Пост'], ['doc', '📄 Документ'], ['pay', '💳 Оплата'], ['lead', '📝 Заявка'], ['fb', '💬 Отзыв'], ['file', '📎 Файл']].map(([k, t]) => '<button type="button" data-type="' + k + '" data-r="' + r + '" data-i="' + i + '" class="' + (b.t === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>' + valueField(b, r, i) + '</div>').join('') +
+        '<div class="btype">' + [['url', '🔗 Ссылка'], ['go', '➡️ Пост'], ['doc', '📄 Документ'], ['pay', '💳 Оплата'], ['lead', '📝 Заявка'], ['fb', '💬 Отзыв'], ['app', '🎮 Игра'], ['file', '📎 Файл']].map(([k, t]) => '<button type="button" data-type="' + k + '" data-r="' + r + '" data-i="' + i + '" class="' + (b.t === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>' + valueField(b, r, i) + '</div>').join('') +
       (row.length < 4 ? '<button type="button" class="chip" data-add="' + r + '">＋ кнопка рядом</button>' : '') + '</div>').join('')
       + '<button type="button" class="addb" id="bClear" data-clear="1">убрать все кнопки</button>'
       : '<p class="small muted" style="margin:2px">Кнопок нет. Кнопка может вести на ссылку, на другой пост бота (развилка), на документ, на оплату тарифа или отдавать файл.</p>';
@@ -2084,7 +2132,7 @@ function openPost(id, opt) {
           b.go = r.post.id; created.push(r.post.id);
         }
       }
-      const outRows = rows.map((row) => row.map((b) => b.t === 'go' ? { text: b.text, go: +b.go || null } : b.t === 'doc' ? { text: b.text, doc: b.doc } : b.t === 'lead' ? { text: b.text, lead: true } : b.t === 'fb' ? { text: b.text, fb: true } : b.t === 'pay' ? { text: b.text, pay: b.pay } : b.t === 'file' ? { text: b.text, file: b.file || null } : { text: b.text, url: b.url }));
+      const outRows = rows.map((row) => row.map((b) => b.t === 'go' ? { text: b.text, go: +b.go || null } : b.t === 'doc' ? { text: b.text, doc: b.doc } : b.t === 'lead' ? { text: b.text, lead: true } : b.t === 'fb' ? { text: b.text, fb: true } : b.t === 'app' ? { text: b.text, app: true } : b.t === 'pay' ? { text: b.text, pay: b.pay } : b.t === 'file' ? { text: b.text, file: b.file || null } : { text: b.text, url: b.url }));
       for (const b of outRows.flat()) { if (b.go === null && b.text) throw new Error('У кнопки «' + b.text + '» не выбран пост'); if (b.file === null) throw new Error('У кнопки «' + b.text + '» не выбран файл'); }
       const body = { title: $('fTitle').value.trim(), status: st.status, rows: outRows, once: $('fOnce').checked, files: st.files };
       if (!p.rich || st.editRich) body.md = ta.value;

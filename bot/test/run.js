@@ -5,7 +5,7 @@ import { migrate } from '../src/schema.js';
 import { makeCtx, handleUpdate, tick, clickRedirect, syncMenu } from '../src/core.js';
 import { parseWhen, fmtWhen } from '../src/time.js';
 import { saveBtnExtra, setMsgOff } from '../src/msgs.js';
-import { loadCfg, saveCfg, viewFor, isOpen, normalize } from '../src/appcfg.js';
+import { loadCfg, saveCfg, viewFor, isOpen, normalize, userMenu, appTrack } from '../src/appcfg.js';
 
 const calls = [];
 let failEmoji = false, fail403 = new Set(), fail429 = false, msgId = 1000;
@@ -1227,20 +1227,59 @@ step('технические аккаунты: разбор ника/ID, доб�
 step('расписание аппки: по умолчанию, открытие по дате, закрытие, проверка дат, чужие ключи');
 
 {
-  // кнопка «Игра» в меню: всем при public=true, админам всегда
+  // кнопка «Игра»: у админов всегда, у людей только после выбора трека и когда аппка открыта
   const menu = (from) => calls.slice(from).filter((c) => c.method === 'setChatMenuButton');
+  const D = C().db;
+  await D.run(`INSERT INTO users (tg_id, first_name, track, status, created_at) VALUES (9001, 'С треком', 'course', 'active', ?)`, [NOW]);
+  await D.run(`INSERT INTO users (tg_id, first_name, track, status, created_at) VALUES (9002, 'Без трека', NULL, 'active', ?)`, [NOW]);
   let n = calls.length;
   await saveCfg(C(), { public: false, items: {} });
   await syncMenu(C());
+  await userMenu(C(), 9001);
   let m = menu(n);
-  assert.ok(m.some((c) => !c.body.chat_id && c.body.menu_button.type === 'commands'), 'всем обычное меню, пока аппка закрыта');
+  assert.ok(m.some((c) => !c.body.chat_id && c.body.menu_button.type === 'commands'), 'общая кнопка меню обычная');
   assert.ok(m.some((c) => c.body.chat_id === 777 && c.body.menu_button.type === 'web_app' && c.body.menu_button.web_app.url === 'https://bot.test/app'), 'админу кнопка есть всегда');
+  assert.ok(m.some((c) => c.body.chat_id === 9001 && c.body.menu_button.type === 'commands'), 'пока аппка закрыта, у человека кнопки нет');
   n = calls.length;
   await saveCfg(C(), { public: true, items: {} });
-  await syncMenu(C());
+  await userMenu(C(), 9001); await userMenu(C(), 9002);
   m = menu(n);
-  assert.ok(m.some((c) => !c.body.chat_id && c.body.menu_button.type === 'web_app' && c.body.menu_button.text === 'Игра'), 'всем кнопка «Игра», когда аппка открыта');
+  assert.ok(m.some((c) => c.body.chat_id === 9001 && c.body.menu_button.type === 'web_app' && c.body.menu_button.text === 'Игра'), 'выбрал трек и аппка открыта: кнопка есть');
+  assert.ok(m.some((c) => c.body.chat_id === 9002 && c.body.menu_button.type === 'commands'), 'без выбранного трека кнопки нет');
+  assert.equal(appTrack('course'), 'mini'); assert.equal(appTrack('mat'), 'mat'); assert.equal(appTrack(null), null);
+  // выбор трека в боте включает кнопку сразу
+  n = calls.length;
+  await handleUpdate(C(), { callback_query: { id: 'cq9', from: { id: 9002, first_name: 'Без трека' }, message: { message_id: 1, chat: { id: 9002, type: 'private' } }, data: 'tr:mat' } });
+  assert.ok(menu(n).some((c) => c.body.chat_id === 9002 && c.body.menu_button.type === 'web_app'), 'после выбора трека кнопка появилась');
+  await D.run(`DELETE FROM users WHERE tg_id IN (9001, 9002)`);
+  await saveCfg(C(), { public: false, items: {} });
 }
-step('кнопка «Игра» в меню: всем при открытой аппке, админам всегда');
+step('кнопка «Игра»: админам всегда, людям после выбора трека и при открытой аппке');
+
+{
+  // панель: вкладка «Игра» и кнопка «Игра» в посте
+  const { handlePanelApi } = await import('../src/panel-api.js');
+  const { keyboard } = await import('../src/posts.js');
+  const crypto = await import('node:crypto');
+  const pp = new URLSearchParams({ auth_date: String(NOW), user: JSON.stringify({ id: 100, first_name: 'Админ' }) });
+  const dcs = [...pp.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, v]) => `${k}=${v}`).join('\n');
+  const secret = crypto.createHmac('sha256', 'WebAppData').update(env.BOT_TOKEN).digest();
+  pp.set('hash', crypto.createHmac('sha256', secret).update(dcs).digest('hex'));
+  const call = async (path, body) => { const req = new Request('https://bot.test/api/panel' + path, { method: body ? 'POST' : 'GET', headers: { 'x-init-data': pp.toString(), 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }); const r = await handlePanelApi(C(), req, new URL(req.url)); return r.json(); };
+  let g = await call('/game');
+  assert.equal(g.items.length, 2, 'в панели видны обе игры');
+  assert.equal(g.cfg.public, false);
+  g = await call('/game', { public: true, items: { poster: { mode: 'sched', from: NOW + 600, until: null }, fonts: { mode: 'closed' } } });
+  assert.equal(g.ok, true); assert.equal(g.cfg.public, true);
+  assert.equal(g.cfg.items.poster.from, NOW + 600);
+  g = await call('/game', { items: { poster: { mode: 'sched', from: NOW + 10, until: NOW + 5 } } });
+  assert.match(g.error, /позже/, 'панель не принимает закрытие раньше открытия');
+  await call('/game', { public: false, items: { poster: { mode: 'open' }, fonts: { mode: 'open' } } });
+  const np = await call('/post/new', { kind: 'node', md: 'Играем', status: 'active', rows: [[{ text: 'Открыть игру', app: true }]] });
+  assert.ok(np.post, 'пост с кнопкой «Игра» сохранился');
+  const kb = keyboard({ id: np.post.id, buttons: JSON.stringify(np.post.rows) }, 1, 'https://bot.test', {});
+  assert.equal(kb.inline_keyboard[0][0].web_app.url, 'https://bot.test/app', 'кнопка открывает аппку внутри Телеграма');
+}
+step('панель: расписание игр и кнопка «Игра» в посте');
 
 console.log('\nВсе сценарии прошли. Запросов к фейковому Telegram:', calls.length);

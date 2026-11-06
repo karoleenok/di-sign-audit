@@ -124,12 +124,11 @@ export async function tick(ctx, budget, queryBudget) {
 
 // ---------- меню: команды и кнопка «Игра» рядом со строкой ввода ----------
 // Зовём при каждом запуске бота и при смене «показывать всем»: ничего вручную делать не надо.
-// Админам кнопка есть всегда, остальным только когда аппка открыта для всех.
+// Админам кнопка есть всегда. Остальным она личная: появляется, когда человек выбрал трек и аппка открыта (см. userMenu).
 export async function syncMenu(ctx) {
   const btnOf = () => ({ type: 'web_app', text: 'Игра', web_app: { url: ctx.publicUrl + '/app' } });
-  const cfg = await loadCfg(ctx);
   await ctx.tg.call('setMyCommands', { commands: await userCommands(ctx) });
-  await ctx.tg.call('setChatMenuButton', { menu_button: ctx.publicUrl && cfg.public ? btnOf() : { type: 'commands' } }).catch(() => {});
+  await ctx.tg.call('setChatMenuButton', { menu_button: { type: 'commands' } }).catch(() => {});
   const admins = [...new Set([...envAdmins(ctx.env), ...(await ctx.db.all(`SELECT tg_id FROM admins`)).map((r) => r.tg_id)])];
   const ac = await adminCommands(ctx);
   for (const a of admins) {

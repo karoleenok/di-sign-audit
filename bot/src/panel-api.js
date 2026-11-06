@@ -11,6 +11,7 @@ import { onStart, docVars, consentView, backfillFb, loadFlow, normFlow, FLOW_OPT
 import { MSK, DAY } from './time.js';
 import { exportXlsx, sheetRows, LEAD_HEAD, REVIEW_HEAD } from './export.js';
 import { techSet, addTech, removeTech } from './tech.js';
+import { ITEMS as GAME_ITEMS, loadCfg, saveCfgAndMenu, viewFor as gameView } from './appcfg.js';
 import { saveMsgExtra, saveBtnExtra, setMsgOff, linksOf } from './msgs.js';
 import { listMsgs, saveMsg, resetMsg, btn, say, setMsgMedia, canMedia, msgInfo, loadMsgs } from './msgs.js';
 
@@ -554,6 +555,21 @@ async function panelRest(ctx, request, url, user, path, body) {
   }
 
   // ссылки на документы (политика, согласие, оферта) и данные владельца
+  // игра-прогрев: когда открыть и закрыть, показывать ли всем
+  if (path === '/game') {
+    const view = async () => {
+      const cfg = await loadCfg(ctx);
+      const n = async (t) => (await ctx.db.first(`SELECT COUNT(*) AS n FROM users WHERE track = ? AND status != 'blocked'`, [t])).n;
+      return { cfg: gameView(cfg, ctx.now, true), items: GAME_ITEMS, ready: { course: await n('course'), mat: await n('mat') } };
+    };
+    if (request.method === 'POST') {
+      const r = await saveCfgAndMenu(ctx, body);
+      if (r.error) return json({ error: r.error }, 400);
+      return json({ ok: true, ...(await view()) });
+    }
+    return json(await view());
+  }
+
   if (path === '/docs' && request.method === 'POST') {
     for (const k of ['policy', 'consent', 'offer', 'owner']) {
       if (body[k] === undefined) continue;
@@ -711,7 +727,7 @@ export async function cleanButtons(ctx, rowsIn, selfId) {
       const text = String(b.text || '').trim().slice(0, 60);
       let link = String(b.url || '').trim();
       const go = parseInt(b.go, 10) || null;
-      if (!text && !link && !go && !b.doc && !b.pay && !b.file && !b.lead && !b.fb) continue;
+      if (!text && !link && !go && !b.doc && !b.pay && !b.file && !b.lead && !b.fb && !b.app) continue;
       if (!text) return { error: 'У кнопки нет текста' };
       if (go) {
         if (go === selfId) return { error: `Кнопка «${text}» ведёт на этот же пост` };
@@ -723,6 +739,7 @@ export async function cleanButtons(ctx, rowsIn, selfId) {
       if (b.doc) { if (!DOCS[b.doc]) return { error: 'Неизвестный документ' }; r.push({ text, doc: b.doc }); continue; }
       if (b.lead) { r.push({ text, lead: true }); continue; }
       if (b.fb) { r.push({ text, fb: true }); continue; }
+      if (b.app) { r.push({ text, app: true }); continue; }
       if (b.pay) { const pay = ['curator', 'mentor'].includes(b.pay) ? b.pay : 'curator'; r.push({ text, pay }); continue; }
       if (/^t\.me\//i.test(link)) link = 'https://' + link;
       if (!/^https?:\/\/\S+$/i.test(link)) return { error: `Ссылка у кнопки «${text}» должна начинаться с https://` };

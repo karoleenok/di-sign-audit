@@ -8,7 +8,7 @@
 import http from 'node:http';
 import { checkInitData as __checkInit } from './panel-api.js';
 import { isAdmin as __isAdmin } from './admin.js';
-import { loadCfg as __loadCfg, saveCfg as __saveCfg, viewFor as __viewFor } from './appcfg.js';
+import { loadCfg as __loadCfg, saveCfgAndMenu as __saveCfg, viewFor as __viewFor, appTrack as __appTrack } from './appcfg.js';
 import __GATE from './workshop-gate.js';
 import net from 'node:net';
 import dns from 'node:dns';
@@ -81,9 +81,12 @@ const server = http.createServer(async (req, res) => {
       const __u = await __checkInit(String(req.headers['x-init-data'] || ''), env.BOT_TOKEN, Math.floor(Date.now() / 1000));
       if (!__u) return send(401, 'unauthorized', 'text/plain; charset=utf-8', { 'cache-control': 'no-store' });
       const __c = ctxFor(), __admin = await __isAdmin(__c, __u.id), __cfg = await __loadCfg(__c);
-      // не админам аппка открыта только когда админ включил «Показывать всем»
-      if (!__admin && !__cfg.public) return send(403, 'forbidden', 'text/plain; charset=utf-8', { 'cache-control': 'no-store' });
-      const __view = __viewFor(__cfg, Math.floor(Date.now() / 1000), __admin);
+      // не админам: аппка открыта, когда админ включил «Показывать всем», и только после выбора «мини-курс» или «материалы» в боте
+      const __row = await __c.db.first(`SELECT track FROM users WHERE tg_id = ?`, [__u.id]);
+      const __trk = __appTrack(__row && __row.track);
+      if (!__admin && !__cfg.public) return send(403, 'Игра пока закрыта. Мы напишем в боте, когда она откроется.', 'text/plain; charset=utf-8', { 'cache-control': 'no-store' });
+      if (!__admin && !__trk) return send(403, 'Сначала выбери в боте, что присылать: мини-курс или материалы. После этого игра откроется здесь.', 'text/plain; charset=utf-8', { 'cache-control': 'no-store' });
+      const __view = { ...__viewFor(__cfg, Math.floor(Date.now() / 1000), __admin), track: __trk };
       const __html = __appHtml().replace('/*__APPCFG__*/null', () => JSON.stringify(__view).replace(/</g, '\\u003c'));
       return send(200, __html, 'text/html; charset=utf-8', { 'cache-control': 'no-store' });
     }

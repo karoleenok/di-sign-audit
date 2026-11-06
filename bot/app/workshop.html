@@ -364,7 +364,8 @@ details a,.src a{color:var(--blue)}
 .fpo .fp-t,.fpo .fp-b{display:block;width:100%;margin:0;padding:calc(6*var(--u)) 0;border:0;border-radius:calc(14*var(--u));background:transparent;color:var(--ink);text-align:center;cursor:pointer;-webkit-tap-highlight-color:transparent}
 .fpo .fp-t{white-space:pre-line;font-size:calc(var(--fs,100)*var(--u));line-height:1.02;letter-spacing:-.01em;text-wrap:balance}
 .fpo .fp-b{font-size:calc(var(--bs,44)*var(--u));line-height:1.18;text-wrap:balance}
-.fpo .fp-t[aria-pressed="true"],.fpo .fp-b[aria-pressed="true"]{outline:calc(5*var(--u)) solid var(--pink);outline-offset:calc(8*var(--u))}
+.fpo .fp-t[aria-pressed="true"],.fpo .fp-b[aria-pressed="true"]{outline:calc(3*var(--u)) solid var(--pink);outline-offset:calc(10*var(--u))}
+.fpo.nofr .fp-t,.fpo.nofr .fp-b{outline:none!important}
 .szrow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:var(--s1);padding:var(--s1);border-radius:999px;background:var(--track)}
 .szrow button{min-height:44px;border:0;border-radius:999px;background:transparent;color:var(--ink);cursor:pointer;padding:0;font-family:var(--f-text);font-weight:500;line-height:1}
 .szrow button[aria-pressed="true"]{background:var(--ink);color:var(--cream)}
@@ -640,7 +641,7 @@ details a,.src a{color:var(--blue)}
         <button class="fp-b" id="f2b" type="button" data-role="b"></button>
       </div>
     </div>
-    <p class="lab" id="f2role"></p>
+    <div class="row-between" style="gap:var(--s3)"><p class="lab" id="f2role"></p><button class="chip" id="f2fr" type="button" aria-pressed="false">Без рамки</button></div>
     <div class="ribbon" id="f2r" role="group" aria-label="Шрифты"></div>
     <div class="verdict" id="f2v" hidden></div>
     <div class="dock" id="f2dock"><button class="btn primary" id="f2ok" type="button">Проверить</button></div>
@@ -757,7 +758,10 @@ function paintHome(){
   paintDone();paintLocks();
 }
 function route(){
-  var p=parse((location.hash||'').slice(1));
+  var p=parse((location.hash||'').slice(1)),mine=APPCFG&&APPCFG.track&&!APPCFG.admin?APPCFG.track:null;
+  if(mine&&p&&p.t!==mine){p.t=mine;try{history.replaceState(null,'','#'+mine+(p.m?'-'+p.m:''))}catch(e){}}
+  $('#swTrack').closest('.card').hidden=!!mine;
+  if(!p&&APPCFG&&APPCFG.track){TRACK=APPCFG.track;paintHome();go('home');return}
   if(!p){TRACK=null;cur='pick';show('pick');return}
   TRACK=p.t;paintHome();
   if(!p.m){cur='home';show('home');return}
@@ -1227,8 +1231,11 @@ function eDeal(){
   $('#f2brief').textContent='Подбери шрифты заголовка и текста. Тапни блок на постере, потом шрифт в ленте. Свайпни ленту, чтобы увидеть остальные.';
   $('#f2r').innerHTML=FONTS.map(function(f){return '<button class="fc" type="button" data-n="'+f.n+'" style="font-family:\''+f.n+'\','+f.fb+';font-weight:'+f.w+'">'+f.n+'</button>'}).join('');
   $('#f2v').hidden=true;$('#f2dock').hidden=false;
+  frame(!!F.nofr);
   ePaint();window.scrollTo(0,0);
 }
+function frame(off){$('#f2p').classList.toggle('nofr',off);$('#f2fr').setAttribute('aria-pressed',String(off))}
+$('#f2fr').addEventListener('click',function(){F.nofr=!F.nofr;haptic();frame(F.nofr)});
 function ePaint(){
   var r=ROUNDS[F.i],t=FD(E.t),b=FD(E.b);
   var th=$('#f2t'),bh=$('#f2b');
@@ -1252,7 +1259,7 @@ function judge(){
   return '';
 }
 $('#f2ok').addEventListener('click',function(){
-  if(F.busy)return;var bad=judge(),last=F.i===ROUNDS.length-1,v=$('#f2v');E.att++;haptic();
+  if(F.busy)return;var bad=judge(),last=F.i===ROUNDS.length-1,v=$('#f2v');E.att++;haptic();frame(true);
   function nxt(){return '<button class="btn primary" id="fNext" type="button">'+(last?'Итог':'Следующий постер')+'</button>'}
   function done(){F.busy=true;$('#f2dock').hidden=true;$('#fNext').addEventListener('click',function(){if(last)f3();else{F.i++;eDeal()}})}
   v.hidden=false;

@@ -2,6 +2,7 @@ import { ZONES, LEVELS } from './texts.js';
 import { say, btn, msg as msgText, delayOf, linksOf, CB_BTN, btnExtra, isOff } from './msgs.js';
 import { sendPost, recordDeliveries, loadDocs, sendButtonFile, resolveFork } from './posts.js';
 import { isAdmin } from './admin.js';
+import { userMenu } from './appcfg.js';
 
 const CONSENT_VERSION = 'v1';
 
@@ -119,6 +120,7 @@ export async function onStart(ctx, msg, payload) {
     }
     if (u.status === 'stopped' || u.status === 'blocked') await ctx.db.run(`UPDATE users SET status = 'new' WHERE tg_id = ?`, [from.id]);
   }
+  if (st.track) await userMenu(ctx, from.id); // выбрал трек ещё в аудите: кнопка «Игра» сразу
   // убираем саму команду /start и старые служебные сообщения (прошлое приветствие, вопросы, предложение теста)
   await delMsg(ctx, from.id, msg.message_id);
   await setUState(ctx, from.id, null);
@@ -637,6 +639,7 @@ export async function onUserCallback(ctx, cq) {
   if (d.startsWith('tr:')) {
     await answer();
     await ctx.db.run(`UPDATE users SET track = ? WHERE tg_id = ?`, [d.slice(3) === 'course' ? 'course' : 'mat', id]);
+    await userMenu(ctx, id);
     await done();
     return nextStep(ctx, await getUser(ctx, id));
   }
