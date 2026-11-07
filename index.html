@@ -182,9 +182,12 @@
 .kb-bar{display:flex;gap:4px}.kb-bar i{height:8px;border-radius:5px;background:#D8E2F6}.kb-bar i.on{background:var(--k-pr)}
 .kb-barl{display:flex;justify-content:space-between;font-size:11.5px;color:var(--k-soft);margin:6px 0 14px}
 .kb-works{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.kb-w{border:1.5px solid var(--k-line);border-radius:16px;padding:8px;display:flex;flex-direction:column;gap:5px;background:#fff}
+.kb-w{border:1.5px solid var(--k-line);border-radius:16px;padding:8px;display:flex;flex-direction:column;align-items:stretch;gap:5px;background:#fff;width:100%;min-width:0;margin:0;-webkit-appearance:none;appearance:none;-webkit-tap-highlight-color:transparent}
+.kb-w>b,.kb-w>small{display:block;width:100%;text-align:left}
 .kb-w.hot{border-color:#9DB5EC;box-shadow:0 8px 22px rgba(80,110,180,.14)}
-.kb-th{height:72px;border-radius:10px;display:grid;place-items:center;font-family:"Instrument Serif",serif;font-style:italic;font-size:22px;line-height:.85;text-align:center}
+.kb-th{height:72px;flex:0 0 72px;width:100%;align-self:stretch;border-radius:10px;display:grid;place-items:center;font-family:"Instrument Serif",serif;font-style:italic;font-size:22px;line-height:.85;text-align:center}
+.kt{display:grid;grid-template-columns:auto auto;gap:6px 8px;align-items:center}.kt i{display:block}.kt-b{width:34px;height:14px;border-radius:999px;background:#7F9DE0}.kt-s{width:26px;height:14px;border-radius:999px;background:#C9D6F2;position:relative}.kt-s:after{content:"";position:absolute;right:2px;top:2px;width:10px;height:10px;border-radius:50%;background:#fff}.kt-f{grid-column:1/-1;width:68px;height:14px;border-radius:5px;border:1.5px solid #B9C8EA;background:#fff}
+.ks{display:grid;grid-template-columns:repeat(3,6px) 1fr;gap:3px;width:78px;padding:5px;border-radius:7px;background:#fff;border:1px solid var(--k-line);align-content:start;height:50px}.ks i{display:block}.ks-d{width:5px;height:5px;border-radius:50%;background:#D8D2C8}.ks-h{grid-column:1/-1;height:7px;width:60%;border-radius:3px;background:#2C0D02;margin-top:4px}.ks-c{grid-column:1/-1;height:14px;border-radius:4px;background:#F3D6E1}
 .kw1{background:#F3D6E1;color:#8A4B63}.kw2{background:#EEF3FC}.kw3{background:#E3DAF4;color:#6A55A8}.kw4{background:#F7F5F2;border:1px solid var(--k-line)}.kw5{background:#FBEFD9;color:var(--k-body);font-family:"Inter Tight";font-style:normal;font-size:12px}.kw6{background:linear-gradient(135deg,#C9DAF5,#F3D6E1)}
 .kb-w b{font-size:13.5px;font-weight:500;line-height:1.2}.kb-w small{font-size:11.5px;color:var(--k-soft)}
 .kb-tag{align-self:flex-start;font-size:11px;color:var(--k-deep);background:var(--k-tint);border-radius:999px;padding:3px 8px;margin-top:2px}
@@ -810,7 +813,7 @@ function finish(){
   });
   const focus=(weakest.length?weakest:sorted.slice(0,3));
   const hits=new Set(); focus.forEach(k=>ZCH[k].forEach(c=>hits.add(c)));
-  const WORKS=[['Серия постеров','неделя 2 · главы 00–01','kw1','my<br>rule'],['UI-кит в Figma','неделя 3 · глава 02','kw2',''],['Фирменный стиль','неделя 8 · глава 03','kw3','K'],['Сайт для бренда','неделя 15 · главы 04, 05','kw4',''],['Кейсы и сайт-портфолио','неделя 17 · главы 06–08','kw5','кейс'],['Дипломный проект','неделя 18 · главы 09–10','kw6','✦']];
+  const WORKS=[['Серия постеров','неделя 2 · главы 00–01','kw1','my<br>rule'],['UI-кит в Figma','неделя 3 · глава 02','kw2','<span class="kt"><i class="kt-b"></i><i class="kt-s"></i><i class="kt-f"></i></span>'],['Фирменный стиль','неделя 8 · глава 03','kw3','K'],['Сайт для бренда','неделя 15 · главы 04, 05','kw4','<span class="ks"><i class="ks-d"></i><i class="ks-d"></i><i class="ks-d"></i><i class="ks-h"></i><i class="ks-c"></i></span>'],['Кейсы и сайт-портфолио','неделя 17 · главы 06–08','kw5','кейс'],['Дипломный проект','неделя 18 · главы 09–10','kw6','✦']];
   const plural=n=>n%10==1&&n%100!=11?'урок':n%10>=2&&n%10<=4&&(n%100<10||n%100>=20)?'урока':'уроков';
   $('works').innerHTML=WORKS.map((w,n)=>'<button type="button" class="kb-w" data-n="'+n+'" aria-expanded="false"><span class="kb-th '+w[2]+'">'+w[3]+'</span><b>'+w[0]+'</b><small>'+w[1]+'</small><span class="kb-wm">уроки <i></i></span></button>').join('')+'<div class="kb-wd" id="wd" hidden><div class="kb-wd-in" id="wdIn"></div></div>';
   const wd=$('wd'), wdIn=$('wdIn'); let wOpen=-1;
@@ -847,8 +850,12 @@ document.querySelectorAll('.kb-tabs button').forEach(b=>b.onclick=()=>{ document
 $('rdog').onclick=dogTap;
 $('share').onclick=async()=>{
   const r=window._result||{}; const text=r.leak?('Прошла аудит: моя главная утечка заказов — «'+r.leak.toLowerCase()+'». Я — «'+r.title+'». А у тебя?'):('Прошла аудит дизайнера: «'+r.title+'». А ты?');
-  try{ if(navigator.share){ await navigator.share({text,url:location.href}); return; } await navigator.clipboard.writeText(text+' '+location.href); $('shared').textContent='Текст скопирован — вставь в сторис или чат'; }
-  catch(e){ $('shared').textContent=text; }
+  const full=text+' '+location.href;
+  const copy=async()=>{ try{ if(navigator.clipboard&&navigator.clipboard.writeText){ await navigator.clipboard.writeText(full); return true; } }catch(e){}
+    try{ const t=document.createElement('textarea'); t.value=full; t.setAttribute('readonly',''); t.style.cssText='position:fixed;top:0;left:0;opacity:0;font-size:16px'; document.body.appendChild(t); t.select(); t.setSelectionRange(0,full.length); const ok=document.execCommand('copy'); t.remove(); return ok; }catch(e){ return false; } };
+  try{ if(navigator.share){ await navigator.share({text,url:location.href}); return; } }
+  catch(e){ if(e&&e.name==='AbortError') return; }
+  $('shared').textContent=(await copy())?'Текст скопирован — вставь в сторис или чат':text;
 };
 
 /* === Команда: лица-сторис === */
