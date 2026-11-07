@@ -579,7 +579,7 @@ function gState(r) {
 async function renderGame() {
   if (!GM) {
     $('body').innerHTML = '<p class="muted" style="margin-top:16px">Загружаю…</p>';
-    try { const d = await api('/game'); GM = { pub: !!d.cfg.public, items: {}, def: d.items, ready: d.ready, soon: d.cfg.soon || { mini: [], mat: [] }, menu: d.menu, pubUrl: d.pubUrl, busy: false }; d.items.forEach((it) => { const g = d.cfg.items[it.id] || {}; GM.items[it.id] = { mode: g.mode || 'open', from: g.from || null, until: g.until || null }; }); }
+    try { const d = await api('/game'); GM = { pub: !!d.cfg.public, items: {}, def: d.items, ready: d.ready, soon: d.cfg.soon || { mini: [], mat: [] }, links: d.cfg.links || { mini: [], mat: [] }, menu: d.menu, pubUrl: d.pubUrl, busy: false }; d.items.forEach((it) => { const g = d.cfg.items[it.id] || {}; GM.items[it.id] = { mode: g.mode || 'open', from: g.from || null, until: g.until || null }; }); }
     catch (e) { $('body').innerHTML = '<p class="note warn">' + esc(e.message) + '</p>'; return; }
   }
   const paint = () => {
@@ -597,6 +597,10 @@ async function renderGame() {
       [['mini', '🎓 Мини-курс'], ['mat', '📚 Месяц материалов']].map(([k, t]) => '<div class="small muted" style="margin:12px 0 2px"><b>' + t + '</b></div>' +
         GM.soon[k].map((x, i) => '<div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;padding-bottom:8px;border-bottom:1px solid var(--line)"><input type="text" maxlength="60" placeholder="Название" data-s="' + k + '" data-i="' + i + '" data-k="t" value="' + esc(x.t) + '"><div style="display:flex;gap:8px;align-items:center"><input type="date" data-s="' + k + '" data-i="' + i + '" data-k="d" value="' + esc(x.d || '') + '" style="flex:1;min-width:0"><button type="button" class="chip" data-sdel="' + k + ':' + i + '" aria-label="Убрать">Убрать</button></div></div>').join('') +
         (GM.soon[k].length < 8 ? '<button type="button" class="btn ghost" data-sadd="' + k + '" style="margin-top:8px;width:100%">＋ Добавить</button>' : '')).join('') + '</div>' +
+      '<div class="box"><b>Кнопки-ссылки на главном экране</b><div class="small muted" style="margin-top:4px">Появятся под играми, у каждого трека свои. Ссылка должна начинаться с https:// (t.me/… тоже подойдёт). До 6 кнопок.</div>' +
+      [['mini', '🎓 Мини-курс'], ['mat', '📚 Месяц материалов']].map(([k, t]) => '<div class="small muted" style="margin:12px 0 2px"><b>' + t + '</b></div>' +
+        GM.links[k].map((x, i) => '<div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;padding-bottom:8px;border-bottom:1px solid var(--line)"><input type="text" maxlength="40" placeholder="Текст кнопки, например «Чат потока»" data-l="' + k + '" data-i="' + i + '" data-k="t" value="' + esc(x.t) + '"><div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center"><input type="url" inputmode="url" autocapitalize="off" autocorrect="off" maxlength="500" placeholder="https://…" data-l="' + k + '" data-i="' + i + '" data-k="u" value="' + esc(x.u) + '" style="min-width:0"><button type="button" class="chip" data-ldel="' + k + ':' + i + '" aria-label="Убрать">Убрать</button></div></div>').join('') +
+        (GM.links[k].length < 6 ? '<button type="button" class="btn ghost" data-ladd="' + k + '" style="margin-top:8px;width:100%">＋ Кнопка-ссылка</button>' : '')).join('') + '</div>' +
       '<button type="button" class="btn" id="gSave" style="width:100%">Сохранить</button><div id="gMsg"></div>';
     $('gPub').onchange = async (e) => {
       const v = e.target.checked, since = Math.floor(Date.now() / 1000);
@@ -619,11 +623,15 @@ async function renderGame() {
     GM.def.forEach((it) => segBind('gm_' + it.id, (v) => { GM.items[it.id].mode = v; haptic(); paint(); }));
     $('body').querySelectorAll('input[data-g]').forEach((i) => { i.onchange = () => { GM.items[i.dataset.g][i.dataset.k] = gFromMsk(i.value); paint(); }; });
     $('body').querySelectorAll('input[data-s]').forEach((i) => { i.oninput = i.onchange = () => { GM.soon[i.dataset.s][+i.dataset.i][i.dataset.k] = i.dataset.k === 'd' ? (i.value || null) : i.value; }; });
+    $('body').querySelectorAll('input[data-l]').forEach((i) => { i.oninput = i.onchange = () => { GM.links[i.dataset.l][+i.dataset.i][i.dataset.k] = i.value; }; });
+    $('body').querySelectorAll('[data-ladd]').forEach((b) => { b.onclick = () => { GM.links[b.dataset.ladd].push({ t: '', u: '' }); haptic(); paint(); }; });
+    $('body').querySelectorAll('[data-ldel]').forEach((b) => { b.onclick = () => { const [k, i] = b.dataset.ldel.split(':'); GM.links[k].splice(+i, 1); haptic(); paint(); }; });
     $('body').querySelectorAll('[data-sadd]').forEach((b) => { b.onclick = () => { GM.soon[b.dataset.sadd].push({ t: '', d: null }); haptic(); paint(); }; });
     $('body').querySelectorAll('[data-sdel]').forEach((b) => { b.onclick = () => { const [k, i] = b.dataset.sdel.split(':'); GM.soon[k].splice(+i, 1); haptic(); paint(); }; });
     $('gSave').onclick = async () => {
       for (const it of GM.def) { const r = GM.items[it.id]; if (r.mode !== 'sched') continue; if (!r.from && !r.until) return gMsg(false, '«' + it.name + '»: выбери дату открытия или закрытия'); if (r.from && r.until && r.until <= r.from) return gMsg(false, '«' + it.name + '»: закрытие должно быть позже открытия'); }
-      const body = { items: {}, soon: GM.soon }; GM.def.forEach((it) => { const r = GM.items[it.id]; body.items[it.id] = { mode: r.mode, from: r.mode === 'sched' ? r.from : null, until: r.mode === 'sched' ? r.until : null }; });
+      for (const k of ['mini', 'mat']) for (const x of GM.links[k]) { const t = String(x.t || '').trim(), u = String(x.u || '').trim(); if (!t && !u) continue; if (!t) return gMsg(false, 'У кнопки со ссылкой «' + u.slice(0, 40) + '» нет текста'); if (!/^(https:\/\/|(www\.)?t\.me\/)\S+$/i.test(u)) return gMsg(false, 'Ссылка кнопки «' + t + '» должна начинаться с https://'); }
+      const body = { items: {}, soon: GM.soon, links: GM.links }; GM.def.forEach((it) => { const r = GM.items[it.id]; body.items[it.id] = { mode: r.mode, from: r.mode === 'sched' ? r.from : null, until: r.mode === 'sched' ? r.until : null }; });
       $('gSave').disabled = true;
       try { const d = await api('/game', body); GM = null; haptic(); await renderGame(); toast('Сохранено. Правила уже действуют'); }
       catch (e) { $('gSave').disabled = false; gMsg(false, e.message); }
@@ -1139,7 +1147,7 @@ function stepBtnEditor(el, rowsIn) {
     if (b.t === 'go') return '<select ' + a + ' data-f="go">' + optPosts(b.go) + '</select>';
     if (b.t === 'doc') return '<select ' + a + ' data-f="doc">' + Object.keys(S.docNames).map((k) => '<option value="' + k + '"' + (b.doc === k ? ' selected' : '') + '>' + esc(S.docNames[k]) + (S.docs[k] ? '' : ' — ссылка не задана') + '</option>').join('') + '</select>';
     if (b.t === 'file') return '<div class="small" style="margin:4px 2px">' + (b.file ? '📎 ' + esc(b.file.name || b.file.type) : 'файл не выбран') + '</div><button type="button" class="chip" data-pick="' + r + ':' + i + '">' + (b.file ? 'заменить файл' : '＋ выбрать файл') + '</button><p class="small muted" style="margin:4px 2px 0">По нажатию откроется страница с предпросмотром (картинка, видео, pdf, аудио) и кнопкой «Скачать». Файл до 1 ГБ.</p>';
-    if (b.t === 'app') return '<div class="small muted" style="margin:4px 2px">Кнопка открывает игру прямо в Телеграме. Работает, когда игра открыта для всех (вкладка «Игра»). Кто ещё не выбрал трек, увидит экран «Пройти аудит».</div>';
+    if (b.t === 'app') return '<div class="small muted" style="margin:4px 2px">Кнопка открывает аппку прямо в Телеграме. Работает, когда аппка открыта для всех (вкладка «Игра»). Кто ещё не выбрал трек, увидит экран «Пройти аудит».</div>';
     if (b.t === 'fb') return '<div class="small muted" style="margin:4px 2px">Человек нажимает — бот задаёт 2 вопроса про кабинет и присылает бонус за отзыв (посты «💬 Бонус за отзыв»). Один раз на человека.</div>';
     if (b.t === 'lead') return '<div class="small muted" style="margin:4px 2px">Человек нажимает — заявка сохраняется, тебе приходит карточка, ему «Заявка принята» (текст — во вкладке «Тексты»).</div>';
     if (b.t === 'pay') return '<select ' + a + ' data-f="pay">' + Object.keys(TARIFF).map((k) => '<option value="' + k + '"' + (b.pay === k ? ' selected' : '') + '>' + TARIFF[k] + '</option>').join('') + '</select>';
@@ -1149,16 +1157,17 @@ function stepBtnEditor(el, rowsIn) {
     el.innerHTML = (rows.length ? rows.map((row, r) => '<div class="brow"><div class="row" style="justify-content:space-between;margin-bottom:6px"><span class="small muted">Ряд ' + (r + 1) + '</span><span>' +
       (r > 0 ? '<button type="button" class="chip" data-up="' + r + '">↑</button> ' : '') + (r < rows.length - 1 ? '<button type="button" class="chip" data-down="' + r + '">↓</button>' : '') + '</span></div>' +
       row.map((b, i) => '<div class="bcard"><div style="display:grid;grid-template-columns:1fr auto;gap:6px"><input type="text" placeholder="Текст кнопки" maxlength="60" data-r="' + r + '" data-i="' + i + '" data-f="text" value="' + esc(b.text || '') + '"><button type="button" class="chip" data-del="' + r + ':' + i + '">✕</button></div>' +
-        '<div class="btype">' + [['url', '🔗 Ссылка'], ['go', '➡️ Пост'], ['doc', '📄 Документ'], ['pay', '💳 Оплата'], ['lead', '📝 Заявка'], ['fb', '💬 Отзыв'], ['app', '🎮 Игра'], ['file', '📎 Файл']].map(([k, t]) => '<button type="button" data-type="' + k + '" data-r="' + r + '" data-i="' + i + '" class="' + (b.t === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>' + field(b, r, i) + '</div>').join('') +
+        '<div class="btype">' + [['url', '🔗 Ссылка'], ['go', '➡️ Пост'], ['doc', '📄 Документ'], ['pay', '💳 Оплата'], ['lead', '📝 Заявка'], ['fb', '💬 Отзыв'], ['app', '📱 Аппка'], ['file', '📎 Файл']].map(([k, t]) => '<button type="button" data-type="' + k + '" data-r="' + r + '" data-i="' + i + '" class="' + (b.t === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>' + field(b, r, i) + '</div>').join('') +
       (row.length < 4 ? '<button type="button" class="chip" data-add="' + r + '">＋ кнопка рядом</button>' : '') + '</div>').join('') : '<p class="small muted" style="margin:2px">Своих кнопок нет.</p>') +
-      '<button type="button" class="btn ghost" data-newrow="1" style="margin-top:6px">＋ Кнопка</button>';
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px"><button type="button" class="btn ghost" data-newrow="1">＋ Кнопка</button><button type="button" class="btn ghost" data-newapp="1">📱 Кнопка аппки</button></div>';
   };
   el.addEventListener('input', sync); el.addEventListener('change', sync);
   el.addEventListener('click', (e) => {
     const t = e.target.closest('button'); if (!t) return; sync();
     if (t.dataset.pick) { const [r, i] = t.dataset.pick.split(':').map(Number); pickBtnFile((f) => { rows[r][i].file = f; draw(); }); return; }
-    if (t.dataset.type) { const b = rows[+t.dataset.r][+t.dataset.i]; b.t = t.dataset.type; if (b.t === 'doc' && !b.doc) b.doc = 'policy'; if (b.t === 'pay' && !b.pay) b.pay = 'curator'; }
+    if (t.dataset.type) { const b = rows[+t.dataset.r][+t.dataset.i]; b.t = t.dataset.type; if (b.t === 'doc' && !b.doc) b.doc = 'policy'; if (b.t === 'pay' && !b.pay) b.pay = 'curator'; if (b.t === 'app' && !String(b.text || '').trim()) b.text = 'Открыть аппку'; }
     else if (t.dataset.newrow) rows.push([{ t: 'url', text: '', url: '' }]);
+    else if (t.dataset.newapp) rows.push([{ t: 'app', text: 'Открыть аппку' }]);
     else if (t.dataset.add !== undefined) { const rr = rows[+t.dataset.add]; rr.push({ t: rr[rr.length - 1].t, text: '', url: '', go: '', doc: 'policy', pay: 'curator' }); }
     else if (t.dataset.del) { const [r, i] = t.dataset.del.split(':').map(Number); rows[r].splice(i, 1); if (!rows[r].length) rows.splice(r, 1); }
     else if (t.dataset.up) { const r = +t.dataset.up; [rows[r - 1], rows[r]] = [rows[r], rows[r - 1]]; }
@@ -2827,7 +2836,7 @@ function openPost(id, opt) {
       '<div class="brow"><div class="row" style="justify-content:space-between;margin-bottom:6px"><span class="small muted">' + (row.length > 1 ? 'Ряд ' + (r + 1) + ' · кнопки рядом' : 'Ряд ' + (r + 1)) + '</span><span>' +
       (r > 0 ? '<button type="button" class="chip" data-up="' + r + '" aria-label="выше">↑</button> ' : '') + (r < rows.length - 1 ? '<button type="button" class="chip" data-down="' + r + '" aria-label="ниже">↓</button>' : '') + '</span></div>' +
       row.map((b, i) => '<div class="bcard"><div style="display:grid;grid-template-columns:1fr auto;gap:6px"><input type="text" placeholder="Текст кнопки" maxlength="60" data-r="' + r + '" data-i="' + i + '" data-f="text" value="' + esc(b.text || '') + '"><button type="button" class="chip" data-del="' + r + ':' + i + '" aria-label="убрать кнопку">✕</button></div>' +
-        '<div class="btype">' + [['url', '🔗 Ссылка'], ['go', '➡️ Пост'], ['doc', '📄 Документ'], ['pay', '💳 Оплата'], ['lead', '📝 Заявка'], ['fb', '💬 Отзыв'], ['app', '🎮 Игра'], ['file', '📎 Файл']].map(([k, t]) => '<button type="button" data-type="' + k + '" data-r="' + r + '" data-i="' + i + '" class="' + (b.t === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>' + valueField(b, r, i) + '</div>').join('') +
+        '<div class="btype">' + [['url', '🔗 Ссылка'], ['go', '➡️ Пост'], ['doc', '📄 Документ'], ['pay', '💳 Оплата'], ['lead', '📝 Заявка'], ['fb', '💬 Отзыв'], ['app', '📱 Аппка'], ['file', '📎 Файл']].map(([k, t]) => '<button type="button" data-type="' + k + '" data-r="' + r + '" data-i="' + i + '" class="' + (b.t === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>' + valueField(b, r, i) + '</div>').join('') +
       (row.length < 4 ? '<button type="button" class="chip" data-add="' + r + '">＋ кнопка рядом</button>' : '') + '</div>').join('')
       + '<button type="button" class="addb" id="bClear" data-clear="1">убрать все кнопки</button>'
       : '<p class="small muted" style="margin:2px">Кнопок нет. Кнопка может вести на ссылку, на другой пост бота (развилка), на документ, на оплату тарифа или отдавать файл.</p>';

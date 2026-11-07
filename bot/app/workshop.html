@@ -60,6 +60,7 @@ img{display:block}
 .btn:active{transform:scale(.98)}
 .btn.primary{background:var(--ink);color:var(--bg)}
 .btn.ghost{background:transparent;border-color:var(--line);color:var(--ink)}
+.lnks{display:flex;flex-direction:column;gap:var(--s2)}.lnks a.btn{display:flex;align-items:center;justify-content:center;text-align:center;text-decoration:none;padding:var(--s3) var(--s5);line-height:1.25;overflow-wrap:anywhere}
 .btn[disabled]{background:var(--track);color:var(--ink-soft);cursor:not-allowed;transform:none}
 .btn.sm{min-height:44px;width:auto;padding:0 var(--s4);font-size:14px;border-radius:var(--r-m)}
 .chip{min-height:44px;padding:0 var(--s4);border-radius:999px;border:1px solid var(--line);background:transparent;font:500 14px/1 var(--f-text);cursor:pointer;display:inline-flex;align-items:center;gap:var(--s2)}
@@ -546,6 +547,7 @@ details a,.src a{color:var(--blue)}
       <img data-img="notebook" alt="">
     </button>
   </div>
+  <div id="linksBox" class="lnks" hidden></div>
   <div id="weekBox" hidden>
     <p class="lab" style="margin-bottom:8px">Что уйдёт на этой неделе</p>
     <ul class="soon week" id="weekList"></ul>
@@ -858,6 +860,17 @@ function paintHome(){
   $('#weekBox').hidden=!wk.length;
   $('#soonLab').textContent=wk.length?'Ещё в ноябре':'Дальше в ноябре';
   ul.parentNode.hidden=!rest.length;
+  var lk=(APPCFG&&APPCFG.links&&APPCFG.links[TRACK])||[],lb=$('#linksBox');
+  lb.textContent='';
+  lk.forEach(function(x){
+    if(!x||!/^https:\/\//i.test(x.u||''))return;
+    var a=document.createElement('a');a.className='btn ghost';a.href=x.u;a.target='_blank';a.rel='noopener noreferrer';a.textContent=x.t+' ↗';
+    a.addEventListener('click',function(e){
+      try{var w=window.Telegram&&window.Telegram.WebApp;if(w&&w.initData){e.preventDefault();if(/^https:\/\/t\.me\//i.test(x.u)&&w.openTelegramLink)w.openTelegramLink(x.u);else if(w.openLink)w.openLink(x.u);else window.open(x.u,'_blank')}}catch(_){}
+    });
+    lb.appendChild(a);
+  });
+  lb.hidden=!lb.children.length;
   paintDone();paintLocks();
 }
 var HELLO_KEY='dsu_hello_';

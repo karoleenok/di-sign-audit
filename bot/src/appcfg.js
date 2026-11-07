@@ -13,6 +13,20 @@ const SOON_DEFAULT = {
   mini: [{ t: 'Рандомайзер ТЗ от таксёнышей', d: null }, { t: 'Промпты для мокапов', d: null }, { t: 'Шаблон кейсов', d: null }],
   mat: [{ t: 'Мокап-пак, сделанный ИИ', d: null }, { t: 'Калькулятор цены и КП', d: null }, { t: 'Красные флаги в брифе', d: null }],
 };
+// Кнопки-ссылки на главном экране аппки: по треку, до 6 штук. Только https:// или t.me/, без javascript: и прочего
+export function normalizeLinks(v, fallback) {
+  const out = {};
+  const src = v && typeof v === 'object' ? v : {};
+  for (const k of ['mini', 'mat']) {
+    if (!Array.isArray(src[k])) { out[k] = clone(fallback[k]); continue; }
+    out[k] = src[k].slice(0, 6).map((x) => {
+      let u = String((x && x.u) || '').trim().slice(0, 500);
+      if (/^(www\.)?t\.me\//i.test(u)) u = 'https://' + u.replace(/^www\./i, '');
+      return { t: String((x && x.t) || '').replace(/\s+/g, ' ').trim().slice(0, 40), u: /^https:\/\/[^\s<>"']+$/i.test(u) ? u : '' };
+    }).filter((x) => x.t && x.u);
+  }
+  return out;
+}
 const clone = (o) => JSON.parse(JSON.stringify(o));
 const validDay = (s) => {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || ''));
@@ -33,7 +47,7 @@ export function normalizeSoon(v, fallback) {
 export function defaults() {
   const items = {};
   for (const it of ITEMS) items[it.id] = { mode: 'open', from: null, until: null };
-  return { public: false, items, soon: clone(SOON_DEFAULT) };
+  return { public: false, items, soon: clone(SOON_DEFAULT), links: { mini: [], mat: [] } };
 }
 
 const ts = (v) => {
@@ -48,6 +62,7 @@ export function normalize(raw) {
   const src = raw && typeof raw === 'object' ? raw : {};
   d.public = src.public === true;
   d.soon = normalizeSoon(src.soon, d.soon);
+  d.links = normalizeLinks(src.links, d.links);
   const items = src.items && typeof src.items === 'object' ? src.items : {};
   for (const it of ITEMS) {
     const r = items[it.id];
@@ -87,7 +102,7 @@ export async function loadCfg(ctx) {
 export async function saveCfg(ctx, input) {
   // что не прислали, то не трогаем: ползунок «показывать всем» шлёт только public, расписание шлёт public и items
   const cur = await loadCfg(ctx), inp = input && typeof input === 'object' ? input : {};
-  const cfg = normalize({ public: inp.public === undefined ? cur.public : inp.public, items: inp.items === undefined ? cur.items : inp.items, soon: inp.soon === undefined ? cur.soon : inp.soon });
+  const cfg = normalize({ public: inp.public === undefined ? cur.public : inp.public, items: inp.items === undefined ? cur.items : inp.items, soon: inp.soon === undefined ? cur.soon : inp.soon, links: inp.links === undefined ? cur.links : inp.links });
   const err = validate(cfg);
   if (err) return { error: err };
   await ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [KEY, JSON.stringify(cfg)]);
@@ -104,7 +119,7 @@ export function viewFor(cfg, now, admin) {
       ? { open, mode: r.mode, from: r.from, until: r.until, name: it.name, track: it.track }
       : { open, from: r.mode === 'sched' && !open && r.from && now < r.from ? r.from : null };
   }
-  return { admin: !!admin, now, public: cfg.public, items, soon: cfg.soon };
+  return { admin: !!admin, now, public: cfg.public, items, soon: cfg.soon, links: cfg.links };
 }
 
 // ---------- кнопка «Игра» у человека рядом со строкой ввода ----------

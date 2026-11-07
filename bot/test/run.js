@@ -143,6 +143,14 @@ assert.equal(u.zone, 'S'); assert.equal(u.status, 'active');
   await pass(500);
   assert.ok(!sentTo(500, c0).some((c) => c.method === 'sendMediaGroup' || /Подарок скоро/.test(c.body.text || '')), 'подарок выключен — не приходит и «скоро появится»');
   await db.run(`DELETE FROM settings WHERE key = 'flow:off'`); await db.run(`DELETE FROM users WHERE tg_id = 500`); await db.run(`DELETE FROM deliveries WHERE tg_id = 500`); }
+// кнопки-ссылки в аппке: только https, t.me дополняется, мусор и javascript: отбрасываются, не больше 6, виден ученику
+{ const r = await saveCfg(C(), { links: { mini: [{ t: 'Чат', u: 't.me/chat' }, { t: 'Плохая', u: 'javascript:alert(1)' }, { t: '', u: 'https://a.ru' }, { t: 'Гайд', u: ' https://a.ru/g ' }], mat: Array.from({ length: 9 }, (_, i) => ({ t: 'К' + i, u: 'https://a.ru/' + i })) } });
+  assert.deepEqual(r.cfg.links.mini, [{ t: 'Чат', u: 'https://t.me/chat' }, { t: 'Гайд', u: 'https://a.ru/g' }]);
+  assert.equal(r.cfg.links.mat.length, 6);
+  const v = viewFor(await loadCfg(C()), NOW, false);
+  assert.equal(v.links.mini.length, 2, 'ученик видит кнопки');
+  await saveCfg(C(), { items: {} }); assert.equal((await loadCfg(C())).links.mini.length, 2, 'сохранение расписания не стирает кнопки');
+  await saveCfg(C(), { links: { mini: [], mat: [] } }); }
 // 400: отказался от рекламы
 await msg(400, '/start audit_V_free'); await cb(400, 'c:pd'); await cb(400, 'c:ads:0');
 u = await db.first('SELECT * FROM users WHERE tg_id = 400');
