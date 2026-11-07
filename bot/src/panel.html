@@ -307,6 +307,10 @@ body.selmode .card[data-id].picked::before,body.selmode .fn[data-id].picked::bef
 
 /* новое «Расписание» */
 
+
+.ps .pst{display:flex;align-items:center;gap:8px}.ps .psn{flex:none;width:24px;height:24px;border-radius:99px;background:#eee8e3;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+.ps .ar2{flex:none;width:44px;height:44px;border:1.5px solid var(--line);background:var(--card);border-radius:14px;font-size:20px;line-height:1;cursor:pointer;color:var(--ink)}.ps .ar2:disabled{opacity:.35;cursor:default}
+.ps .psw{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.ps .psw select,.ps .psw input[type=time]{min-height:44px;width:auto;max-width:100%;font-size:16px;border:1.5px solid var(--line);border-radius:12px;padding:0 10px;background:var(--card)}
 .pl{border:1px solid var(--line);background:var(--card);border-radius:20px;padding:12px 14px;margin:0 0 14px}
 .pl-h{display:flex;align-items:center;gap:10px;width:100%;min-height:48px;background:none;border:0;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer}
 .pl-h b{font-size:17px;display:block}.pl-h .small{display:block}.pl-h>span:first-child{flex:1 1 0;min-width:0}.pl-h .ar{flex:none;font-size:18px;color:var(--soft)}
@@ -418,12 +422,12 @@ function offMin(p, ids, depth) { depth = depth || 0; if (!p || depth > 20) retur
     return Math.ceil((abs + d - tod) / 1440) * 1440 + tod - 600; };
   if (p.mode === 'timer') return timed(0);
   if (p.mode === 'after') return timed(offMin(ids[p.after], ids, depth + 1));
-  return p.day ? p.day * 1440 + timeMin(p.time) - 600 : 0; }
+  return p.day ? p.day * 1440 + timeMin(p.time) - 600 : (p.delay || 0); }
 const bucketDay = (p, ids) => p.mode === 'day' || !p.mode ? (p.day || 0) : Math.floor(Math.max(0, offMin(p, ids) + 600) / 1440);
 function whenShort(p, ids) {
   if (p.mode === 'timer') return '⏱ через ' + fmtDelay(p.delay) + ' после аудита' + (p.at ? ' в ' + p.at : '');
   if (p.mode === 'after') { const par = ids[p.after]; return '↳ через ' + fmtDelay(p.delay) + ' после «' + (par ? postName(par).slice(0, 26) : '#' + p.after) + '»'; }
-  return p.day === 0 ? 'сразу' : p.time;
+  return p.day === 0 ? (p.delay ? 'через ' + fmtDelay(p.delay) + ' после входа' : 'сразу') : p.time;
 }
 // получит ли этот пост выбранный человек
 function gets(p) {
@@ -475,7 +479,7 @@ function comesWhen(p) {
   if (p.kind === 'date') return fmtRun(p.run_at);
   if (p.mode === 'timer') return 'через ' + fmtDelay(p.delay) + ' после аудита' + (p.at ? ' в ' + p.at : '');
   if (p.mode === 'after') { const par = byIdMap()[p.after]; return 'через ' + fmtDelay(p.delay) + ' после «' + (par ? postName(par).slice(0, 26) : '#' + p.after) + '»'; }
-  return p.day === 0 ? 'сразу после входа' : 'на день ' + p.day + ' в ' + p.time;
+  return p.day === 0 ? (p.delay ? 'через ' + fmtDelay(p.delay) + ' после входа' : 'сразу после входа') : 'на день ' + p.day + ' в ' + p.time;
 }
 const sumLine = (p) => '<div class="sumln">придёт: ' + esc(whoOf(p)) + ', ' + esc(comesWhen(p)) + '</div>';
 function cardHtml(p, opts) {
@@ -1985,7 +1989,7 @@ function scWhen(p, ids) {
   if (p.kind === 'fb') return 'Когда оставил отзыв';
   if (p.mode === 'timer') return p.delay ? 'Через ' + fmtDelay(p.delay) + ' после аудита' + (p.at ? ', в ' + p.at : '') : 'Сразу после аудита' + (p.at ? ', в ' + p.at : '');
   if (p.mode === 'after') { const par = ids[p.after]; return 'Через ' + fmtDelay(p.delay) + ' после «' + (par ? postName(par).slice(0, 24) : '#' + p.after) + '»' + (p.at ? ', в ' + p.at : ''); }
-  return p.day === 0 ? 'Сразу' : 'В ' + p.time;
+  return p.day === 0 ? (p.delay ? 'Через ' + fmtDelay(p.delay) + ' после входа' : 'Сразу') : 'В ' + p.time;
 }
 function scCard(p, o) {
   o = o || {};
@@ -2017,19 +2021,38 @@ const PLAN = {
 };
 const planDay = (ymd, start) => Math.round((Date.UTC(+ymd.slice(0, 4), +ymd.slice(5, 7) - 1, +ymd.slice(8)) - Date.UTC(+start.slice(0, 4), +start.slice(5, 7) - 1, +start.slice(8))) / 864e5);
 const planPosts = (tr, day) => S.posts.filter((p) => p.kind === 'drip' && p.track === tr && (p.mode || 'day') === 'day' && Number(p.day) === day && p.status !== 'archived');
+const GAPS = [0, 5, 10, 15, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720];
+function slotSorted(ps, day) {
+  return ps.slice().sort((a, b) => (day === 0 ? (a.delay || 0) - (b.delay || 0) : timeMin(a.time) - timeMin(b.time)) || (a.pos || 0) - (b.pos || 0) || a.id - b.id);
+}
 function planSlot(tr, day, name) {
-  const ps = planPosts(tr, day), P = PLAN[tr];
+  const P = PLAN[tr], ps = slotSorted(planPosts(tr, day), day);
   const when = 'день ' + day + ' · ' + P.name.toLowerCase();
-  const hh = ps.map((p) => parseInt(String(p.time || '11:00').slice(0, 2), 10) || 11);
-  const nextTime = ps.length ? String(Math.min(20, Math.max(...hh) + 1)).padStart(2, '0') + ':00' : '11:00';
-  const list = ps.map((p) => '<div class="msg" style="cursor:default"><div class="t">' + esc(postName(p).slice(0, 56)) + '</div><div class="small muted">' + (p.status === 'active' ? 'включён' : p.status === 'draft' ? 'черновик' : 'выключен') + ' · ' + (day === 0 ? 'сразу' : 'в ' + esc(p.time || '11:00')) + '</div><div class="meta" style="margin-top:8px"><button type="button" class="chip" data-pso="' + p.id + '">Открыть</button><button type="button" class="chip" data-psw="' + p.id + '">' + (p.status === 'active' ? 'Выключить' : 'Включить') + '</button></div></div>').join('');
+  const offs = ps.map((p) => (day === 0 ? p.delay || 0 : timeMin(p.time)));
+  const gaps = ps.map((_, i) => (i === 0 ? 0 : Math.max(0, offs[i] - offs[i - 1])));
+  const base = ps.length ? (ps[0].time || '11:00') : '11:00';
+  const last = ps.length ? Math.min(20 * 60, offs[offs.length - 1] + 60) : 660;
+  const nextTime = ps.length ? String(Math.floor(last / 60)).padStart(2, '0') + ':' + String(last % 60).padStart(2, '0') : '11:00';
+  const save = async (ids, g, time) => { try { await api('/slot', { ids, gaps: g, day, time }); haptic('medium'); await reload(); planSlot(tr, day, name); } catch (e) { toast(e.message); } };
+  const gapSel = (i) => { const cur = gaps[i], opts = GAPS.includes(cur) ? GAPS : GAPS.concat(cur).sort((a, b) => a - b); return '<select class="pg" data-psg="' + i + '" aria-label="Пауза после предыдущего поста">' + opts.map((m) => '<option value="' + m + '"' + (m === cur ? ' selected' : '') + '>' + (m === 0 ? (day === 0 ? 'сразу вслед' : 'в то же время') : 'через ' + fmtDelay(m)) + '</option>').join('') + '</select>'; };
+  const list = ps.map((p, i) => '<div class="msg ps" style="cursor:default"><div class="pst"><span class="psn">' + (i + 1) + '</span><div class="t" style="flex:1;min-width:0">' + esc(postName(p).slice(0, 56)) + '</div>' +
+    '<button type="button" class="ar2" data-psu="' + i + '" aria-label="Поставить выше"' + (i === 0 ? ' disabled' : '') + '>↑</button><button type="button" class="ar2" data-psd="' + i + '" aria-label="Поставить ниже"' + (i === ps.length - 1 ? ' disabled' : '') + '>↓</button></div>' +
+    '<div class="small muted" style="margin:4px 0 8px">' + (p.status === 'active' ? 'включён' : p.status === 'draft' ? 'черновик' : 'выключен') + '</div>' +
+    '<div class="psw">' + (i === 0 ? (day === 0 ? '<span class="small">Первым: сразу, когда человек закончил вход</span>' : '<span class="small">Первым, в</span><input type="time" id="psTime" value="' + esc(base) + '" aria-label="Время первого поста">') : '<span class="small">Следом</span>' + gapSel(i) + '<span class="small muted">после предыдущего</span>') + '</div>' +
+    '<div class="meta" style="margin-top:8px"><button type="button" class="chip" data-pso="' + p.id + '">Открыть</button><button type="button" class="chip" data-psw="' + p.id + '">' + (p.status === 'active' ? 'Выключить' : 'Включить') + '</button></div></div>').join('');
   sheet('<div class="shd"><span class="pill">Урок · ' + esc(when) + '</span><button type="button" class="sx" id="psX" aria-label="закрыть">✕</button></div><h2>' + esc(name || '') + '</h2>' +
-    (ps.length ? '<p class="small muted">Постов на этот день: ' + ps.length + '. Все они уйдут в свой час, можно добавить ещё.</p>' + list : '<p class="small muted">Поста на этот день ещё нет. Откуда возьмём?</p>') +
+    (ps.length ? '<p class="small muted">Постов на этот день: ' + ps.length + '. Порядок меняй стрелками, паузу выбирай у каждого следующего поста.</p>' + list : '<p class="small muted">Поста на этот день ещё нет. Откуда возьмём?</p>') +
     '<div class="kinds"><button type="button" class="kind" id="psNew"><b>' + (ps.length ? '✏️ Написать ещё один' : '✏️ Написать новый') + '</b><span>' + (day === 0 ? 'День 0, сразу, когда человек закончил вход' : 'День ' + day + ', ' + nextTime) + ', трек «' + esc(P.name) + '» уже выставлены. Остаётся написать текст.</span></button>' +
     '<button type="button" class="kind" id="psPick"><b>📋 Взять готовый</b><span>Из тех, что уже есть в боте или в расписании. Перенесу его на день ' + day + '.</span></button></div>');
   $('psX').onclick = closeSheet;
+  const ids = ps.map((p) => p.id);
   document.querySelectorAll('[data-pso]').forEach((b) => b.onclick = () => { closeSheet(); openPost(+b.dataset.pso); });
   document.querySelectorAll('[data-psw]').forEach((b) => b.onclick = async () => { await scToggle(+b.dataset.psw); planSlot(tr, day, name); });
+  const swap = (i, k) => { const n = ids.slice(); [n[i], n[i + k]] = [n[i + k], n[i]]; save(n, gaps, base); };
+  document.querySelectorAll('[data-psu]').forEach((b) => b.onclick = () => swap(+b.dataset.psu, -1));
+  document.querySelectorAll('[data-psd]').forEach((b) => b.onclick = () => swap(+b.dataset.psd, 1));
+  document.querySelectorAll('[data-psg]').forEach((el) => el.onchange = () => { const g = gaps.slice(); g[+el.dataset.psg] = +el.value; save(ids, g, base); });
+  if ($('psTime')) $('psTime').onchange = () => { if ($('psTime').value) save(ids, gaps, $('psTime').value); };
   $('psNew').onclick = () => openNew({ kind: 'drip', mode: 'day', day, time: nextTime, track: tr, title: ps.length ? '' : (name || '') });
   $('psPick').onclick = () => pickExisting('drip', day, { track: tr, plan: true });
 }
@@ -2809,7 +2832,7 @@ function openPost(id, opt) {
       }
       if (p.kind === 'drip') {
         body.mode = st.mode; body.catchup = $('fCatch').checked;
-        if (st.mode === 'day') { body.day = st.day; body.time = st.day > 0 ? ($('fTime').value || st.time) : '00:00'; }
+        if (st.mode === 'day') { body.day = st.day; body.time = st.day > 0 ? ($('fTime').value || st.time) : '00:00'; body.delay_min = st.day === 0 && p.mode === 'day' ? (p.delay || 0) : 0; }
         if (st.mode === 'timer') { body.delay_min = delayOf('tNum', 'tUnit'); body.at = $('tAtOn').checked ? $('tAt').value : null; }
         if (st.mode === 'after') { if (!$('aPost')) throw new Error('Нет поста, после которого отправлять'); body.after_id = +$('aPost').value; body.delay_min = delayOf('aNum', 'aUnit'); body.at = $('aAtOn').checked ? $('aAt').value : null; }
       }

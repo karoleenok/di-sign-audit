@@ -65,6 +65,36 @@ for (const w of [390, 320]) {
   await db.run(`INSERT INTO posts (kind, audience, track, day, send_time, status, text, created_by, created_at, mode, delay_min) VALUES ('drip', 'all', 'course', ?, '12:00', 'paused', ?, 1, ?, 'day', 0)`, [ix, 'Второй пост урока ' + w, Math.floor(Date.now() / 1000)]);
   await page.reload(); await page.waitForSelector('.pl-r');
   assert.match(await page.locator('.pl-r').nth(ix).textContent(), /1 из 2/, 'в строке видно: включён один из двух');
+  // порядок и паузы прямо в окне дня
+  await page.locator('.pl-r').nth(ix).click(); await page.waitForSelector('.ps');
+  assert.equal(await page.locator('.ps').count(), 2, 'оба поста дня в списке');
+  assert.ok(await noscroll(page), 'нет горизонтального скролла со списком и паузами');
+  if (w === 390) { await page.waitForTimeout(400); await page.screenshot({ path: OUT + '/sched-slot.png' }); }
+  const two = async () => db.all(`SELECT id, send_time, pos FROM posts WHERE track = 'course' AND day = ? AND kind = 'drip' AND status != 'archived' ORDER BY send_time, pos`, [ix]);
+  const before2 = await two();
+  await page.selectOption('[data-psg="1"]', '30'); await page.waitForTimeout(900); await page.waitForSelector('.ps');
+  const mid2 = await two();
+  assert.deepEqual(mid2.map((r) => r.send_time), ['11:00', '11:30'], 'пауза 30 минут: второй в 11:30');
+  assert.deepEqual(mid2.map((r) => r.id), before2.map((r) => r.id), 'порядок остался');
+  await page.click('[data-psd="0"]'); await page.waitForTimeout(900); await page.waitForSelector('.ps');
+  const after2 = await two();
+  assert.deepEqual(after2.map((r) => r.id), [mid2[1].id, mid2[0].id], 'посты поменялись местами');
+  assert.deepEqual(after2.map((r) => r.send_time), ['11:00', '11:30'], 'время осталось на местах, поменялись посты');
+  await page.fill('#psTime', '09:00'); await page.locator('#psTime').dispatchEvent('change'); await page.waitForTimeout(900); await page.waitForSelector('.ps');
+  assert.deepEqual((await two()).map((r) => r.send_time), ['09:00', '09:30'], 'время первого сдвигает и второй');
+  await page.click('#sheet .sx'); await page.waitForTimeout(300);
+  // день 0: пауза хранится как «через N минут после входа»
+  await db.run(`DELETE FROM posts WHERE text LIKE 'День ноль %'`);
+  for (const k of [0, 1]) await db.run(`INSERT INTO posts (kind, audience, track, day, send_time, status, text, created_by, created_at, mode, delay_min, pos) VALUES ('drip', 'all', 'mat', 0, '00:00', 'paused', ?, 1, ?, 'day', 0, ?)`, ['День ноль ' + k + ' ' + w, Math.floor(Date.now() / 1000), k]);
+  await page.click('[data-plt="mat"]'); await page.reload(); await page.waitForSelector('.pl-r');
+  if (!(await page.locator('[data-plt="mat"].on').count())) await page.click('[data-plt="mat"]');
+  await page.locator('.pl-r').first().click(); await page.waitForSelector('.ps');
+  assert.equal(await page.locator('.ps').count(), 2, 'день 0: два поста');
+  await page.selectOption('[data-psg="1"]', '30'); await page.waitForTimeout(900);
+  const d0 = await db.all(`SELECT mode, day, delay_min FROM posts WHERE track = 'mat' AND day = 0 AND text LIKE ? ORDER BY delay_min`, ['День ноль % ' + w]);
+  assert.deepEqual(d0.map((r) => [r.mode, r.day, r.delay_min]), [['day', 0, 0], ['day', 0, 30]], 'день 0: второй через 30 минут после входа');
+  await page.click('#sheet .sx'); await page.waitForTimeout(300);
+  await page.click('[data-plt="course"]');
   await page.click('#plT'); assert.equal(await page.locator('.pl-r').count(), 0, 'памятка сворачивается'); await page.click('#plT'); await page.waitForSelector('.pl-r');
   assert.equal(await page.locator('.sc-entry .sc-step').count(), 0, 'вход свёрнут по умолчанию');
   await page.click('#scEntryT'); await page.waitForSelector('.sc-entry .sc-step');

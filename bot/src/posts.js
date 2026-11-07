@@ -124,7 +124,8 @@ export function dueSql(post) {
   if (post.mode === 'after') return withTime(`(SELECT d2.sent_at FROM deliveries d2 WHERE d2.post_id = ${Number(post.after_id) || 0} AND d2.tg_id = u.tg_id AND d2.ok = 1)`);
   const todDay = timeSec(post.send_time);
   const S = COHORT[post.track] || 0;
-  if (Number(post.day) === 0) return S ? `MAX(u.joined_at, ${S + (todDay || 11 * 3600)})` : `u.joined_at`;
+  // день 0: сразу после входа; пауза delay_min — «через N минут после входа» (второй и третий пост дня 0)
+  if (Number(post.day) === 0) return S ? `MAX(u.joined_at + ${delay}, ${S + (todDay || 11 * 3600) + delay})` : delay ? `(u.joined_at + ${delay})` : `u.joined_at`;
   const A = S ? `MAX(u.joined_at, ${S})` : `u.joined_at`;
   return `(((${A} + ${MSK}) / ${DAY}) * ${DAY} - ${MSK} + ${Number(post.day) * DAY} + ${todDay})`;
 }
@@ -220,7 +221,7 @@ export function offsetMin(p, byId, depth = 0) {
   if (p.mode === 'timer') return timed(0);
   if (p.mode === 'after') return timed(offsetMin(byId[p.after_id], byId, depth + 1));
   const day = Number(p.day) || 0;
-  if (day === 0) return 0;
+  if (day === 0) return Number(p.delay_min) || 0;
   const t = timeSec(p.send_time) / 60;
   return day * 1440 + t - 600;
 }

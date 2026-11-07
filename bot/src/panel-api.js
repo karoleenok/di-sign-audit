@@ -143,7 +143,7 @@ export async function handlePanelApi(ctx, request, url) {
 }
 
 // какие запросы можно отменить (меняют посты, тексты, порядок, документы)
-const UNDO_RX = /^\/(swap|bulk|post\/new|post\/\d+|post\/\d+\/(move|copy|restore)|msg\/[A-Za-z_]+|flow|cohort|docs|reorder|path\/scaffold)$/;
+const UNDO_RX = /^\/(swap|bulk|post\/new|post\/\d+|post\/\d+\/(move|copy|restore)|msg\/[A-Za-z_]+|flow|cohort|slot|docs|reorder|path\/scaffold)$/;
 const SNAP_KEYS = `key LIKE 'msg:%' OR key LIKE 'msgx:%' OR key LIKE 'flow:%' OR key LIKE 'doc:%' OR key LIKE 'cohort:%'`;
 async function takeSnap(ctx) {
   return JSON.stringify({ posts: await ctx.db.all(`SELECT * FROM posts`), settings: await ctx.db.all(`SELECT key, value FROM settings WHERE ${SNAP_KEYS}`) });
@@ -160,7 +160,7 @@ async function undoLabel(ctx, path, body) {
   if (m) { const i = msgInfo(m[1]); return 'текст «' + (i ? i.title : m[1]).slice(0, 40) + '»'; }
   if (path === '/swap') return 'порядок постов';
   if (path === '/bulk') return ({ active: 'включить', paused: 'на паузу', archived: 'в архив', copy: 'дублировать' }[body.action] || 'действие') + ': постов ' + ((body.ids || []).length);
-  return path === '/path/scaffold' ? 'новый путь из соцсетей' : path === '/flow' ? 'порядок шагов входа' : path === '/docs' ? 'документы' : path === '/cohort' ? 'дата старта потока' : 'перенос поста';
+  return path === '/path/scaffold' ? 'новый путь из соцсетей' : path === '/flow' ? 'порядок шагов входа' : path === '/docs' ? 'документы' : path === '/cohort' ? 'дата старта потока' : path === '/slot' ? 'порядок и паузы постов дня' : 'перенос поста';
 }
 async function pushUndo(ctx, snap, label, user) {
   await ctx.db.run(`INSERT INTO undo_log (snap, label, by_id, by_name, at) VALUES (?, ?, ?, ?, ?)`, [snap, label, user.id, user.first_name || '', ctx.now]);
@@ -278,6 +278,11 @@ async function panelRest(ctx, request, url, user, path, body) {
       if (body.mode !== 'day') {
         const dm = parseInt(body.delay_min, 10);
         if (!(dm >= 0 && dm <= 365 * 1440)) return json({ error: 'Время — от 0 минут до 365 дней' }, 400);
+        put('delay_min', dm);
+      } else {
+        // в режиме «в день ленты» пауза нужна только дню 0; при переходе из другого режима старую паузу не тащим
+        const dm = body.delay_min !== undefined ? parseInt(body.delay_min, 10) : (p.mode === 'day' || !p.mode ? (p.delay_min || 0) : 0);
+        if (!(dm >= 0 && dm <= 3 * 1440)) return json({ error: 'Пауза — от 0 минут до 3 дней' }, 400);
         put('delay_min', dm);
       }
       if (body.mode === 'after') {
@@ -540,6 +545,29 @@ async function panelRest(ctx, request, url, user, path, body) {
     const put = (k, v) => ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [k, JSON.stringify(v || '')]);
     await put('cohort:course', body.course); await put('cohort:mat', body.mat);
     return json({ ok: true, cohort: await loadCohorts(ctx.db) });
+  }
+
+  // порядок постов одного дня и паузы между ними: первый — в своё время, остальные — через N минут после предыдущего
+  if (path === '/slot' && request.method === 'POST') {
+    const ids = (Array.isArray(body.ids) ? body.ids : []).map((x) => parseInt(x, 10));
+    const day = parseInt(body.day, 10);
+    if (!ids.length || ids.length > 30 || new Set(ids).size !== ids.length || ids.some((x) => !(x > 0))) return json({ error: 'Непонятно, какие посты' }, 400);
+    if (!(day >= 0 && day <= 365)) return json({ error: 'День — от 0 до 365' }, 400);
+    const rows = await ctx.db.all(`SELECT id, kind FROM posts WHERE id IN (${ids.map(() => '?').join(',')})`, ids);
+    if (rows.length !== ids.length || rows.some((r) => r.kind !== 'drip')) return json({ error: 'Посты ленты не найдены' }, 404);
+    const gaps = ids.map((_, i) => (i === 0 ? 0 : Math.max(0, parseInt((body.gaps || [])[i], 10) || 0)));
+    if (gaps.some((g) => g > 3 * 1440)) return json({ error: 'Пауза — не больше 3 дней' }, 400);
+    const t0 = day > 0 ? pad(body.time) : '00:00';
+    if (!t0) return json({ error: 'Время в формате 11:00' }, 400);
+    const base = parseInt(t0.slice(0, 2), 10) * 60 + parseInt(t0.slice(3), 10);
+    let off = 0;
+    for (let i = 0; i < ids.length; i++) {
+      off += gaps[i];
+      if (day > 0 && base + off > 1439) return json({ error: 'Посты не помещаются в один день: после ' + t0 + ' остаётся слишком мало времени. Уменьши паузы или поставь первый раньше' }, 400);
+      const m = base + off, hhmm = String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+      await ctx.db.run(`UPDATE posts SET mode = 'day', day = ?, send_time = ?, delay_min = ?, after_id = NULL, at_time = NULL, run_at = NULL, pos = ? WHERE id = ?`, [day, day > 0 ? hhmm : '00:00', day === 0 ? off : 0, i + 1, ids[i]]);
+    }
+    return json({ ok: true });
   }
 
   // порядок и включение шагов входа
