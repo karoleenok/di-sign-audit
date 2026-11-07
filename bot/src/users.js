@@ -109,14 +109,14 @@ export async function onStart(ctx, msg, payload) {
   let u = await getUser(ctx, from.id);
   if (!u) {
     await ctx.db.run(
-      `INSERT INTO users (tg_id, first_name, username, level_raw, level, zone, source, track, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)`,
-      [from.id, from.first_name || null, from.username || null, st.levelRaw, normLevel(st.levelRaw), st.zone, st.source, st.track, ctx.now],
+      `INSERT INTO users (tg_id, first_name, username, level_raw, level, zone, source, track, track_at, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)`,
+      [from.id, from.first_name || null, from.username || null, st.levelRaw, normLevel(st.levelRaw), st.zone, st.source, st.track, st.track ? ctx.now : null, ctx.now],
     );
   } else {
     // пришёл ещё раз: обновим результат теста, если он новый
     if (st.zone || st.levelRaw || st.track) {
-      await ctx.db.run(`UPDATE users SET zone = COALESCE(?, zone), level_raw = COALESCE(?, level_raw), level = COALESCE(?, level), source = COALESCE(?, source), track = COALESCE(?, track), username = COALESCE(?, username) WHERE tg_id = ?`,
-        [st.zone, st.levelRaw, normLevel(st.levelRaw), st.source, st.track, from.username || null, from.id]);
+      await ctx.db.run(`UPDATE users SET zone = COALESCE(?, zone), level_raw = COALESCE(?, level_raw), level = COALESCE(?, level), source = COALESCE(?, source), track = COALESCE(?, track), track_at = CASE WHEN ? IS NOT NULL AND COALESCE(track, '') != ? THEN ? ELSE track_at END, username = COALESCE(?, username) WHERE tg_id = ?`,
+        [st.zone, st.levelRaw, normLevel(st.levelRaw), st.source, st.track, st.track, st.track, ctx.now, from.username || null, from.id]);
     }
     if (u.status === 'stopped' || u.status === 'blocked') await ctx.db.run(`UPDATE users SET status = 'new' WHERE tg_id = ?`, [from.id]);
   }
@@ -642,7 +642,7 @@ export async function onUserCallback(ctx, cq) {
   }
   if (d.startsWith('tr:')) {
     await answer();
-    await ctx.db.run(`UPDATE users SET track = ? WHERE tg_id = ?`, [d.slice(3) === 'course' ? 'course' : 'mat', id]);
+    { const tr = d.slice(3) === 'course' ? 'course' : 'mat'; await ctx.db.run(`UPDATE users SET track = ?, track_at = CASE WHEN COALESCE(track, '') != ? THEN ? ELSE track_at END WHERE tg_id = ?`, [tr, tr, ctx.now, id]); }
     await userMenu(ctx, id);
     await done();
     return nextStep(ctx, await getUser(ctx, id));

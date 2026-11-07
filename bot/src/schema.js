@@ -149,6 +149,8 @@ export const MIGRATIONS = [
   [`ALTER TABLE posts ADD COLUMN at_time TEXT`],
   // v9: у постов «в день ленты» пауза после входа (delay_min) теперь значит что-то только у дня 0; старые хвосты от прошлых режимов обнуляем
   [`UPDATE posts SET delay_min = 0 WHERE kind = 'drip' AND (mode IS NULL OR mode = 'day')`],
+  // v10: когда человек выбрал трек (прошёл аудит или нажал в боте): уроки мини-курса и материалов считаются от этого момента, а не от первого входа из соцсетей
+  [`ALTER TABLE users ADD COLUMN track_at INTEGER`],
 ];
 
 // Обновить базу при первом запуске после выкладки новой версии (один раз на процесс)

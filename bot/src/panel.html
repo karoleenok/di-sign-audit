@@ -1245,17 +1245,18 @@ function studentSeq() {
   addMsg(fromAudit ? 'helloTest' : 'hello');
   fl.order.forEach((k) => {
     if (fl.off.includes(k)) return;
-    if (/^post:\d+$/.test(k)) { const p = S.posts.find((x) => x.id === +k.slice(5)); if (p && p.status === 'active') seq.push({ post: p }); return; }
+    if (/^post:\d+$/.test(k)) { const p = S.posts.find((x) => x.id === +k.slice(5)); if (p && p.status === 'active' && !(fromAudit && p.who === 'new')) seq.push({ post: p }); return; }
     if (fromAudit && (k === 'askTrack' || k === 'testOffer')) return;
     addMsg(k);
   });
   const okSt = (p) => p.status === 'active' || !!view.stAll;
-  const mine = (p) => (p.track || 'all') === 'all' || p.track === t;
+  // из соцсетей аудит не пройден: трека нет, у человека только то, что стоит «Всем»
+  const mine = (p) => (p.track || 'all') === 'all' || (fromAudit && p.track === t);
   const off = (p) => p.status === 'active' ? '' : ' · сейчас выключен, ученик его не получит';
   if (fromAudit) S.posts.filter((p) => p.kind === 'gift' && okSt(p) && (p.track || 'all') !== (t === 'mat' ? 'course' : 'mat') ).forEach((p) => seq.push({ post: p, note: 'подарок после теста' + off(p) }));
-  if (!fl.off.includes('sched')) addMsg(t === 'mat' ? 'schedMat' : 'schedCourse');
+  if (fromAudit && !fl.off.includes('sched')) addMsg(t === 'mat' ? 'schedMat' : 'schedCourse');
   const ids = byIdMap();
-  S.posts.filter((p) => p.kind === 'drip' && okSt(p) && mine(p)).sort((a, b) => offMin(a, ids) - offMin(b, ids) || a.pos - b.pos || a.id - b.id).forEach((p) => seq.push({ post: p, day: bucketDay(p, ids), when: scWhen(p, ids) + off(p) }));
+  S.posts.filter((p) => p.kind === 'drip' && okSt(p) && mine(p)).sort((a, b) => offMin(a, ids) - offMin(b, ids) || a.pos - b.pos || a.id - b.id).forEach((p) => seq.push({ post: p, day: bucketDay(p, ids), when: scWhen(p, ids) + off(p), note: fromAudit ? '' : 'этот пост получит и человек без аудита: у него стоит «Всем»' }));
   S.posts.filter((p) => p.kind === 'date' && okSt(p) && mine(p)).sort((a, b) => (a.run_at || 9e12) - (b.run_at || 9e12)).forEach((p) => seq.push({ post: p, note: 'в конкретную дату: ' + fmtRun(p.run_at) + ' · аудит не нужен' + off(p) }));
   S.posts.filter((p) => p.kind === 'fb' && okSt(p) && mine(p)).forEach((p) => seq.push({ post: p, note: 'бонус, когда человек оставил отзыв о кабинете' + off(p) }));
   // ответы на кнопки: сразу после поста, где есть такая кнопка
@@ -1287,6 +1288,7 @@ function studentHtml() {
     h += '<button type="button" class="jump" data-jump="' + (x.post ? 'p:' + x.post.id : 'k:' + x.key) + '">↪ где это в пути</button>';
   }
   if (!n) h += '<div class="stdiv">нажми «Дальше», чтобы увидеть первое сообщение</div>';
+  if (n >= seq.length && (S.runSrc || 'site') !== 'audit') h += '<div class="stdiv">Дальше человек проходит аудит и возвращается в бота. Переключи вверху на «после аудита»: там программа и уроки.</div>';
   return h + '</div><div class="btns two"><button class="btn ghost" type="button" data-strest="1">Сначала</button><button class="btn" type="button" data-stnext="1">' + (n >= seq.length ? 'Конец пути' : 'Дальше ▸ ' + n + '/' + seq.length) + '</button></div>';
 }
 function pathTop() {
@@ -2406,7 +2408,7 @@ function scStudent() {
     const src = S.runSrc || 'site', t = view.track;
     const seg = (attr, opts, cur) => '<div class="seg sm" style="margin:0 0 8px">' + opts.map(([k, n]) => '<button type="button" ' + attr + '="' + k + '" class="' + (cur === k ? 'on' : '') + '">' + n + '</button>').join('') + '</div>';
     sheet('<div class="shd"><span class="pill">Как ученик</span><button type="button" class="sx" id="stX" aria-label="закрыть">✕</button></div><h2>Бот глазами <i>ученика</i></h2>' +
-      seg('data-rsrc', [['site', '🌱 из соцсетей'], ['audit', '✅ после аудита']], src) + seg('data-ftrk', [['course', '🎓 мини-курс'], ['mat', '📚 материалы']], t) + '<button type="button" class="chip" id="stAll" style="margin:0 0 10px">' + (view.stAll ? '✓ Показаны и выключенные посты' : 'Показать и выключенные посты') + '</button>' + studentHtml());
+      seg('data-rsrc', [['site', '🌱 из соцсетей'], ['audit', '✅ после аудита']], src) + (src === 'audit' ? seg('data-ftrk', [['course', '🎓 мини-курс'], ['mat', '📚 материалы']], t) : '') + '<p class="small muted" style="margin:0 0 10px">' + (src === 'audit' ? 'Человек прошёл аудит и вернулся в бот: бот знает, что он выбрал. Дальше рассказ о программе и первый урок.' : 'Человек пришёл из соцсетей и аудит ещё не проходил: мини-курса и материалов у него нет. Он видит приветствие и выбирает: экскурсия, аудит или тарифы.') + '</p><button type="button" class="chip" id="stAll" style="margin:0 0 10px">' + (view.stAll ? '✓ Показаны и выключенные посты' : 'Показать и выключенные посты') + '</button>' + studentHtml());
     $('stAll').onclick = () => { view.stAll = !view.stAll; view.step = 0; draw(); };
     $('stX').onclick = closeSheet;
     document.querySelectorAll('#sheet [data-rsrc]').forEach((b) => b.onclick = () => { S.runSrc = b.dataset.rsrc; view.step = 0; draw(); });

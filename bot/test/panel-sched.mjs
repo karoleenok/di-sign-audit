@@ -183,6 +183,12 @@ for (const w of [390, 320]) {
   const RUN = Math.floor(Date.now() / 1000) + 5 * 86400;
   await db.run(`INSERT INTO posts (kind, audience, track, day, send_time, status, text, created_by, created_at, mode, delay_min, run_at) VALUES ('date', 'all', 'all', 0, '11:00', 'active', ?, 1, ?, 'day', 0, ?)`, [`Анонс эфира в конкретную дату ${w}`, RUN, RUN]);
   await page.reload(); await page.waitForSelector('#scStud'); await page.click('#scStud'); await page.waitForSelector('[data-stnext]');
+  // из соцсетей: трека нет, выбора мини-курс/материалы нет; после аудита выбор появляется
+  assert.equal(await page.locator('#sheet [data-ftrk]').count(), 0, 'из соцсетей нет выбора трека');
+  assert.match(await page.textContent('#sheet'), /аудит ещё не проходил/);
+  await page.click('#sheet [data-rsrc="audit"]'); await page.waitForSelector('#sheet [data-ftrk]');
+  assert.match(await page.textContent('#sheet'), /прошёл аудит и вернулся/);
+  await page.click('#sheet [data-rsrc="site"]'); await page.waitForTimeout(200);
   for (let i = 0; i < 80 && await page.locator('[data-stnext]').count(); i++) await page.click('[data-stnext]');
   const stTxt = await page.textContent('#sheet');
   assert.match(stTxt, /в конкретную дату/); assert.match(stTxt, new RegExp('Анонс эфира в конкретную дату ' + w));

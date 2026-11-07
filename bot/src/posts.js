@@ -108,6 +108,8 @@ export async function loadCohorts(db) {
 export const isStreamPost = (p) => p.kind === 'drip' && (p.mode || 'day') === 'day' && !!COHORT[p.track];
 export const catchesUp = (p) => !!p.catchup || isStreamPost(p);
 export function dueSql(post) {
+  // уроки трека (мини-курс, материалы) считаются от выбора трека: человек из соцсетей входит раньше, чем проходит аудит
+  const J = post.track === 'course' || post.track === 'mat' ? 'MAX(u.joined_at, COALESCE(u.track_at, 0))' : 'u.joined_at';
   const dmin = Number(post.delay_min) || 0;
   const delay = dmin * 60;
   const tod = post.at_time && /^\d{1,2}:\d{2}$/.test(post.at_time) ? timeSec(post.at_time) : null;
@@ -122,14 +124,14 @@ export function dueSql(post) {
     return `((${B} + ${MSK} - ${tod} + ${DAY} - 1) / ${DAY} * ${DAY} + ${tod} - ${MSK})`;
   };
   // по таймеру: через N минут после входа
-  if (post.mode === 'timer') return withTime('u.joined_at');
+  if (post.mode === 'timer') return withTime(J);
   // после другого поста: через N минут после того, как этот человек получил тот пост
   if (post.mode === 'after') return withTime(`(SELECT d2.sent_at FROM deliveries d2 WHERE d2.post_id = ${Number(post.after_id) || 0} AND d2.tg_id = u.tg_id AND d2.ok = 1)`);
   const todDay = timeSec(post.send_time);
   const S = COHORT[post.track] || 0;
   // день 0: сразу после входа; пауза delay_min — «через N минут после входа» (второй и третий пост дня 0)
-  if (Number(post.day) === 0) return S ? `MAX(u.joined_at + ${delay}, ${S + (todDay || 11 * 3600) + delay})` : delay ? `(u.joined_at + ${delay})` : `u.joined_at`;
-  const A = S ? `MAX(u.joined_at, ${S})` : `u.joined_at`;
+  if (Number(post.day) === 0) return S ? `MAX(${J} + ${delay}, ${S + (todDay || 11 * 3600) + delay})` : delay ? `(${J} + ${delay})` : J;
+  const A = S ? `MAX(${J}, ${S})` : J;
   return `(((${A} + ${MSK}) / ${DAY}) * ${DAY} - ${MSK} + ${Number(post.day) * DAY} + ${todDay})`;
 }
 export function timeSec(s) {

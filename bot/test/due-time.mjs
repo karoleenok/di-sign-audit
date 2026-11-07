@@ -40,6 +40,14 @@ assert.ok(!isStreamPost({ ...LATE, mode: 'timer' }), 'таймер не пост
 const NOW = U(2026, 11, 9, 12, 5);
 assert.deepEqual((await dueUsers(db, LATE, NOW, 10)).map((r) => r.tg_id), [2], 'пост создан позже срока: ранний получает без переключателя, поздний (вход 20 нояб) ещё нет');
 assert.deepEqual((await dueUsers(db, { ...LATE, track: 'all' }, NOW, 10)).map((r) => r.tg_id), [], 'пост трека «для всех» без переключателя опоздавшим не уходит');
+// из соцсетей: вошёл 3 нояб, аудит и выбор трека 20 нояб -> уроки считаются от 20 нояб, а не от 3
+await db.run(`INSERT INTO users (tg_id, status, created_at, joined_at, track, track_at) VALUES (4, 'active', 0, ?, 'course', ?)`, [U(2026, 11, 3, 9, 0), U(2026, 11, 20, 14, 0)]);
+setCohorts({});
+assert.equal(await dueU(P(4), 4), U(2026, 11, 24, 11, 0), 'вошёл 3 нояб, выбрал трек 20 нояб: день 4 = 24 нояб');
+assert.equal(await dueU(P(0), 4), U(2026, 11, 20, 14, 0), 'день 0 сразу после выбора трека');
+assert.equal(await dueU({ ...P(4), track: 'all' }, 4), U(2026, 11, 7, 11, 0), 'пост «для всех» считается от входа');
+assert.equal(await dueU({ mode: 'timer', delay_min: 60, track: 'course' }, 4), U(2026, 11, 20, 15, 0), 'таймер поста трека — от выбора трека');
+setCohorts({ course: '2026-11-06', mat: '' });
 setCohorts({});
 console.log('✓ старт потока: ранние ждут дату, поздние считают от входа');
 process.exit(0);
