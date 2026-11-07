@@ -36,7 +36,7 @@ await page.waitForSelector('.card');
 await page.screenshot({ path: OUT + '/panel-1-feed.png', fullPage: true });
 const days = await page.$$eval('.list[data-day]', (ls) => ls.map((l) => [l.dataset.day, l.children.length]));
 assert.deepEqual(days.slice(0, 5), [['0', 2], ['1', 2], ['2', 2], ['3', 1], ['4', 1]]);
-assert.match(await page.textContent('.list[data-day="0"]'), /через 2 ч после входа/, 'пост по таймеру — в дне 0 с подписью');
+assert.match(await page.textContent('.list[data-day="0"]'), /через 2 ч после аудита/, 'пост по таймеру — в дне 0 с подписью');
 step('лента по дням: ' + JSON.stringify(days.slice(0, 5)));
 
 // 3. деления на начинающих и продолжающих в панели больше нет
@@ -106,7 +106,7 @@ await page.waitForSelector('.sheet.on'); await page.waitForTimeout(300);
 await page.click('#fMode button[data-v="after"]');
 await page.selectOption('#aPost', { label: await page.$eval('#aPost option', () => [...document.querySelectorAll('#aPost option')].find((o) => /Через 2 часа/.test(o.textContent)).textContent) });
 await page.fill('#aNum', '3'); await page.selectOption('#aUnit', '60');
-assert.match(await page.textContent('#aHint'), /Через 3 ч после того, как человек получил «Через 2 часа»/);
+assert.match(await page.textContent('#whenSum'), /Придёт через 3 ч после поста «Через 2 часа»/);
 await page.screenshot({ path: OUT + '/panel-11-after.png' });
 await page.click('#bSave'); await page.waitForTimeout(500);
 let mrow = await db.first(`SELECT mode, delay_min, after_id FROM posts WHERE text LIKE 'Контент-план%'`);
@@ -240,7 +240,7 @@ await page.click('#newPost'); await page.waitForSelector('.kind');
 await page.screenshot({ path: OUT + '/panel-10-kinds.png' });
 await page.click('.kind[data-k="date"]'); await page.waitForSelector('#fMd');
 await page.fill('#fMd', 'Кто ты? Выбери **вариант**');
-await page.fill('#fRun', '2026-12-03T11:30');
+await page.locator('#pDate .dd').fill('2026-12-03'); await page.locator('#pDate .dtm').selectOption('11:30');
 await page.click('#bRow'); await page.fill('#bEd input[data-f="text"]', 'Начинаю с нуля');
 await page.click('#bEd button[data-type="go"]');
 await page.selectOption('#bEd select[data-f="go"]', 'new');
