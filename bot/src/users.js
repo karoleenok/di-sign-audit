@@ -129,17 +129,30 @@ export async function onStart(ctx, msg, payload) {
   const name = from.first_name || 'друг';
   // зона из теста запоминается только как отметка «прошёл тест» — посты и подарки по зонам не делим
   await pauseFor(ctx, from.id, st.zone ? 'helloTest' : 'hello');
-  await tech(ctx, from.id, say(ctx, from.id, st.zone ? 'helloTest' : 'hello', { имя: name }, await openKb(ctx, u && u.track)));
+  if (st.zone && u && u.track) {
+    // из аудита с выбранным треком: бот сам называет выбор и спрашивает, всё ли верно; дальше вход идёт по нажатию кнопки
+    await tech(ctx, from.id, say(ctx, from.id, 'helloTest', { имя: name, трек: await trackName(ctx, u.track) }, await trackConfirmKb(ctx)));
+    return;
+  }
+  await tech(ctx, from.id, say(ctx, from.id, st.zone ? 'helloTest' : 'hello', { имя: name, трек: '' }, await openKb(ctx, u && u.track)));
   return nextStep(ctx, u);
 }
 
+// как назвать выбранный трек в тексте («бесплатный мини-курс», «полезные материалы»): берём подписи кнопок выбора
+export async function trackName(ctx, tr) {
+  const t = await btn(ctx, tr === 'course' ? 'trackCourse' : 'trackMat');
+  return t.charAt(0).toLowerCase() + t.slice(1);
+}
+async function trackConfirmKb(ctx) {
+  return { reply_markup: kb([[{ text: await btn(ctx, 'trackConfirmBtn'), callback_data: 'tc:ok' }], [{ text: await btn(ctx, 'trackChangeBtn'), callback_data: 'tc:chg' }]]) };
+}
 // Пошаговый вход:
 //   согласие на данные -> согласие на рассылку -> уровень (если не пришёл из аудита) -> имя -> контакт (Telegram / телефон / почта)
 //   -> отзыв о прототипе кабинета (по желанию, за бонус) -> мини-курс или материалы (если не выбрал в аудите)
 //   -> (тест, если не проходил) -> подарок -> пост-расписание по треку -> дальше лента
 // ---------- порядок шагов входа (меняется в панели: Сценарий → Вход в бот) ----------
 export const FLOW_STEPS = ['consentPd', 'consentAds', 'askName', 'askContact', 'fbOffer', 'askTrack', 'testOffer'];
-export const FLOW_OPTIONAL = ['askName', 'askContact', 'fbOffer', 'askTrack', 'testOffer', 'sched']; // эти можно выключить
+export const FLOW_OPTIONAL = ['askName', 'askContact', 'fbOffer', 'askTrack', 'testOffer', 'sched', 'gift']; // эти можно выключить
 // свой пост, вставленный в сценарий входа новым шагом: ключ «post:<id>»
 export const isPostStep = (k) => /^post:\d+$/.test(String(k));
 export function normFlow(order, off) {
@@ -245,7 +258,8 @@ const STEP_RUN = {
 // показать шаг входа админу «как есть» (для предпросмотра полного пути): те же тексты и кнопки, но ничего не меняем в анкете
 export async function previewStep(ctx, id, k, u = {}) {
   const name = u.first_name || 'друг';
-  if (k === 'hello' || k === 'helloTest') return say(ctx, id, k, { имя: name }, await openKb(ctx, u.track));
+  if (k === 'helloTest') return say(ctx, id, k, { имя: name, трек: await trackName(ctx, u.track || 'course') }, await trackConfirmKb(ctx));
+  if (k === 'hello') return say(ctx, id, k, { имя: name }, await openKb(ctx, u.track));
   if (k === 'consentPd') { const { vars, extra } = await consentView(ctx); return say(ctx, id, 'consentPd', vars, extra); }
   if (k === 'consentAds') return say(ctx, id, 'consentAds', {}, { reply_markup: kb([[{ text: await btn(ctx, 'consentAdsYes'), callback_data: 'c:ads:1' }, { text: await btn(ctx, 'consentAdsNo'), callback_data: 'c:ads:0' }]]) });
   if (k === 'askLevel') return say(ctx, id, 'askLevel', {}, { reply_markup: kb([[{ text: await btn(ctx, 'levelBtnStart'), callback_data: 'lv:start' }], [{ text: await btn(ctx, 'levelBtnPro'), callback_data: 'lv:pro' }]]) });
@@ -475,6 +489,7 @@ async function notifyAdmins(ctx, u) {
 }
 
 async function sendGift(ctx, u, pauseMs) {
+  if ((await loadFlow(ctx)).off.includes('gift')) return; // подарок выключен в панели
   const gifts = await ctx.db.all(
     `SELECT * FROM posts WHERE kind = 'gift' AND status = 'active'
        AND (track = 'all' OR track = ?)
@@ -638,6 +653,17 @@ export async function onUserCallback(ctx, cq) {
     await answer();
     await ctx.db.run(`UPDATE users SET fb_skip = 1 WHERE tg_id = ?`, [id]);
     await done();
+    return nextStep(ctx, await getUser(ctx, id));
+  }
+  if (d === 'tc:ok' || d === 'tc:chg') {
+    await answer();
+    let tr = u.track;
+    if (d === 'tc:chg' && tr) {
+      tr = tr === 'course' ? 'mat' : 'course';
+      await ctx.db.run(`UPDATE users SET track = ?, track_at = ? WHERE tg_id = ?`, [tr, ctx.now, id]);
+      await userMenu(ctx, id);
+    }
+    await done(d === 'tc:chg' ? 'trackChanged' : null, { трек: await trackName(ctx, tr || 'course') });
     return nextStep(ctx, await getUser(ctx, id));
   }
   if (d.startsWith('tr:')) {

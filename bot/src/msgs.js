@@ -23,7 +23,10 @@ export const MSG = {
   hello: ['hello', 'Приветствие (пришёл без теста)',
     'Привет, {имя}! Это бот Di Sign University 🐾\n\nЗдесь будут полезные материалы для дизайнеров и новости об обучении.', ['имя']],
   helloTest: ['hello', 'Приветствие (пришёл из теста)',
-    'Привет, {имя}! Вижу, аудит пройден 🐾\nПодарок по итогам теста уже готов.', ['имя']],
+    'Привет, {имя}! Поздравляю с прохождением аудита 🐾\n\nВижу, ты выбрал: {трек}. Подтверждаешь или хочешь поменять?', ['имя', 'трек']],
+  trackConfirmBtn: ['hello', 'Кнопка «подтверждаю» (выбор из аудита)', 'Подтверждаю', [], true],
+  trackChangeBtn: ['hello', 'Кнопка «хочу поменять» (выбор из аудита)', 'Хочу поменять', [], true],
+  trackChanged: ['hello', 'Ответ после смены выбора из аудита', 'Отлично, обновила информацию ✨ Теперь тебе будет приходить: {трек}.', ['трек']],
 
   consentPd: ['consent', 'Просьба о согласии на обработку данных',
     'Чтобы присылать материалы, нам нужно твоё согласие на обработку персональных данных: имя, ник и id в Telegram, телефон или почта (если оставишь), ответы на вопросы бота и отзывы.\n\nПолитика обработки данных: {политика}\nТекст согласия: {согласие}', ['политика', 'согласие']],
@@ -134,7 +137,7 @@ export async function loadMsgs(ctx) {
 
 // ---------- пауза перед сообщением и кнопки-ссылки (отдельно от текста) ----------
 // Сколько секунд бот «печатает» перед служебным сообщением
-export const DEFAULT_DELAY = { hello: 0.6, helloTest: 0.6, consentPd: 0.9, askLevel: 0.7, testOffer: 0.8, noGift: 0.8, consentAds: 1.0, adsYes: 0.5, adsNo: 0.5, levelChanged: 0.5, askName: 0.7, askContact: 0.7, askPhone: 0.4, askEmail: 0.4, fbOffer: 0.9, fbQ1: 0.5, fbQ2: 0.6, fbThanks: 0.6, askTrack: 0.7, schedCourse: 0.9, schedMat: 0.9 };
+export const DEFAULT_DELAY = { hello: 0.6, helloTest: 0.6, trackChanged: 0.5, consentPd: 0.9, askLevel: 0.7, testOffer: 0.8, noGift: 0.8, consentAds: 1.0, adsYes: 0.5, adsNo: 0.5, levelChanged: 0.5, askName: 0.7, askContact: 0.7, askPhone: 0.4, askEmail: 0.4, fbOffer: 0.9, fbQ1: 0.5, fbQ2: 0.6, fbThanks: 0.6, askTrack: 0.7, schedCourse: 0.9, schedMat: 0.9 };
 async function extraOf(ctx, key) { await loadMsgs(ctx); return (ctx._msgx && ctx._msgx[key]) || {}; }
 export async function delayOf(ctx, key) {
   const x = await extraOf(ctx, key);
@@ -211,9 +214,9 @@ export async function saveMsgExtra(ctx, key, { delay, links, post } = {}) {
 }
 
 // Встроенные кнопки шага: что можно скрыть и какая кнопка какой callback отдаёт
-export const CB_BTN = { 'c:pd': 'consentPdBtn', 'c:ads:1': 'consentAdsYes', 'c:ads:0': 'consentAdsNo', 'ct:tg': 'contactTg', 'ct:phone': 'contactPhone', 'ct:email': 'contactEmail', 'fb:yes': 'fbYes', 'fb:no': 'fbNo', 'n:ok': 'nameOk', 'tr:course': 'trackCourse', 'tr:mat': 'trackMat' };
-const NO_HIDE = ['consentPdBtn', 'consentAdsYes', 'consentAdsNo']; // без них нет согласия — прятать нельзя
-const BTN_GROUPS = [['contactTg', 'contactPhone', 'contactEmail'], ['fbYes', 'fbNo'], ['trackCourse', 'trackMat']];
+export const CB_BTN = { 'c:pd': 'consentPdBtn', 'c:ads:1': 'consentAdsYes', 'c:ads:0': 'consentAdsNo', 'ct:tg': 'contactTg', 'ct:phone': 'contactPhone', 'ct:email': 'contactEmail', 'fb:yes': 'fbYes', 'fb:no': 'fbNo', 'n:ok': 'nameOk', 'tr:course': 'trackCourse', 'tr:mat': 'trackMat', 'tc:ok': 'trackConfirmBtn', 'tc:chg': 'trackChangeBtn' };
+const NO_HIDE = ['consentPdBtn', 'consentAdsYes', 'consentAdsNo', 'trackConfirmBtn', 'trackChangeBtn']; // без них нет согласия — прятать нельзя
+const BTN_GROUPS = [['contactTg', 'contactPhone', 'contactEmail'], ['fbYes', 'fbNo'], ['trackCourse', 'trackMat'], ['trackConfirmBtn', 'trackChangeBtn']];
 // служебные ответы, которые можно выключить (остальные нужны для закона и работы бота)
 export const OFFABLE = ['adsYes', 'unknown', 'leadThanks', 'leadAgain', 'adsNo', 'fbThanks', 'fbNoBonus', 'noGift'];
 export async function isOff(ctx, key) { return OFFABLE.includes(key) && !!(await extraOf(ctx, key)).off; }

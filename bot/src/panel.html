@@ -2408,7 +2408,7 @@ function scEntryRows() {
       return;
     }
     if (soc && src === 'site' && (k === 'fbOffer' || k === 'askTrack')) return;
-    if (k === 'testOffer' && src === 'audit') { add('gift', '🎁 Подарок после теста', false, { chip: ['Ниже', 'tpl'] }); return; }
+    if (k === 'testOffer' && src === 'audit') { const go = fl.off.includes('gift'); add('gift', '🎁 Подарок после теста', go, { sw: true, chip: go ? ['Выключен', 'off'] : ['Ниже', 'tpl'] }); return; }
     if (!ENTRY[k]) return;
     add(k, ENTRY[k][0], fl.off.includes(k), { sw: opt.includes(k) });
   });

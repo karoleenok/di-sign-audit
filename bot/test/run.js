@@ -125,11 +125,24 @@ assert.match(lastText(300), /обращаться/, 'после согласий
 // прошёл тест и вернулся по ссылке из теста
 { const c0 = calls.length;
   await msg(300, '/start audit_S_pro');
-  assert.ok(sentTo(300, c0).some((c) => c.method === 'sendMediaGroup'), 'после теста пришёл общий подарок (зона не важна)');
-  assert.match(sentTo(300, c0)[0].body.text, /аудит пройден/);
+  const hi = sentTo(300, c0)[0];
+  assert.match(hi.body.text, /Поздравляю с прохождением аудита[\s\S]*ты выбрал: полезные материалы/, 'бот сам называет выбор из аудита');
+  assert.deepEqual(hi.body.reply_markup.inline_keyboard.flat().map((b) => b.callback_data), ['tc:ok', 'tc:chg']);
+  assert.ok(!sentTo(300, c0).some((c) => c.method === 'sendMediaGroup'), 'пока не подтвердил — подарка нет');
+  await cb(300, 'tc:chg');
+  assert.ok(sentTo(300, c0).some((c) => /обновила информацию[\s\S]*бесплатный мини-курс/.test(c.body.text || '')), 'после смены — ответ с новым выбором');
+  assert.equal((await db.first('SELECT track FROM users WHERE tg_id = 300')).track, 'course');
+  assert.ok(sentTo(300, c0).some((c) => c.method === 'sendMediaGroup'), 'после подтверждения пришёл подарок (зона не важна)');
   assert.ok(!sentTo(300, c0).some((c) => /ты с нами|ты прошёл аудит|обращаться/.test(c.body.text || '')), 'повторно вход не спрашивает'); }
 u = await db.first('SELECT * FROM users WHERE tg_id = 300');
 assert.equal(u.zone, 'S'); assert.equal(u.status, 'active');
+// подарок после теста выключен ползунком: приходит всё остальное, подарка нет
+{ await db.run(`INSERT INTO settings (key, value) VALUES ('flow:off', '["gift"]') ON CONFLICT(key) DO UPDATE SET value = excluded.value`);
+  await msg(500, '/start audit_P_start'); await cb(500, 'c:pd'); await cb(500, 'c:ads:1');
+  const c0 = calls.length;
+  await pass(500);
+  assert.ok(!sentTo(500, c0).some((c) => c.method === 'sendMediaGroup' || /Подарок скоро/.test(c.body.text || '')), 'подарок выключен — не приходит и «скоро появится»');
+  await db.run(`DELETE FROM settings WHERE key = 'flow:off'`); await db.run(`DELETE FROM users WHERE tg_id = 500`); await db.run(`DELETE FROM deliveries WHERE tg_id = 500`); }
 // 400: отказался от рекламы
 await msg(400, '/start audit_V_free'); await cb(400, 'c:pd'); await cb(400, 'c:ads:0');
 u = await db.first('SELECT * FROM users WHERE tg_id = 400');
