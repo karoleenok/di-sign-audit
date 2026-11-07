@@ -21,6 +21,17 @@ for (const w of [390, 320]) {
   assert.deepEqual(tabs.map((t) => t.replace(/ · \d+/, '')), ['Главная', 'Расписание', 'Люди', 'Игра', 'Ещё']);
   assert.match(await page.textContent('.sc-tl'), /Человек нажал «Старт»/);
   assert.match(await page.textContent('.sc-tl'), /Прошёл аудит и выбрал/);
+  // памятка расписания: даты, дни, есть ли пост
+  assert.equal(await page.locator('.pl-r').count(), 11, 'мини-курс: 11 уроков в памятке');
+  assert.match(await page.textContent('.pl'), /день 18/);
+  assert.ok(await noscroll(page), 'нет горизонтального скролла с памяткой');
+  if (w === 390) await page.screenshot({ path: OUT + '/sched-plan.png' });
+  await page.click('[data-plt="mat"]'); await page.waitForSelector('.pl-r');
+  assert.equal(await page.locator('.pl-r').count(), 9, 'материалы: 9 уроков');
+  assert.ok(await noscroll(page), 'нет горизонтального скролла с памяткой материалов');
+  await page.locator('.pl-r').first().click(); await page.waitForTimeout(300);
+  await page.click('[data-plt="course"]');
+  await page.click('#plT'); assert.equal(await page.locator('.pl-r').count(), 0, 'памятка сворачивается'); await page.click('#plT'); await page.waitForSelector('.pl-r');
   assert.equal(await page.locator('.sc-entry .sc-step').count(), 0, 'вход свёрнут по умолчанию');
   await page.click('#scEntryT'); await page.waitForSelector('.sc-entry .sc-step');
   assert.ok(await page.locator('.sc-entry .sc-step').count() > 3, 'шаги входа внутри карточки «Вход в бота»');

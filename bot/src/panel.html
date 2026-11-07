@@ -306,6 +306,16 @@ body.selmode .card[data-id].picked::before,body.selmode .fn[data-id].picked::bef
 .tk-foot{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}
 
 /* новое «Расписание» */
+
+.pl{border:1px solid var(--line);background:var(--card);border-radius:20px;padding:12px 14px;margin:0 0 14px}
+.pl-h{display:flex;align-items:center;gap:10px;width:100%;min-height:48px;background:none;border:0;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer}
+.pl-h b{font-size:17px;display:block}.pl-h .small{display:block}.pl-h>span:first-child{flex:1 1 0;min-width:0}.pl-h .ar{flex:none;font-size:18px;color:var(--soft)}
+.pl-pt{font-size:12.5px;font-weight:700;letter-spacing:.02em;color:var(--soft);margin:14px 0 4px}
+.pl-r{display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:4px 10px;align-items:center;min-height:48px;padding:6px 0;border-top:1px solid var(--line);cursor:pointer}
+.pl-d{border-radius:99px;padding:4px 0;font-size:13px;font-weight:600;text-align:center;background:#fde4f0;color:#6b1f43}.pl-d.p2{background:#dbe8f8;color:#16406a}.pl-d.p3,.pl-d.p4{background:#e6dcf3;color:#43246b}
+.pl-t{font-size:15px;line-height:1.25;min-width:0;overflow-wrap:anywhere}.pl-t small{display:block;color:var(--soft);font-size:12.5px;margin-top:2px}
+.pl-s{font-size:12.5px;font-weight:600;border-radius:99px;padding:4px 10px;white-space:nowrap}.pl-s.ok{background:#e4f1e6;color:#25552f}.pl-s.off{background:#fbe6d2;color:#5c3208}.pl-s.no{background:#fff;border:1px solid var(--line);color:var(--soft)}
+@media(max-width:340px){.pl-r{grid-template-columns:56px minmax(0,1fr)}.pl-s{grid-column:2;justify-self:start}}
 .sc-chips{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
 .sc-chip{min-height:48px;border:1.5px solid var(--line);background:var(--card);border-radius:99px;padding:0 16px;font-weight:600;font-size:15px;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
 .sc-chip.blue{background:var(--blue);border-color:transparent;color:#0b4a6f}.sc-chip.warm{background:#fbe6d2;border-color:transparent;color:#5c3208}.sc-chip.on{background:var(--ink);color:#fffbf7;border-color:var(--ink)}
@@ -1989,6 +1999,38 @@ function scCard(p, o) {
     '<div class="sc-t">' + esc(postName(p)) + '</div><div class="sc-m">' + esc(scMeta(p)) + '</div>' +
     '<div class="sc-row"><div class="sc-tags">' + (p.kind !== 'node' ? '<span class="sc-tg ' + t[0] + '">' + t[1] + '</span>' : '') + '<span class="sc-tg ' + st[0] + '">' + st[1] + '</span>' + (o.dup ? '<span class="sc-tg" style="background:#f9dada;color:#8a1c1c">⚠ Похож на другой</span>' : '') + '</div>' + ctl + '</div></div>';
 }
+
+const PLAN = {
+  course: { name: 'Бесплатный мини-курс', start: '2026-11-06', parts: [
+    ['Часть 1 · добро пожаловать в мир дизайна', 1, [['2026-11-06', 'Карточки-разбор: какие бывают дизайнеры'], ['2026-11-07', 'Мини-игра на принципы композиции'], ['2026-11-08', 'Тест «какой ты стиль в дизайне»']]],
+    ['Часть 2 · уверенно сразу к делу', 2, [['2026-11-10', 'Осваиваем Figma · большой видео-урок'], ['2026-11-11', 'Учимся работать с ТЗ и начинаем проект'], ['2026-11-13', 'Подборка классных референсов для постеров'], ['2026-11-15', 'День поддержки от таксеньшей']]],
+    ['Часть 3 · повяжите бантик и готово!', 3, [['2026-11-17', 'Библиотека промтов для создания мокапов'], ['2026-11-18', 'Шаблон для создания кейсов'], ['2026-11-21', 'День поддержки от таксеньшей + подарочек']]],
+    ['Часть 4 · сикрет-бокс', 4, [['2026-11-24', 'Бот сравнит до/после ваших работ и покажет точки роста', 'сикрет-бокс после всех уроков']]]
+  ] },
+  mat: { name: 'Месяц материалов', start: '2026-11-07', foot: 'Доступ к библиотеке материалов от Di Sign University остаётся навсегда.', parts: [
+    ['Часть 1 · работа с проектом', 1, [['2026-11-07', 'Большая подборка сочетаний шрифтов'], ['2026-11-08', 'Чек-лист для сдачи макетов клиенту']]],
+    ['Часть 2 · ускорение работы', 2, [['2026-11-11', 'Библиотека самых актуальных промтов'], ['2026-11-14', 'Мокап-пак, сделанный с помощью ИИ']]],
+    ['Часть 3 · повяжите бантик и готово!', 3, [['2026-11-16', 'Шаблон для создания кейсов'], ['2026-11-20', 'Конструктор портфолио на Tilda']]],
+    ['Часть 4 · общение с клиентами', 4, [['2026-11-23', 'Калькулятор стоимости работ и генератор коммерческих предложений'], ['2026-11-24', 'Пакет шаблонов-писем для клиента'], ['2026-11-25', 'Статья «красные флаги в брифе»']]]
+  ] }
+};
+const planDay = (ymd, start) => Math.round((Date.UTC(+ymd.slice(0, 4), +ymd.slice(5, 7) - 1, +ymd.slice(8)) - Date.UTC(+start.slice(0, 4), +start.slice(5, 7) - 1, +start.slice(8))) / 864e5);
+const planPosts = (tr, day) => S.posts.filter((p) => p.kind === 'drip' && p.track === tr && (p.mode || 'day') === 'day' && Number(p.day) === day && p.status !== 'archived');
+function scPlan() {
+  const open = view.scPlan !== false, tr = view.scPlanT === 'mat' ? 'mat' : 'course', P = PLAN[tr];
+  const fmt = (ymd) => +ymd.slice(8) + ' ' + ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'][+ymd.slice(5, 7) - 1];
+  let all = 0, live = 0;
+  const body = P.parts.map(([title, k, rows]) => '<div class="pl-pt">' + esc(title.toUpperCase()) + '</div>' + rows.map(([ymd, name, note]) => {
+    const day = planDay(ymd, P.start), ps = planPosts(tr, day), on = ps.filter((p) => p.status === 'active');
+    all++; if (on.length) live++;
+    const st = on.length ? ['ok', 'есть пост'] : ps.length ? ['off', 'выключен'] : ['no', 'нет поста'];
+    return '<div class="pl-r" role="button" tabindex="0" data-plday="' + day + '"><span class="pl-d p' + k + '">' + fmt(ymd) + '</span><span class="pl-t">' + esc(name) + '<small>день ' + day + (note ? ' · ' + esc(note) : '') + '</small></span><span class="pl-s ' + st[0] + '">' + st[1] + '</span></div>';
+  }).join('')).join('');
+  const sum = open ? '' : 'Мини-курс и материалы: даты, дни и есть ли пост';
+  return '<div class="pl"><button type="button" class="pl-h" id="plT" aria-expanded="' + open + '"><span><b>Памятка: что и когда выходит</b><span class="small muted">' + (open ? 'Даты для первой волны. Остальным уроки приходят по дням от входа.' : sum) + '</span></span><span class="ar">' + (open ? '▴' : '▾') + '</span></button>' +
+    (open ? '<div class="seg sm" style="margin:10px 0 0">' + [['course', 'Мини-курс'], ['mat', 'Материалы']].map(([k, n]) => '<button type="button" data-plt="' + k + '" class="' + (tr === k ? 'on' : '') + '">' + n + '</button>').join('') + '</div>' +
+      '<p class="small muted" style="margin:10px 0 0">Постов на эти дни: <b>' + live + ' из ' + all + '</b>. День 0 = ' + fmt(P.start) + '.</p>' + body + (P.foot ? '<p class="small muted" style="margin:12px 0 0">:: ' + esc(P.foot) + '</p>' : '') : '') + '</div>';
+}
 function renderSched() {
   { const b = document.getElementById('scBar'); if (b) b.remove(); }
   const ids = byIdMap(), T = view.sTrack || 'all', RE = !!view.sReorder, SEL = !!view.sSel;
@@ -2003,7 +2045,7 @@ function renderSched() {
   const dotCard = (html) => '<div class="sc-it"><div class="sc-dot"><i></i></div>' + html + '</div>';
   const entryOpen = view.scEntry === true;
   const nSteps = ((S.flow && S.flow.order) || []).length + 2;
-  let h = '<div class="sc-chips"><button type="button" class="sc-chip" id="scAdd" style="background:var(--ink);color:#fffbf7;border-color:var(--ink)">＋ Пост</button>' +
+  let h = scPlan() + '<div class="sc-chips"><button type="button" class="sc-chip" id="scAdd" style="background:var(--ink);color:#fffbf7;border-color:var(--ink)">＋ Пост</button>' +
     (inboxN ? '<button type="button" class="sc-chip blue" id="scInbox">✉️ Новые из бота · ' + inboxN + '</button>' : '') +
     (dups.length ? '<button type="button" class="sc-chip" id="scDup" style="background:#f9dada;border-color:transparent;color:#8a1c1c">⚠ Дубли · ' + dups.length + '</button>' : '') +
     (noGo ? '<button type="button" class="sc-chip warm" id="scNo">Не уйдут · ' + noGo + '</button>' : '') +
@@ -2055,6 +2097,12 @@ function renderSched() {
   if ($('scNo')) $('scNo').onclick = () => { haptic(); scNotGoing(); };
   if ($('scDup')) $('scDup').onclick = () => { haptic(); scDupSheet(); };
   $('scCheck').onclick = () => { haptic(); scCheck(); };
+  $('plT').onclick = () => { view.scPlan = view.scPlan === false; saveView(); renderSched(); };
+  document.querySelectorAll('[data-plt]').forEach((b) => b.onclick = () => { view.scPlanT = b.dataset.plt; saveView(); renderSched(); });
+  document.querySelectorAll('[data-plday]').forEach((el) => el.onclick = () => {
+    const tr = view.scPlanT === 'mat' ? 'mat' : 'course', day = +el.dataset.plday, ps = planPosts(tr, day);
+    if (ps.length) openPost((ps.find((p) => p.status === 'active') || ps[0]).id); else toast('Поста на день ' + day + ' нет. Нажми «＋ Пост» и выбери «На день ' + day + '»');
+  });
   $('scRe').onclick = () => { view.sReorder = !view.sReorder; saveView(); renderSched(); };
   document.querySelectorAll('[data-sctrk]').forEach((b) => b.onclick = () => { view.sTrack = b.dataset.sctrk; if (view.sTrack !== 'all') view.sReorder = false; saveView(); haptic(); renderSched(); });
   $('scEntryT').onclick = () => { view.scEntry = !entryOpen; saveView(); renderSched(); };
