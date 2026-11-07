@@ -405,7 +405,7 @@ const postName = (p) => p.title || (p.text || '').split('\n')[0] || (p.media.len
 const fmtRun = (t) => { if (!t) return 'дата не задана'; const d = new Date((t + 10800) * 1000); const wd = ['вс','пн','вт','ср','чт','пт','сб'][d.getUTCDay()]; const mon = ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'][d.getUTCMonth()]; return wd + ', ' + d.getUTCDate() + ' ' + mon + ' · ' + String(d.getUTCHours()).padStart(2,'0') + ':' + String(d.getUTCMinutes()).padStart(2,'0'); };
 const toLocal = (t) => t ? new Date((t + 10800) * 1000).toISOString().slice(0, 16) : '';
 const fromLocal = (s) => { const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(s || ''); return m ? Date.UTC(+m[1], +m[2]-1, +m[3], +m[4], +m[5]) / 1000 - 10800 : null; };
-const dayLabel = (d) => d === 0 ? 'сразу после согласия на рассылку' : d === 1 ? 'на следующий день' : 'через ' + d + ' ' + (d % 10 === 1 && d % 100 !== 11 ? 'день' : (d % 10 >= 2 && d % 10 <= 4 && (d % 100 < 10 || d % 100 >= 20)) ? 'дня' : 'дней') + ' после входа';
+const dayLabel = (d) => d === 0 ? 'сразу, когда человек закончил вход' : d === 1 ? 'на следующий день' : 'через ' + d + ' ' + (d % 10 === 1 && d % 100 !== 11 ? 'день' : (d % 10 >= 2 && d % 10 <= 4 && (d % 100 < 10 || d % 100 >= 20)) ? 'дня' : 'дней') + ' после входа';
 // когда уходит пост ленты: в день и время / по таймеру после входа / после другого поста
 const timeMin = (t) => { const m = /^(\d{1,2}):(\d{2})$/.exec(t || '11:00'); return m ? +m[1] * 60 + +m[2] : 660; };
 const fmtDelay = (min) => { const m = +min || 0; if (!m) return '0 мин'; const d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mm = m % 60; return [d ? d + ' дн' : '', h ? h + ' ч' : '', mm ? mm + ' мин' : ''].filter(Boolean).join(' '); };
@@ -2031,7 +2031,7 @@ function planSlot(tr, day, name) {
     return;
   }
   sheet('<div class="shd"><span class="pill">Урок · ' + esc(when) + '</span><button type="button" class="sx" id="psX" aria-label="закрыть">✕</button></div><h2>' + esc(name || '') + '</h2><p class="small muted">Поста на этот день ещё нет. Откуда возьмём?</p>' +
-    '<div class="kinds"><button type="button" class="kind" id="psNew"><b>✏️ Написать новый</b><span>' + (day === 0 ? 'День 0, сразу после входа' : 'День ' + day + ', 11:00') + ', трек «' + esc(P.name) + '» уже выставлены. Остаётся написать текст.</span></button>' +
+    '<div class="kinds"><button type="button" class="kind" id="psNew"><b>✏️ Написать новый</b><span>' + (day === 0 ? 'День 0, сразу, когда человек закончил вход' : 'День ' + day + ', 11:00') + ', трек «' + esc(P.name) + '» уже выставлены. Остаётся написать текст.</span></button>' +
     '<button type="button" class="kind" id="psPick"><b>📋 Взять готовый</b><span>Из тех, что уже есть в боте или в расписании. Перенесу его на день ' + day + '.</span></button></div>');
   $('psX').onclick = closeSheet;
   $('psNew').onclick = () => openNew({ kind: 'drip', mode: 'day', day, time: '11:00', track: tr, title: name || '' });
@@ -2571,7 +2571,7 @@ function openPost(id, opt) {
   h += '<label class="f">Название для себя</label><input type="text" id="fTitle" maxlength="80" placeholder="Например: «Развилка: кто ты»" value="' + esc(p.title) + '">';
   // когда
   if (p.kind === 'drip' || p.kind === 'date') {
-    const WO = [['timer', '⏱', 'Через время после аудита', 'Отсчёт от входа: человек прошёл аудит и согласился на рассылку'], ['after', '↳', 'После другого поста', 'Через сколько-то после того, как человек получил выбранный пост'], ['day', '📅', 'В день ленты и время', 'День 0 — сразу, день 1 — на следующий день, и так далее'], ['date', '🗓', 'В конкретную дату', 'Один раз, всем, кто к этому моменту уже в боте']];
+    const WO = [['timer', '⏱', 'Через время после аудита', 'Отсчёт от входа: человек прошёл аудит и согласился на рассылку'], ['after', '↳', 'После другого поста', 'Через сколько-то после того, как человек получил выбранный пост'], ['day', '📅', 'В день ленты и время', 'День 0 — сразу, когда человек закончил вход (согласия, имя, контакт, трек). День 1 — на следующий день, и так далее'], ['date', '🗓', 'В конкретную дату', 'Один раз, всем, кто к этому моменту уже в боте']];
     const atRow = (f) => '<div class="row atr"><label class="small" style="display:flex;gap:8px;align-items:center;margin:0"><input type="checkbox" id="' + f + 'AtOn" style="width:auto"' + (st.at ? ' checked' : '') + '> в конкретное время</label><input type="time" id="' + f + 'At" style="width:auto" value="' + esc(st.at || '11:00') + '"></div>';
     const chipsFor = (f, arr) => '<div class="dtq" data-for="' + f + '">' + arr.map(([m, t]) => '<button type="button" class="chip" data-m="' + m + '">' + t + '</button>').join('') + '</div>';
     h += '<label class="f">Когда отправлять</label><div class="whensum" id="whenSum" aria-live="polite"></div><div class="wopts" id="fMode" style="margin-top:8px">' + WO.map(([k, ic, t, n]) => '<button type="button" data-v="' + k + '" class="wopt' + (st.mode === k ? ' on' : '') + '"><span class="wi">' + ic + '</span><span><b>' + t + '</b><i>' + n + '</i></span></button>').join('') + '</div>' +
@@ -2668,7 +2668,7 @@ function openPost(id, opt) {
     if (st.mode === 'after') { const par = $('aPost') && S.posts.find((x) => x.id === +$('aPost').value); return par ? 'Придёт через ' + fmtDelay(delayOf('aNum', 'aUnit')) + ' после поста «' + postName(par).slice(0, 34) + '»' + atTxt('a') : 'Выбери пост, после которого отправлять'; }
     if (st.mode === 'date') { const t = fromLocal($('fRun') && $('fRun').value); return t ? 'Уйдёт один раз: ' + fmtRun(t) : 'Выбери дату и время'; }
     const tm = ($('fTime') && $('fTime').value) || st.time, cs = (S.cohort || {})[st.track];
-    const own = st.day === 0 ? 'День 0: сразу, как только человек вошёл в бота' : 'День ' + st.day + ' после входа, в ' + tm + ' по Москве';
+    const own = st.day === 0 ? 'День 0: сразу, когда человек закончил вход (согласия, имя, контакт, трек) и для него пошла лента' : 'День ' + st.day + ' после входа, в ' + tm + ' по Москве';
     if (!cs) return own;
     const ymd = new Date(Date.UTC(+cs.slice(0, 4), +cs.slice(5, 7) - 1, +cs.slice(8)) + st.day * 864e5).toISOString().slice(0, 10);
     return own + '. Кто вошёл до старта потока (' + ruDM(cs) + '): ' + ruDM(ymd) + ' в ' + (st.day === 0 ? '11:00' : tm);
