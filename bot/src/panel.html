@@ -1971,7 +1971,7 @@ function scCard(p, o) {
 }
 function renderSched() {
   { const b = document.getElementById('scBar'); if (b) b.remove(); }
-  const ids = byIdMap(), T = view.sTrack || 'all', RE = !!view.sReorder && T === 'all', SEL = !!view.sSel;
+  const ids = byIdMap(), T = view.sTrack || 'all', RE = !!view.sReorder, SEL = !!view.sSel;
   const picked = (view.sPick = view.sPick || []);
   const keep = (p) => T === 'all' || p.track === 'all' || p.track === T;
   const inboxN = S.posts.filter((p) => p.inbox).length;
@@ -1990,9 +1990,9 @@ function renderSched() {
     '<button type="button" class="sc-chip" id="scCheck">Проверить</button>' +
     '<button type="button" class="sc-chip" id="scStud">👀 Как ученик</button>' +
     '<button type="button" class="sc-chip' + (SEL ? ' on' : '') + '" id="scSel">' + (SEL ? 'Готово' : '☐ Выбрать') + '</button>' +
-    '<button type="button" class="sc-chip' + (RE ? ' on' : '') + '" id="scRe"' + (T !== 'all' ? ' disabled style="opacity:.4"' : '') + '>' + (RE ? 'Готово' : '↕ Порядок') + '</button></div>' +
+    '<button type="button" class="sc-chip' + (RE ? ' on' : '') + '" id="scRe">' + (RE ? 'Готово' : '↕ Порядок') + '</button></div>' +
     '<div class="sc-flt">' + [['all', 'Все'], ['course', 'Мини-курс'], ['mat', 'Материалы']].map(([k, n]) => '<button type="button" data-sctrk="' + k + '" class="' + (T === k ? 'on' : '') + '">' + n + '</button>').join('') + '</div>' +
-    (RE ? '<div class="note" style="margin:0 0 12px">Стрелки меняют пост с соседним в этом дне. Время остаётся на своих местах, меняются сами посты.</div>' : '') +
+    (RE ? '<div class="note" style="margin:0 0 12px">Стрелки меняют пост местами с соседним: время остаётся на своих местах, меняются сами посты. Чтобы перенести в другой день, нажми «В день…».</div>' : '') +
     '<div class="sc-tl">' + mile('1', 'Человек нажал «Старт»', 'Бот здоровается и просит согласия.');
   h += '<div class="sc-it"><div class="sc-dot"><i></i></div><div class="sc-entry"><button type="button" class="h" id="scEntryT"><span><b style="font-size:17px">Вход в бота</b><br><span class="small muted">' + nSteps + ' сообщений, которые бот шлёт сам</span></span><span class="chip">' + (entryOpen ? 'Скрыть' : 'Показать') + '</span></button>' +
     (entryOpen ? '<div style="border-top:1px solid var(--line);padding-top:8px"><div class="seg sm" style="margin:0 0 8px"><button type="button" data-rsrc="site" class="' + (src === 'site' ? 'on' : '') + '">🌱 из соцсетей</button><button type="button" data-rsrc="audit" class="' + (src === 'audit' ? 'on' : '') + '">✅ после аудита</button></div>' +
@@ -2006,7 +2006,7 @@ function renderSched() {
     const b = bucketDay(p, ids);
     if (b !== last) { h += dia(scDay(b)); last = b; }
     const prev = drip[i - 1], next = drip[i + 1];
-    h += dotCard(scCard(p, { re: RE, sel: SEL, dup: dupIds.has(p.id), picked: picked.includes(p.id), ind: p.mode === 'after', up: prev && bucketDay(prev, ids) === b, dn: next && bucketDay(next, ids) === b }));
+    h += dotCard(scCard(p, { re: RE, sel: SEL, dup: dupIds.has(p.id), picked: picked.includes(p.id), ind: p.mode === 'after', up: !!prev, dn: !!next }));
   });
   const dates = S.posts.filter((p) => p.kind === 'date' && keep(p)).sort((a, b) => (a.run_at || 9e12) - (b.run_at || 9e12));
   if (dates.length) { h += dia('В конкретные даты · аудит не нужен'); dates.forEach((p) => { h += dotCard(scCard(p, { dup: dupIds.has(p.id), sel: SEL, picked: picked.includes(p.id) })); }); }
@@ -2035,7 +2035,7 @@ function renderSched() {
   if ($('scNo')) $('scNo').onclick = () => { haptic(); scNotGoing(); };
   if ($('scDup')) $('scDup').onclick = () => { haptic(); scDupSheet(); };
   $('scCheck').onclick = () => { haptic(); scCheck(); };
-  $('scRe').onclick = () => { if (T !== 'all') return; view.sReorder = !view.sReorder; saveView(); renderSched(); };
+  $('scRe').onclick = () => { view.sReorder = !view.sReorder; saveView(); renderSched(); };
   document.querySelectorAll('[data-sctrk]').forEach((b) => b.onclick = () => { view.sTrack = b.dataset.sctrk; if (view.sTrack !== 'all') view.sReorder = false; saveView(); haptic(); renderSched(); });
   $('scEntryT').onclick = () => { view.scEntry = !entryOpen; saveView(); renderSched(); };
   if ($('scNodes')) $('scNodes').onclick = () => { view.scNodes = view.scNodes !== true; saveView(); renderSched(); };

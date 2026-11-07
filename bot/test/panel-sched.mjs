@@ -52,6 +52,8 @@ for (const w of [390, 320]) {
   assert.deepEqual(await T(cardOf), Bbefore, 'пост получил время соседа');
   assert.deepEqual(await T(nextId), Abefore, 'сосед получил время поста');
   await page.click('#scRe');
+  // порядок доступен и при фильтре по треку
+  await page.click('[data-sctrk="mat"]'); assert.equal(await page.locator('#scRe').isDisabled(), false, 'кнопка «Порядок» доступна при фильтре'); await page.click('[data-sctrk="all"]');
   // «Как ученик»
   await page.click('#scStud'); await page.waitForSelector('[data-stnext]'); await page.click('[data-stnext]'); await page.waitForTimeout(200);
   assert.match(await page.textContent('#sheet'), /бот глазами ученика/i);
