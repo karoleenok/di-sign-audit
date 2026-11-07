@@ -141,6 +141,13 @@ for (const w of [390, 320]) {
   assert.ok(await page.locator('[data-mr]').count() >= 10, 'в «Ещё» все редкие разделы');
   assert.ok(await noscroll(page));
   if (w === 390) await page.screenshot({ path: OUT + '/sched-more.png', fullPage: true });
+  // старт потока: сохраняется в настройки и меняет подпись
+  await page.locator('[data-mr]', { hasText: 'Старт потока' }).click(); await page.waitForSelector('#chC');
+  assert.ok(await noscroll(page), 'нет горизонтального скролла в окне «Старт потока»');
+  await page.fill('#chC', '2026-11-06'); await page.fill('#chM', '2026-11-07'); await page.click('#chOk'); await page.waitForTimeout(700);
+  assert.equal(JSON.parse((await db.first(`SELECT value FROM settings WHERE key = 'cohort:course'`)).value), '2026-11-06');
+  assert.match(await page.locator('[data-mr]', { hasText: 'Старт потока' }).textContent(), /2026-11-07/);
+  await db.run(`DELETE FROM settings WHERE key LIKE 'cohort:%'`);
   await page.locator('[data-mr]', { hasText: 'Старый вид панели' }).click(); await page.waitForSelector('#goNew');
   assert.match(await page.textContent('#tabs'), /Путь/);
   await page.click('#goNew'); await page.waitForSelector('.sc-tl');

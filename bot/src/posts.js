@@ -94,6 +94,16 @@ export const NOT_SENT = `NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.post_id 
 // Лента по дням: когда этому человеку положен пост
 //   день 0  -> сразу после входа
 //   день N  -> полночь по Москве дня входа + N дней + время отправки
+// «Старт потока»: у трека (course / mat) может быть дата. Кто вошёл раньше, ждёт эту дату: его день 0 = дата старта.
+// Кто вошёл позже, считается от своего входа. Даты лежат в settings (cohort:course, cohort:mat), здесь — их копия в секундах.
+let COHORT = {};
+export const cohortSec = (ymd) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd || '')); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) / 1000 - MSK : 0; };
+export function setCohorts(o) { COHORT = { course: cohortSec(o && o.course), mat: cohortSec(o && o.mat) }; }
+export async function loadCohorts(db) {
+  const rows = await db.all(`SELECT key, value FROM settings WHERE key IN ('cohort:course', 'cohort:mat')`);
+  const o = {}; for (const r of rows) { try { o[r.key.slice(7)] = JSON.parse(r.value); } catch { /* пусто */ } }
+  setCohorts(o); return o;
+}
 export function dueSql(post) {
   const dmin = Number(post.delay_min) || 0;
   const delay = dmin * 60;
@@ -113,9 +123,10 @@ export function dueSql(post) {
   // после другого поста: через N минут после того, как этот человек получил тот пост
   if (post.mode === 'after') return withTime(`(SELECT d2.sent_at FROM deliveries d2 WHERE d2.post_id = ${Number(post.after_id) || 0} AND d2.tg_id = u.tg_id AND d2.ok = 1)`);
   const todDay = timeSec(post.send_time);
-  return Number(post.day) === 0
-    ? `u.joined_at`
-    : `(((u.joined_at + ${MSK}) / ${DAY}) * ${DAY} - ${MSK} + ${Number(post.day) * DAY} + ${todDay})`;
+  const S = COHORT[post.track] || 0;
+  if (Number(post.day) === 0) return S ? `MAX(u.joined_at, ${S + todDay})` : `u.joined_at`;
+  const A = S ? `MAX(u.joined_at, ${S})` : `u.joined_at`;
+  return `(((${A} + ${MSK}) / ${DAY}) * ${DAY} - ${MSK} + ${Number(post.day) * DAY} + ${todDay})`;
 }
 export function timeSec(s) {
   const m = /^(\d{1,2}):(\d{2})$/.exec(s || '11:00');
@@ -125,6 +136,7 @@ export function timeSec(s) {
 export async function dueUsers(db, post, now, limit) {
   const a = audienceSql(post);
   if (post.kind === 'drip') {
+    await loadCohorts(db);
     const due = dueSql(post);
     const catchup = post.catchup ? '' : ` AND ${due} >= ?`;
     const params = [...a.p, now, post.id, ...(post.catchup ? [] : [post.created_at]), limit];

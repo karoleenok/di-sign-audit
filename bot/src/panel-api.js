@@ -5,7 +5,7 @@ import { postDelivery, personLog } from './delivery.js';
 import { isAdmin, startContentEdit } from './admin.js';
 import { lastBackup } from './backup.js';
 import { AUD, LEVELS } from './texts.js';
-import { sendPost, audienceCount, loadDocs, DOCS, TRACKS, cleanFile, snapPost } from './posts.js';
+import { sendPost, audienceCount, loadDocs, DOCS, TRACKS, cleanFile, snapPost, loadCohorts } from './posts.js';
 import { mdToEntities, entitiesToMd } from './fmt.js';
 import { runPreview, runFullPath, startFastRun, stopRuns, stepRuns, activeRun } from './testrun.js';
 import { onStart, docVars, consentView, backfillFb, loadFlow, normFlow, FLOW_OPTIONAL } from './users.js';
@@ -73,6 +73,7 @@ export async function handlePanelApi(ctx, request, url) {
   if (!user) return json({ error: 'Открой панель из бота: /admin' }, 401);
   if (!(await isAdmin(ctx, user.id))) return json({ error: 'Панель только для админов' }, 403);
   ctx.userName = user.first_name;
+  await loadCohorts(ctx.db);
   const path = url.pathname.replace(/^\/api\/panel/, '');
 
   // файл для поста: загрузить в Telegram и вернуть file_id (пост сохраняется отдельно)
@@ -142,8 +143,8 @@ export async function handlePanelApi(ctx, request, url) {
 }
 
 // какие запросы можно отменить (меняют посты, тексты, порядок, документы)
-const UNDO_RX = /^\/(swap|bulk|post\/new|post\/\d+|post\/\d+\/(move|copy|restore)|msg\/[A-Za-z_]+|flow|docs|reorder|path\/scaffold)$/;
-const SNAP_KEYS = `key LIKE 'msg:%' OR key LIKE 'msgx:%' OR key LIKE 'flow:%' OR key LIKE 'doc:%'`;
+const UNDO_RX = /^\/(swap|bulk|post\/new|post\/\d+|post\/\d+\/(move|copy|restore)|msg\/[A-Za-z_]+|flow|cohort|docs|reorder|path\/scaffold)$/;
+const SNAP_KEYS = `key LIKE 'msg:%' OR key LIKE 'msgx:%' OR key LIKE 'flow:%' OR key LIKE 'doc:%' OR key LIKE 'cohort:%'`;
 async function takeSnap(ctx) {
   return JSON.stringify({ posts: await ctx.db.all(`SELECT * FROM posts`), settings: await ctx.db.all(`SELECT key, value FROM settings WHERE ${SNAP_KEYS}`) });
 }
@@ -159,7 +160,7 @@ async function undoLabel(ctx, path, body) {
   if (m) { const i = msgInfo(m[1]); return 'текст «' + (i ? i.title : m[1]).slice(0, 40) + '»'; }
   if (path === '/swap') return 'порядок постов';
   if (path === '/bulk') return ({ active: 'включить', paused: 'на паузу', archived: 'в архив', copy: 'дублировать' }[body.action] || 'действие') + ': постов ' + ((body.ids || []).length);
-  return path === '/path/scaffold' ? 'новый путь из соцсетей' : path === '/flow' ? 'порядок шагов входа' : path === '/docs' ? 'документы' : 'перенос поста';
+  return path === '/path/scaffold' ? 'новый путь из соцсетей' : path === '/flow' ? 'порядок шагов входа' : path === '/docs' ? 'документы' : path === '/cohort' ? 'дата старта потока' : 'перенос поста';
 }
 async function pushUndo(ctx, snap, label, user) {
   await ctx.db.run(`INSERT INTO undo_log (snap, label, by_id, by_name, at) VALUES (?, ?, ?, ?, ?)`, [snap, label, user.id, user.first_name || '', ctx.now]);
@@ -200,7 +201,7 @@ async function panelRest(ctx, request, url, user, path, body) {
       audiences: AUD, levels: LEVELS,
       posts: posts.map((p) => postOut(p, sent[p.id], clicks[p.id])),
       msgs: await listMsgs(ctx),
-      docs: await loadDocs(ctx), docNames: DOCS, tracks: TRACKS, flow: await loadFlow(ctx), flowOptional: FLOW_OPTIONAL,
+      docs: await loadDocs(ctx), docNames: DOCS, tracks: TRACKS, flow: await loadFlow(ctx), cohort: await loadCohorts(ctx.db), flowOptional: FLOW_OPTIONAL,
       backup: await lastBackup(ctx),
       undo: await lastUndo(ctx),
       leadCount: real.filter((u) => leadIds.has(u.tg_id) || u.fb_at).length,
@@ -530,6 +531,15 @@ async function panelRest(ctx, request, url, user, path, body) {
     const rows = await ctx.db.all(`SELECT tg_id, first_name, username, contact_name, phone, email, level, zone, track, status, fb_like, fb_improve, fb_at, created_at, sched_at FROM users ORDER BY COALESCE(fb_at, 0) DESC, created_at DESC LIMIT 200`);
     const n = await ctx.db.first(`SELECT COUNT(*) AS all_n, SUM(CASE WHEN sched_at IS NOT NULL THEN 1 ELSE 0 END) AS done, SUM(CASE WHEN track = 'course' THEN 1 ELSE 0 END) AS course, SUM(CASE WHEN track = 'mat' THEN 1 ELSE 0 END) AS mat, SUM(CASE WHEN fb_at IS NOT NULL THEN 1 ELSE 0 END) AS fb FROM users`);
     return json({ people: rows, totals: n });
+  }
+
+  // дата старта потока для каждого трека: кто вошёл раньше, ждёт эту дату
+  if (path === '/cohort' && request.method === 'POST') {
+    const ok = (v) => v === '' || v === null || /^\d{4}-\d{2}-\d{2}$/.test(String(v));
+    if (!ok(body.course) || !ok(body.mat)) return json({ error: 'Дата нужна в виде 2026-11-06' }, 400);
+    const put = (k, v) => ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [k, JSON.stringify(v || '')]);
+    await put('cohort:course', body.course); await put('cohort:mat', body.mat);
+    return json({ ok: true, cohort: await loadCohorts(ctx.db) });
   }
 
   // порядок и включение шагов входа

@@ -2185,6 +2185,7 @@ function replacePost(id) {
 function renderMore() {
   const R = [
     ['Тексты бота', 'Приветствие, согласия, кнопки и все сообщения входа', () => { tab = 'texts'; render(); }],
+    ['Старт потока', (S.cohort && (S.cohort.course || S.cohort.mat)) ? 'Мини-курс: ' + (S.cohort.course || 'не задан') + ' · материалы: ' + (S.cohort.mat || 'не задан') : 'Дата, с которой считаются дни для тех, кто вошёл раньше. Сейчас не задана', () => openCohort()],
     ['Документы', 'Политика, согласия, ссылки на них', () => openDocs()],
     ['Задачи команды', 'Кто что делает, отметки «сделано»', () => { TD = null; tab = 'tasks'; render(); }],
     ['Вход для людей из соцсетей', 'Отдельная заготовка для тех, кто пришёл без аудита', () => { S.runSrc = 'site'; view.scEntry = true; tab = 'sched'; render(); }],
@@ -2200,6 +2201,16 @@ function renderMore() {
   document.querySelectorAll('[data-mr]').forEach((el) => el.onclick = () => { haptic(); R[+el.dataset.mr][2](); window.scrollTo(0, 0); });
 }
 
+function openCohort() {
+  const c = S.cohort || {};
+  sheet('<div class="shd"><span class="pill">Старт потока</span><button type="button" class="sx" id="chX" aria-label="закрыть">✕</button></div><h2>С какой даты <i>считаем дни?</i></h2>' +
+    '<p class="small muted">Посты стоят на «день N». Кто вошёл до этой даты, получит день 0 в дату старта, день 1 на следующий день и так далее. Кто вошёл позже, считает дни от своего входа. Пустая дата: все считают от своего входа.</p>' +
+    '<label class="small muted" for="chC" style="display:block;margin:12px 0 4px">Бесплатный мини-курс: день 0</label><input type="date" id="chC" value="' + esc(c.course || '') + '" style="width:100%;min-height:48px;font-size:16px;border:1.5px solid var(--line);border-radius:14px;padding:0 14px;background:var(--card);box-sizing:border-box">' +
+    '<label class="small muted" for="chM" style="display:block;margin:12px 0 4px">Месяц материалов: день 0</label><input type="date" id="chM" value="' + esc(c.mat || '') + '" style="width:100%;min-height:48px;font-size:16px;border:1.5px solid var(--line);border-radius:14px;padding:0 14px;background:var(--card);box-sizing:border-box">' +
+    '<div class="btns" style="margin-top:16px"><button type="button" class="btn" id="chOk">Сохранить</button><button type="button" class="btn ghost" id="chC0">Отмена</button></div>');
+  $('chX').onclick = closeSheet; $('chC0').onclick = closeSheet;
+  $('chOk').onclick = async () => { try { await api('/cohort', { course: $('chC').value, mat: $('chM').value }); closeSheet(); haptic('medium'); await reload(); toast('Старт потока сохранён'); } catch (e) { toast(e.message); } };
+}
 function scEntryRows() {
   const fl = S.flow || { order: Object.keys(ENTRY), off: [] }, opt = S.flowOptional || [];
   const src = S.runSrc || 'site', soc = socialOn();
