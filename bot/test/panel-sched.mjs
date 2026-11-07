@@ -24,6 +24,27 @@ for (const w of [390, 320]) {
   assert.equal(await page.locator('.sc-entry .sc-step').count(), 0, 'вход свёрнут по умолчанию');
   await page.click('#scEntryT'); await page.waitForSelector('.sc-entry .sc-step');
   assert.ok(await page.locator('.sc-entry .sc-step').count() > 3, 'шаги входа внутри карточки «Вход в бота»');
+  // свой пост-шаг, выключенный во входе: есть метка и переключатель, и он включает шаг
+  {
+    let np = await db.first(`SELECT id FROM posts WHERE kind = 'node' AND status = 'active' LIMIT 1`);
+    if (!np) { await db.run(`INSERT INTO posts (kind, audience, track, day, send_time, status, text, created_by, created_at, mode, delay_min) VALUES ('node', 'all', 'all', 0, '11:00', 'active', 'Welcome to Di Sign University', 1, ?, 'day', 0)`, [Math.floor(Date.now() / 1000)]); np = await db.first(`SELECT id FROM posts WHERE kind = 'node' AND status = 'active' ORDER BY id DESC LIMIT 1`); }
+    if (np) {
+      const k = 'post:' + np.id, put = (key, v) => db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [key, JSON.stringify(v)]);
+      const cur = await db.first(`SELECT value FROM settings WHERE key = 'flow:order'`);
+      const ord = (cur ? JSON.parse(cur.value) : ['consentPd', 'consentAds', 'askName', 'askContact', 'fbOffer', 'askTrack', 'testOffer']).filter((x) => x !== k);
+      ord.splice(2, 0, k); await put('flow:order', ord); await put('flow:off', [k]);
+      await page.reload(); await page.waitForSelector('.sc-tl'); await page.waitForSelector('.sc-entry .sc-step');
+      const row = page.locator('.sc-entry .sc-step[data-k="' + k + '"]');
+      assert.match(await row.textContent(), /Выключен/, 'метка: пост выключен в самом входе');
+      if (!(await noscroll(page))) console.log('OVER2', w, await page.evaluate(() => [document.documentElement.scrollWidth, [...document.querySelectorAll('body *')].filter((e) => e.getBoundingClientRect().right > innerWidth + 1).slice(0, 6).map((e) => e.tagName + '.' + e.className + ':' + e.textContent.slice(0, 18))]));
+      assert.ok(await noscroll(page), 'нет горизонтального скролла со строкой выключенного поста');
+      await row.locator('[data-scoff]').click(); await page.waitForTimeout(700);
+      const off = JSON.parse((await db.first(`SELECT value FROM settings WHERE key = 'flow:off'`)).value);
+      assert.ok(!off.includes(k), 'переключатель включил шаг входа');
+      await put('flow:order', ord.filter((x) => x !== k)); await put('flow:off', []);
+      await page.reload(); await page.waitForSelector('.sc-tl'); await page.waitForSelector('.sc-entry .sc-step');
+    }
+  }
   if (w === 390) await page.screenshot({ path: OUT + '/sched-entry.png', fullPage: true });
   await page.locator('.sc-entry .sc-step[data-k="askName"]').evaluate((el) => el.click()); await page.waitForSelector('#sheet.on'); await page.evaluate(() => closeSheet && 0).catch(() => {}); await page.mouse.click(10, 10); await page.waitForTimeout(400);
   await page.click('#scEntryT');

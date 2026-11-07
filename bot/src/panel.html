@@ -2211,7 +2211,8 @@ function scEntryRows() {
     if (/^post:\d+$/.test(k)) {
       const p = S.posts.find((x) => x.id === +k.slice(5)); if (!p) return;
       if (p.who === 'new' && src === 'audit') return;
-      add(k, '↳ Свой пост «' + postName(p).slice(0, 30) + '»', fl.off.includes(k) || p.status !== 'active', { chip: p.status === 'active' ? ['Свой пост', 'own'] : [p.status === 'draft' ? 'Черновик' : 'Пауза', 'off'], sw: true });
+      const stepOff = fl.off.includes(k), live = p.status === 'active';
+      add(k, '↳ Свой пост «' + postName(p).slice(0, 30) + '»', stepOff || !live, { chip: !live ? [p.status === 'draft' ? 'Черновик' : 'Пауза', 'off'] : stepOff ? ['Выключен', 'off'] : ['Свой пост', 'own'], sw: live });
       return;
     }
     if (soc && src === 'site' && (k === 'fbOffer' || k === 'askTrack')) return;
@@ -2224,7 +2225,7 @@ function scEntryRows() {
     const chip = r.chip || (r.off ? ['Выключен', 'off'] : own(r.k) ? ['Свой пост', 'own'] : ['Шаблон', 'tpl']);
     const sk = r.swk || r.k;
     return '<div class="sc-step' + (r.off ? ' off' : '') + '" role="button" tabindex="0" data-k="' + r.k + '"><span class="n">' + r.n + '</span><span class="tt">' + esc(r.title) + '</span><span class="sc-ch ' + chip[1] + '">' + chip[0] + '</span>' +
-      (r.sw && !/^post:/.test(r.k) ? '<button type="button" class="sc-sw-w" data-scoff="' + sk + '" role="switch" aria-checked="' + !r.off + '" aria-label="Включить или выключить шаг"><span class="sc-sw' + (r.off ? '' : ' on') + '"></span></button>' : '') + '</div>';
+      (r.sw ? '<button type="button" class="sc-sw-w" data-scoff="' + sk + '" role="switch" aria-checked="' + !r.off + '" aria-label="Включить или выключить шаг"><span class="sc-sw' + (r.off ? '' : ' on') + '"></span></button>' : '') + '</div>';
   }).join('') + '</div>';
 }
 function scBar(picked) {
