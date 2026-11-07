@@ -106,6 +106,11 @@ img{display:block}
 .hello-sub{font-size:clamp(15px,2.3dvh,19px);line-height:1.22;max-width:290px;margin-inline:auto}
 .hello-img.big img{width:min(76vw,320px,34dvh)}
 .hello-img img{transform-origin:50% 92%;animation:waddle 2.4s ease-in-out infinite}
+/* картинка входного экрана: занимает остаток высоты, вписывается целиком и стоит по центру */
+.hello .hello-img{position:relative;overflow:visible;min-height:0;width:100%}
+.hello .hello-img img,.hello .hello-img.big img{position:absolute;inset:0;margin:auto;width:auto!important;height:auto!important;max-width:min(72vw,300px)!important;max-height:100%!important;object-fit:contain;aspect-ratio:auto;transform-origin:50% 90%;animation:floaty 4.2s ease-in-out infinite}
+@keyframes floaty{0%,100%{transform:translateY(0) rotate(-1.5deg)}50%{transform:translateY(-8px) rotate(1.5deg)}}
+@media (prefers-reduced-motion:reduce){.hello .hello-img img{animation:none}}
 @keyframes waddle{0%,100%{transform:translateX(-12px) rotate(-5deg)}25%{transform:translateX(0) rotate(0) translateY(-6px)}50%{transform:translateX(12px) rotate(5deg)}75%{transform:translateX(0) rotate(0) translateY(-6px)}}
 @media (max-height:720px){.hello .bell-ic{display:none}.hello .bell{padding:var(--s3) var(--s4)}}
 @media (max-height:620px){.hello .bell{display:none}}
@@ -533,10 +538,10 @@ details a,.src a{color:var(--blue)}
     </button>
     <button class="game" id="g-fonts" type="button" data-track="mat">
       <div>
-        <p class="px sm">game 02.</p>
+        <p class="px sm">game 01.</p>
         <h2 class="h2">Шрифтовая примерочная</h2>
-        <p class="small" style="margin-top:6px">Три постера: подбери шрифты, как в редакторе сторис.</p>
-        <div class="meta"><span class="pill">3 постера</span><span class="pill blue">4 минуты</span><span class="pill good" id="d-fonts" hidden>пройдено</span><span class="pill pink" id="l-fonts" hidden></span></div>
+        <p class="small" style="margin-top:6px">Тренируем насмотренность и подбираем шрифты под задачу.</p>
+        <div class="meta"><span class="pill blue">4 минуты</span><span class="pill good" id="d-fonts" hidden>пройдено</span><span class="pill pink" id="l-fonts" hidden></span></div>
       </div>
       <img data-img="notebook" alt="">
     </button>
