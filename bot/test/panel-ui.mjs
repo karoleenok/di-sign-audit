@@ -11,7 +11,7 @@ const b = await chromium.launch();
 const page = await b.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
 const errs = [];
 page.on('pageerror', (e) => { errs.push(e.message); console.log('PAGEERR', e.message); });
-const stub = (init) => `window.Telegram={WebApp:{initData:${JSON.stringify(init)},ready(){},expand(){},setHeaderColor(){},setBackgroundColor(){},HapticFeedback:{impactOccurred(){}}}};`;
+const stub = (init) => `try{localStorage.setItem('panelView','{"old":true}')}catch(e){};window.Telegram={WebApp:{initData:${JSON.stringify(init)},ready(){},expand(){},setHeaderColor(){},setBackgroundColor(){},HapticFeedback:{impactOccurred(){}}}};`;
 let INIT = initData();
 await page.route('**/telegram-web-app.js', (r) => r.fulfill({ contentType: 'application/javascript', body: stub(INIT) }));
 const step = (t) => console.log('✓', t);

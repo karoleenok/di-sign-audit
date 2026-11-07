@@ -8,7 +8,7 @@ await new Promise((r) => server.listen(8789, r));
 const OUT = process.env.SHOTS || '.';
 const b = await chromium.launch();
 const INIT = initData();
-const stub = `window.Telegram={WebApp:{initData:${JSON.stringify(INIT)},ready(){},expand(){},setHeaderColor(){},setBackgroundColor(){},HapticFeedback:{impactOccurred(){}}}};`;
+const stub = `try{localStorage.setItem('panelView','{"old":true}')}catch(e){};window.Telegram={WebApp:{initData:${JSON.stringify(INIT)},ready(){},expand(){},setHeaderColor(){},setBackgroundColor(){},HapticFeedback:{impactOccurred(){}}}};`;
 for (const w of [390, 320]) {
   const page = await b.newPage({ viewport: { width: w, height: 844 }, deviceScaleFactor: 1 });
   const errs = []; page.on('pageerror', (e) => errs.push(e.message));

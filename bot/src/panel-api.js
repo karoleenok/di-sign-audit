@@ -142,7 +142,7 @@ export async function handlePanelApi(ctx, request, url) {
 }
 
 // какие запросы можно отменить (меняют посты, тексты, порядок, документы)
-const UNDO_RX = /^\/(bulk|post\/new|post\/\d+|post\/\d+\/(move|copy|restore)|msg\/[A-Za-z_]+|flow|docs|reorder|path\/scaffold)$/;
+const UNDO_RX = /^\/(swap|bulk|post\/new|post\/\d+|post\/\d+\/(move|copy|restore)|msg\/[A-Za-z_]+|flow|docs|reorder|path\/scaffold)$/;
 const SNAP_KEYS = `key LIKE 'msg:%' OR key LIKE 'msgx:%' OR key LIKE 'flow:%' OR key LIKE 'doc:%'`;
 async function takeSnap(ctx) {
   return JSON.stringify({ posts: await ctx.db.all(`SELECT * FROM posts`), settings: await ctx.db.all(`SELECT key, value FROM settings WHERE ${SNAP_KEYS}`) });
@@ -157,6 +157,7 @@ async function undoLabel(ctx, path, body) {
   if (m) return (body.status === 'archived' ? 'в архив «' : body.status ? 'статус «' : body.rows ? 'кнопки «' : 'правка «') + await nm(+m[1]) + '»';
   m = /^\/msg\/([A-Za-z_]+)$/.exec(path);
   if (m) { const i = msgInfo(m[1]); return 'текст «' + (i ? i.title : m[1]).slice(0, 40) + '»'; }
+  if (path === '/swap') return 'порядок постов';
   if (path === '/bulk') return ({ active: 'включить', paused: 'на паузу', archived: 'в архив', copy: 'дублировать' }[body.action] || 'действие') + ': постов ' + ((body.ids || []).length);
   return path === '/path/scaffold' ? 'новый путь из соцсетей' : path === '/flow' ? 'порядок шагов входа' : path === '/docs' ? 'документы' : 'перенос поста';
 }
@@ -207,6 +208,27 @@ async function panelRest(ctx, request, url, user, path, body) {
       people: { all: people.n || 0, active: people.active || 0 },
       run: await activeRun(ctx.db, user.id),
     });
+  }
+
+  // поменять два поста местами: время и способ остаются на своих местах, меняются сами посты
+  if (path === '/swap' && request.method === 'POST') {
+    const A = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [parseInt(body.a, 10)]);
+    const B = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [parseInt(body.b, 10)]);
+    if (!A || !B || A.id === B.id) return json({ error: 'Посты не найдены' }, 404);
+    if (A.kind !== 'drip' || B.kind !== 'drip') return json({ error: 'Местами меняются только посты ленты' }, 400);
+    if (A.after_id === B.id || B.after_id === A.id) return json({ error: 'Эти посты идут цепочкой (один после другого). Измени время у одного из них вручную' }, 400);
+    const cols = ['mode', 'day', 'send_time', 'delay_min', 'at_time', 'after_id'];
+    const set = (id, from) => ctx.db.run(`UPDATE posts SET ${cols.map((c) => c + ' = ?').join(', ')} WHERE id = ?`, [...cols.map((c) => from[c]), id]);
+    await set(A.id, B); await set(B.id, A);
+    // не даём получиться кругу «после»: если он вышел, возвращаем как было
+    for (const id of [A.id, B.id]) {
+      let cur = await ctx.db.first(`SELECT id, mode, after_id FROM posts WHERE id = ?`, [id]);
+      for (let i = 0; cur && cur.mode === 'after' && cur.after_id && i < 60; i++) {
+        if (cur.after_id === id) { await set(A.id, A); await set(B.id, B); return json({ error: 'Получился бы круг из «после поста». Измени время вручную' }, 400); }
+        cur = await ctx.db.first(`SELECT id, mode, after_id FROM posts WHERE id = ?`, [cur.after_id]);
+      }
+    }
+    return json({ ok: true });
   }
 
   // несколько постов сразу: включить, на паузу, в архив, дублировать — одним шагом отката

@@ -8,7 +8,7 @@ await new Promise((r) => server.listen(8790, r));
 const OUT = process.env.SHOTS || '.';
 const b = await chromium.launch();
 const INIT = initData();
-const stub = `window.Telegram={WebApp:{initData:${JSON.stringify(INIT)},ready(){},expand(){},setHeaderColor(){},setBackgroundColor(){},HapticFeedback:{impactOccurred(){}}}};`;
+const stub = `try{localStorage.setItem('panelView','{"old":true}')}catch(e){};window.Telegram={WebApp:{initData:${JSON.stringify(INIT)},ready(){},expand(){},setHeaderColor(){},setBackgroundColor(){},HapticFeedback:{impactOccurred(){}}}};`;
 const now = Math.floor(Date.now() / 1000);
 await db.run(`INSERT OR REPLACE INTO users (tg_id, first_name, status, track, consent_ads_at, joined_at, created_at) VALUES (9001, 'Анна', 'active', 'mat', 1, ?, ?)`, [now - 7200, now - 7200]);
 const post = await db.first(`SELECT id FROM posts WHERE kind = 'drip' ORDER BY id LIMIT 1`);
