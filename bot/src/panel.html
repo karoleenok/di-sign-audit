@@ -1967,7 +1967,7 @@ function scCard(p, o) {
     : '<button type="button" class="sc-sw-w" data-scsw="' + p.id + '" role="switch" aria-checked="' + on + '" aria-label="Включить или выключить пост"><span class="sc-sw' + (on ? ' on' : '') + '"></span></button>';
   return '<div class="sc-card' + (o.ind ? ' sc-ind' : '') + (o.picked ? ' sel' : '') + '" data-scid="' + p.id + '"><div class="sc-w"><span>' + esc(scWhen(p, ids)) + '</span></div>' +
     '<div class="sc-t">' + esc(postName(p)) + '</div><div class="sc-m">' + esc(scMeta(p)) + '</div>' +
-    '<div class="sc-row"><div class="sc-tags">' + (p.kind !== 'node' ? '<span class="sc-tg ' + t[0] + '">' + t[1] + '</span>' : '') + '<span class="sc-tg ' + st[0] + '">' + st[1] + '</span></div>' + ctl + '</div></div>';
+    '<div class="sc-row"><div class="sc-tags">' + (p.kind !== 'node' ? '<span class="sc-tg ' + t[0] + '">' + t[1] + '</span>' : '') + '<span class="sc-tg ' + st[0] + '">' + st[1] + '</span>' + (o.dup ? '<span class="sc-tg" style="background:#f9dada;color:#8a1c1c">⚠ Похож на другой</span>' : '') + '</div>' + ctl + '</div></div>';
 }
 function renderSched() {
   { const b = document.getElementById('scBar'); if (b) b.remove(); }
@@ -1977,6 +1977,7 @@ function renderSched() {
   const inboxN = S.posts.filter((p) => p.inbox).length;
   const noGo = S.posts.filter((p) => ['drip', 'date', 'gift', 'fb'].includes(p.kind) && (p.status === 'draft' || p.status === 'paused')).length;
   const src = S.runSrc || 'site';
+  const dups = scDups(); const dupIds = new Set(); dups.forEach((d) => { dupIds.add(d.a.id); dupIds.add(d.b.id); });
   const mile = (n, title, note, dk) => '<div class="sc-it"><div class="sc-mile' + (dk ? ' dk' : '') + '">' + n + '</div><div><div class="sc-mt">' + title + '</div><div class="sc-mn">' + note + '</div></div></div>';
   const dia = (label) => '<div class="sc-it"><div class="sc-dia"><i></i></div><div class="sc-day">' + label + '</div></div>';
   const dotCard = (html) => '<div class="sc-it"><div class="sc-dot"><i></i></div>' + html + '</div>';
@@ -1984,6 +1985,7 @@ function renderSched() {
   const nSteps = ((S.flow && S.flow.order) || []).length + 2;
   let h = '<div class="sc-chips"><button type="button" class="sc-chip" id="scAdd" style="background:var(--ink);color:#fffbf7;border-color:var(--ink)">＋ Пост</button>' +
     (inboxN ? '<button type="button" class="sc-chip blue" id="scInbox">✉️ Новые из бота · ' + inboxN + '</button>' : '') +
+    (dups.length ? '<button type="button" class="sc-chip" id="scDup" style="background:#f9dada;border-color:transparent;color:#8a1c1c">⚠ Дубли · ' + dups.length + '</button>' : '') +
     (noGo ? '<button type="button" class="sc-chip warm" id="scNo">Не уйдут · ' + noGo + '</button>' : '') +
     '<button type="button" class="sc-chip" id="scCheck">Проверить</button>' +
     '<button type="button" class="sc-chip" id="scStud">👀 Как ученик</button>' +
@@ -2004,15 +2006,15 @@ function renderSched() {
     const b = bucketDay(p, ids);
     if (b !== last) { h += dia(scDay(b)); last = b; }
     const prev = drip[i - 1], next = drip[i + 1];
-    h += dotCard(scCard(p, { re: RE, sel: SEL, picked: picked.includes(p.id), ind: p.mode === 'after', up: prev && bucketDay(prev, ids) === b, dn: next && bucketDay(next, ids) === b }));
+    h += dotCard(scCard(p, { re: RE, sel: SEL, dup: dupIds.has(p.id), picked: picked.includes(p.id), ind: p.mode === 'after', up: prev && bucketDay(prev, ids) === b, dn: next && bucketDay(next, ids) === b }));
   });
   const dates = S.posts.filter((p) => p.kind === 'date' && keep(p)).sort((a, b) => (a.run_at || 9e12) - (b.run_at || 9e12));
-  if (dates.length) { h += dia('В конкретные даты · аудит не нужен'); dates.forEach((p) => { h += dotCard(scCard(p, { sel: SEL, picked: picked.includes(p.id) })); }); }
+  if (dates.length) { h += dia('В конкретные даты · аудит не нужен'); dates.forEach((p) => { h += dotCard(scCard(p, { dup: dupIds.has(p.id), sel: SEL, picked: picked.includes(p.id) })); }); }
   const acts = S.posts.filter((p) => (p.kind === 'gift' || p.kind === 'fb') && keep(p));
   const nodes = S.posts.filter((p) => p.kind === 'node');
   if (acts.length || nodes.length) {
     h += dia('Когда человек сам что-то сделал');
-    acts.forEach((p) => { h += dotCard(scCard(p, { sel: SEL, picked: picked.includes(p.id) })); });
+    acts.forEach((p) => { h += dotCard(scCard(p, { dup: dupIds.has(p.id), sel: SEL, picked: picked.includes(p.id) })); });
     if (nodes.length) {
       const nOpen = view.scNodes === true;
       h += dotCard('<div class="sc-card" id="scNodes" role="button" tabindex="0"><div class="sc-w"><span>Когда нажмёт кнопку</span></div><div class="sc-t">Ответы на кнопки: ' + nodes.length + ' ' + (nodes.length === 1 ? 'пост' : nodes.length < 5 ? 'поста' : 'постов') + '</div><div class="sc-m">' + (nOpen ? 'Нажми на пост, чтобы изменить' : 'Нажми, чтобы показать список') + '</div></div>');
@@ -2031,6 +2033,7 @@ function renderSched() {
   $('scAdd').onclick = () => { haptic(); addChoice(); };
   if ($('scInbox')) $('scInbox').onclick = () => { haptic(); scInbox(); };
   if ($('scNo')) $('scNo').onclick = () => { haptic(); scNotGoing(); };
+  if ($('scDup')) $('scDup').onclick = () => { haptic(); scDupSheet(); };
   $('scCheck').onclick = () => { haptic(); scCheck(); };
   $('scRe').onclick = () => { if (T !== 'all') return; view.sReorder = !view.sReorder; saveView(); renderSched(); };
   document.querySelectorAll('[data-sctrk]').forEach((b) => b.onclick = () => { view.sTrack = b.dataset.sctrk; if (view.sTrack !== 'all') view.sReorder = false; saveView(); haptic(); renderSched(); });
@@ -2066,7 +2069,12 @@ async function scToggle(id) {
     const r = await api('/bulk', { ids: [id], action: to });
     haptic('medium');
     if (r.skipped) toast(p.kind === 'date' && !p.run_at ? 'Сначала задай дату' : 'Пустой пост не включить: добавь текст или картинку');
-    else toast(to === 'active' ? 'Пост включён' : 'Пост выключен: он никому не уйдёт');
+    else if (to === 'active') {
+      await reload();
+      const dd = scDupsOf(S.posts.find((x) => x.id === id) || p);
+      if (dd.length) { const o = dd[0].a.id === id ? dd[0].b : dd[0].a; toast('Включён. Но он похож на «' + postName(o).slice(0, 30) + '»: человек может получить оба. Смотри «⚠ Дубли»'); return; }
+      toast('Пост включён');
+    } else toast('Пост выключен: он никому не уйдёт');
     await reload();
   } catch (e) { toast(e.message); }
 }
@@ -2241,6 +2249,56 @@ function scStudent() {
     setTimeout(() => loadThumbs($('sheet')), 0);
   };
   draw();
+}
+
+// ----- дубли: два поста, которые придут одному человеку почти одинаково -----
+const dpNorm = (t) => String(t || '').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+const dpWords = (t) => new Set(dpNorm(t).split(' ').filter((w) => w.length > 2));
+const dpFiles = (p) => (p.files || p.media || []).map((f) => f.file_id || f.name || f.type).filter(Boolean).join('|');
+function dpSim(a, b) {
+  const A = dpWords(a.text), B = dpWords(b.text);
+  if (A.size && B.size) { let i = 0; A.forEach((w) => { if (B.has(w)) i++; }); return i / (A.size + B.size - i); }
+  const fa = dpFiles(a), fb = dpFiles(b);
+  if (!A.size && !B.size && fa && fa === fb) return 1;
+  return 0;
+}
+const dpTrack = (a, b) => (a.track || 'all') === 'all' || (b.track || 'all') === 'all' || a.track === b.track;
+const dpGroup = (k) => k === 'gift' ? 'gift' : k === 'fb' ? 'fb' : (k === 'drip' || k === 'date') ? 'time' : null;
+function scDups() {
+  const list = S.posts.filter((p) => dpGroup(p.kind) && p.status === 'active');
+  const out = [];
+  for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+    const a = list[i], b = list[j];
+    if (dpGroup(a.kind) !== dpGroup(b.kind) || !dpTrack(a, b)) continue;
+    let sim = dpSim(a, b);
+    const ta = dpNorm(a.title), tb = dpNorm(b.title);
+    if (ta && ta === tb) sim = Math.max(sim, 0.9);
+    if (sim >= 0.6) out.push({ a, b, sim });
+  }
+  return out.sort((x, y) => y.sim - x.sim);
+}
+function scDupsOf(p) { return scDups().filter((d) => d.a.id === p.id || d.b.id === p.id); }
+function dpDiff(a, b) {
+  const A = dpWords(a.text), B = dpWords(b.text);
+  const onlyA = [...A].filter((w) => !B.has(w)).slice(0, 14), onlyB = [...B].filter((w) => !A.has(w)).slice(0, 14);
+  return { onlyA, onlyB };
+}
+function scDupSheet() {
+  const list = scDups(), ids = byIdMap();
+  const row = (k, x, y) => '<div style="display:grid;grid-template-columns:90px 1fr 1fr;gap:8px;padding:8px 0;border-top:1px solid var(--line);font-size:14px"><span class="muted">' + k + '</span><span>' + x + '</span><span>' + y + '</span></div>';
+  sheet('<div class="shd"><span class="pill">Дубли</span><button type="button" class="sx" id="dpX" aria-label="закрыть">✕</button></div><h2>Похожие <i>посты</i></h2><p class="small muted">Эти включённые посты могут прийти одному человеку почти одинаково. Выключи лишний или поправь время.</p>' +
+    (list.map((d, i) => {
+      const a = d.a, b = d.b, df = dpDiff(a, b), same = d.sim >= 0.95;
+      return '<div class="msg" style="cursor:default"><div class="t">' + (same ? 'Одинаковые' : 'Почти одинаковые · ' + Math.round(d.sim * 100) + '%') + '</div>' +
+        '<div style="display:grid;grid-template-columns:90px 1fr 1fr;gap:8px;margin-top:6px"><span></span><b style="font-size:14px">«' + esc(postName(a).slice(0, 30)) + '»</b><b style="font-size:14px">«' + esc(postName(b).slice(0, 30)) + '»</b></div>' +
+        row('Когда', esc(scWhen(a, ids)), esc(scWhen(b, ids))) + row('Кому', esc(scTrk(a)[1]), esc(scTrk(b)[1])) +
+        row('Картинки', (a.files || a.media || []).length || 'нет', (b.files || b.media || []).length || 'нет') + row('Кнопки', scBtnN(a) || 'нет', scBtnN(b) || 'нет') +
+        (df.onlyA.length || df.onlyB.length ? '<div style="border-top:1px solid var(--line);padding-top:8px;font-size:14px"><span class="muted">Слова только в первом:</span> ' + (df.onlyA.map(esc).join(', ') || '—') + '<br><span class="muted">Слова только во втором:</span> ' + (df.onlyB.map(esc).join(', ') || '—') + '</div>' : '<div class="small muted" style="border-top:1px solid var(--line);padding-top:8px">Тексты совпадают слово в слово.</div>') +
+        '<div class="meta" style="margin-top:10px"><button type="button" class="chip" data-dpoff="' + a.id + '">Выключить первый</button><button type="button" class="chip" data-dpoff="' + b.id + '">Выключить второй</button><button type="button" class="chip" data-dpopen="' + a.id + '">Открыть первый</button><button type="button" class="chip" data-dpopen="' + b.id + '">Открыть второй</button></div></div>';
+    }).join('') || '<p class="muted">Дублей нет.</p>'));
+  $('dpX').onclick = closeSheet;
+  document.querySelectorAll('[data-dpopen]').forEach((el) => el.onclick = () => openPost(+el.dataset.dpopen));
+  document.querySelectorAll('[data-dpoff]').forEach((el) => el.onclick = async () => { try { await api('/bulk', { ids: [+el.dataset.dpoff], action: 'paused' }); haptic('medium'); await reload(); if (scDups().length) scDupSheet(); else { closeSheet(); toast('Дублей больше нет'); } } catch (e) { toast(e.message); } });
 }
 async function openTech() {
   let r;

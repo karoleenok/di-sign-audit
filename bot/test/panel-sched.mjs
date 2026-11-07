@@ -77,6 +77,20 @@ for (const w of [390, 320]) {
   assert.equal(await page.locator('#scBar').count(), 0, 'панель выбора закрыта');
   // ответы на кнопки раскрываются
   if (await page.locator('#scNodes').count()) { await page.click('#scNodes'); await page.waitForSelector('#scMap'); }
+  // дубли: два почти одинаковых включённых поста
+  const T0 = Math.floor(Date.now() / 1000), txt = 'Уникальный текст про шрифты и сетку номер ' + w + ' для проверки дублей в расписании';
+  for (const extra of ['', ' ещё']) await db.run(`INSERT INTO posts (kind, audience, track, day, send_time, status, text, created_by, created_at, mode, delay_min) VALUES ('drip', 'all', 'all', 3, '11:00', 'active', ?, 1, ?, 'day', 0)`, [txt + extra, T0]);
+  await page.reload(); await page.waitForSelector('#scDup');
+  assert.match(await page.textContent('#scDup'), /Дубли/);
+  assert.ok(await page.locator('.sc-tg', { hasText: 'Похож на другой' }).count() >= 2, 'на карточках метка «Похож на другой»');
+  await page.click('#scDup'); await page.waitForSelector('[data-dpoff]');
+  assert.match(await page.textContent('#sheet'), /Слова только/);
+  assert.ok(await noscroll(page), 'нет горизонтального скролла в «Дублях»');
+  if (w === 390) await page.screenshot({ path: OUT + '/sched-dups.png' });
+  const dpId = +(await page.locator('[data-dpoff]').first().getAttribute('data-dpoff'));
+  await page.locator('[data-dpoff]').first().click(); await page.waitForTimeout(900);
+  assert.equal((await db.first(`SELECT status FROM posts WHERE id = ?`, [dpId])).status, 'paused', 'лишний пост выключен');
+  await page.mouse.click(10, 10); await page.waitForTimeout(300);
   // + Пост
   await page.click('#scAdd'); await page.waitForSelector('#acNew');
   assert.match(await page.textContent('#sheet'), /Написать здесь/); assert.match(await page.textContent('#sheet'), /Взять готовый/);
