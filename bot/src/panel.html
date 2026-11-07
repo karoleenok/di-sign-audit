@@ -311,6 +311,10 @@ body.selmode .card[data-id].picked::before,body.selmode .fn[data-id].picked::bef
 .ps .pst{display:flex;align-items:center;gap:8px}.ps .psn{flex:none;width:24px;height:24px;border-radius:99px;background:#eee8e3;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
 .ps .ar2{flex:none;width:44px;height:44px;border:1.5px solid var(--line);background:var(--card);border-radius:14px;font-size:20px;line-height:1;cursor:pointer;color:var(--ink)}.ps .ar2:disabled{opacity:.35;cursor:default}
 .ps .psw{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.ps .psw select,.ps .psw input[type=time]{min-height:44px;width:auto;max-width:100%;font-size:16px;border:1.5px solid var(--line);border-radius:12px;padding:0 10px;background:var(--card)}
+
+.kind.lib{display:block;text-align:left}.kind.lib .ls{display:block;color:var(--soft);font-size:14px;line-height:1.35;margin-top:3px;overflow-wrap:anywhere}
+.kind.lib .lb{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.kind.lib .lb i{font-style:normal;font-size:12.5px;font-weight:600;border-radius:99px;padding:3px 10px;background:#eee8e3;color:#4a3e37}.kind.lib .lb i.w{background:#fbe6d2;color:#5c3208}
+.sc-flt.libf{flex-wrap:wrap}.sc-flt.libf button{flex:0 0 auto;padding:0 14px;min-width:auto;font-size:14px}
 .pl{border:1px solid var(--line);background:var(--card);border-radius:20px;padding:12px 14px;margin:0 0 14px}
 .pl-h{display:flex;align-items:center;gap:10px;width:100%;min-height:48px;background:none;border:0;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer}
 .pl-h b{font-size:17px;display:block}.pl-h .small{display:block}.pl-h>span:first-child{flex:1 1 0;min-width:0}.pl-h .ar{flex:none;font-size:18px;color:var(--soft)}
@@ -512,11 +516,12 @@ function render() {
       : tab === 'reviews' ? '<h1>Люди</h1><p class="lead">Кто оставил заявку на предзапись или отзыв о кабинете и как с ним связаться.</p>'
       : tab === 'game' ? '<h1>Игра <i>прогрева</i></h1><p class="lead">Когда открыть уроки и показывать ли игру всем. Время по Москве.</p>'
       : tab === 'tasks' ? '<h1>Задачи таксиков</h1><p class="lead">Кто что делает до 25 ноября. Отметь своё, шкала заполнится сама.</p>'
+      : tab === 'lib' ? '<h1>Все <i>посты</i></h1><p class="lead">Всё, что написано в боте через /new и в панели: найти, открыть, посмотреть, где стоит.</p>'
       : tab === 'texts' ? '<h1>Настройки</h1><p class="lead">Документы, команды ученика, профиль бота и остальные тексты.</p>'
       : '<h1>Весь путь <i>ученика</i></h1><p class="lead">Вход, лента, даты и бонус — в одном месте.</p>') +
     '<div class="tabs' + (view.old ? '' : ' newtabs') + '"><div class="seg" id="tabs">' +
     (view.old ? [['home','Главная'],['path','Путь · ' + (counts.feed + counts.dates + counts.gifts + counts.fb0)],['reviews','Люди · ' + (S.leadCount || 0)],['game','Игра'],['tasks','Задачи'],['texts','Настройки']]
-      : [['home','Главная'],['sched','Расписание'],['reviews','Люди · ' + (S.leadCount || 0)],['game','Игра'],['more','Ещё']]).map(([k,t]) => '<button data-t="' + k + '" class="' + ((view.old ? tab === k : (k === 'more' ? ['more', 'path', 'tasks', 'texts'].includes(tab) : tab === k)) ? 'on' : '') + '">' + t + '</button>').join('') +
+      : [['home','Главная'],['sched','Расписание'],['reviews','Люди · ' + (S.leadCount || 0)],['game','Игра'],['more','Ещё']]).map(([k,t]) => '<button data-t="' + k + '" class="' + ((view.old ? tab === k : (k === 'more' ? ['more', 'path', 'tasks', 'texts', 'lib'].includes(tab) : tab === k)) ? 'on' : '') + '">' + t + '</button>').join('') +
     '</div></div><div id="body"></div>';
   $('tabs').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; tab = b.dataset.t; if (tab === 'tasks') TD = null; haptic(); render(); window.scrollTo(0, 0); };
   { const on = $('tabs').querySelector('.on'); if (on && on.scrollIntoView) on.scrollIntoView({ inline: 'nearest', block: 'nearest' }); }
@@ -525,9 +530,9 @@ function render() {
   if (view.old && tab === 'more') tab = 'path';
   if (!view.old && tab === 'old') tab = 'sched';
   if (tab !== 'path' && view.selMode) { view.selMode = false; sel.clear(); document.body.classList.remove('selmode'); }
-  ({ home: renderHome, sched: renderSched, more: renderMore, path: renderFlow, reviews: renderReviews, game: renderGame, tasks: renderTasks, texts: renderTexts })[tab]();
+  ({ home: renderHome, sched: renderSched, more: renderMore, path: renderFlow, reviews: renderReviews, game: renderGame, tasks: renderTasks, texts: renderTexts, lib: renderLib })[tab]();
   if (view.old) { $('body').insertAdjacentHTML('afterbegin', '<button type="button" class="sc-chip" id="goNew" style="margin:8px 0">Новая панель</button>'); $('goNew').onclick = () => { view.old = false; saveView(); tab = 'sched'; render(); window.scrollTo(0, 0); }; }
-  if (!view.old && ['path', 'tasks', 'texts'].includes(tab)) { $('body').insertAdjacentHTML('afterbegin', '<button type="button" class="sc-chip" id="backMore" style="margin:8px 0">← Ещё</button>'); $('backMore').onclick = () => { tab = 'more'; render(); window.scrollTo(0, 0); }; }
+  if (!view.old && ['path', 'tasks', 'texts', 'lib'].includes(tab)) { $('body').insertAdjacentHTML('afterbegin', '<button type="button" class="sc-chip" id="backMore" style="margin:8px 0">' + (tab === 'lib' ? '← Расписание' : '← Ещё') + '</button>'); $('backMore').onclick = () => { tab = tab === 'lib' ? 'sched' : 'more'; render(); window.scrollTo(0, 0); }; }
   if ($('undoBtn')) $('undoBtn').onclick = doUndo;
   bindHelp();
   setTimeout(() => loadThumbs($('body')), 0);
@@ -2093,6 +2098,7 @@ function renderSched() {
     (inboxN ? '<button type="button" class="sc-chip blue" id="scInbox">✉️ Новые из бота · ' + inboxN + '</button>' : '') +
     (dups.length ? '<button type="button" class="sc-chip" id="scDup" style="background:#f9dada;border-color:transparent;color:#8a1c1c">⚠ Дубли · ' + dups.length + '</button>' : '') +
     (noGo ? '<button type="button" class="sc-chip warm" id="scNo">Не уйдут · ' + noGo + '</button>' : '') +
+    '<button type="button" class="sc-chip" id="scLib">📚 Все посты · ' + S.posts.length + '</button>' +
     '<button type="button" class="sc-chip" id="scCheck">Проверить</button>' +
     '<button type="button" class="sc-chip" id="scStud">👀 Как ученик</button>' +
     '<button type="button" class="sc-chip' + (SEL ? ' on' : '') + '" id="scSel">' + (SEL ? 'Готово' : '☐ Выбрать') + '</button>' +
@@ -2141,6 +2147,7 @@ function renderSched() {
   if ($('scNo')) $('scNo').onclick = () => { haptic(); scNotGoing(); };
   if ($('scDup')) $('scDup').onclick = () => { haptic(); scDupSheet(); };
   $('scCheck').onclick = () => { haptic(); scCheck(); };
+  $('scLib').onclick = () => { haptic(); tab = 'lib'; render(); window.scrollTo(0, 0); };
   $('plT').onclick = () => { view.scPlan = view.scPlan === false; saveView(); renderSched(); };
   document.querySelectorAll('[data-plt]').forEach((b) => b.onclick = () => { view.scPlanT = b.dataset.plt; saveView(); renderSched(); });
   document.querySelectorAll('[data-plday]').forEach((el) => el.onclick = () => planSlot(view.scPlanT === 'mat' ? 'mat' : 'course', +el.dataset.plday, el.dataset.plname));
@@ -2156,7 +2163,7 @@ function renderSched() {
     const off = e.target.closest('[data-scoff]');
     if (off) { e.stopPropagation(); const k = off.dataset.scoff, fl = S.flow || { order: Object.keys(ENTRY), off: [] }; saveFlow(fl.order, fl.off.includes(k) ? fl.off.filter((x) => x !== k) : fl.off.concat(k)); return; }
     const k = el.dataset.k;
-    if (/^post:\d+$/.test(k)) openPost(+k.slice(5)); else if (k === 'gift') toast('Подарки ниже, в блоке «Когда человек сам что-то сделал»'); else openMsg(k);
+    if (/^post:\d+$/.test(k)) { try { openPost(+k.slice(5)); } catch (err) { toast('Не открылось: ' + err.message); } } else if (k === 'gift') toast('Подарки ниже, в блоке «Когда человек сам что-то сделал»'); else openMsg(k);
   });
   if (SEL) scBar(picked);
   document.querySelectorAll('.sc-card[data-scid]').forEach((el) => el.onclick = (e) => {
@@ -2275,6 +2282,7 @@ function renderMore() {
   const R = [
     ['Тексты бота', 'Приветствие, согласия, кнопки и все сообщения входа', () => { tab = 'texts'; render(); }],
     ['Старт потока', (S.cohort && (S.cohort.course || S.cohort.mat)) ? 'Мини-курс: ' + (S.cohort.course || 'не задан') + ' · материалы: ' + (S.cohort.mat || 'не задан') : 'Дата, с которой считаются дни для тех, кто вошёл раньше. Сейчас не задана', () => openCohort()],
+    ['Все посты', 'Всё, что написано через /new и в панели: поиск, премиум-эмодзи, где стоит', () => { tab = 'lib'; render(); }],
     ['Документы', 'Политика, согласия, ссылки на них', () => openDocs()],
     ['Задачи команды', 'Кто что делает, отметки «сделано»', () => { TD = null; tab = 'tasks'; render(); }],
     ['Вход для людей из соцсетей', 'Отдельная заготовка для тех, кто пришёл без аудита', () => { S.runSrc = 'site'; view.scEntry = true; tab = 'sched'; render(); }],
@@ -2300,6 +2308,42 @@ function openCohort() {
   $('chX').onclick = closeSheet; $('chC0').onclick = closeSheet;
   $('chOk').onclick = async () => { try { await api('/cohort', { course: $('chC').value, mat: $('chM').value }); closeSheet(); haptic('medium'); await reload(); toast('Старт потока сохранён'); } catch (e) { toast(e.message); } };
 }
+
+const LIB_F = [['all', 'Все'], ['rich', '✨ Премиум-эмодзи'], ['free', 'Нигде не стоят'], ['off', 'Выключены'], ['drip', 'Лента'], ['node', 'Ответы на кнопки'], ['other', 'Даты, подарки, бонус']];
+function libPlaced(p) {
+  if (p.kind !== 'node') return true;
+  return (S.posts || []).some((q) => (q.rows || []).flat().some((b) => b.go === p.id)) || ((S.flow && S.flow.order) || []).includes('post:' + p.id) || (S.msgs || []).some((m) => m.post === p.id);
+}
+function libMatch(p, f, q) {
+  if (f === 'rich' && !p.emoji && !p.rich) return false;
+  if (f === 'free' && libPlaced(p)) return false;
+  if (f === 'off' && p.status === 'active') return false;
+  if (f === 'drip' && p.kind !== 'drip') return false;
+  if (f === 'node' && p.kind !== 'node') return false;
+  if (f === 'other' && !['date', 'gift', 'fb'].includes(p.kind)) return false;
+  return !q || (postName(p) + ' ' + (p.text || '') + ' ' + (p.md || '')).toLowerCase().includes(q);
+}
+function libCard(p) {
+  const snip = (p.text || '').replace(/\s+/g, ' ').trim();
+  const name = postName(p), rest = snip && snip !== name ? snip : '';
+  const b = [esc(KIND_WHEN(p)), p.kind !== 'node' && p.kind !== 'fb' ? esc(trackLbl(p)) : '', p.status === 'active' ? 'включён' : p.status === 'draft' ? 'черновик' : 'выключен', p.emoji || p.rich ? '✨ премиум-эмодзи' : '', (p.media || []).length ? '🖼 ' + p.media.length : '', p.inbox ? '✉️ новый из бота' : '', libPlaced(p) ? '' : '⚠ нигде не стоит'].filter(Boolean);
+  return '<button type="button" class="kind lib" data-lib="' + p.id + '"><b>' + esc(name.slice(0, 70)) + '</b>' + (rest ? '<span class="ls">' + esc(rest.slice(0, 110)) + '</span>' : '') + '<span class="lb">' + b.map((x) => '<i' + (x.startsWith('⚠') ? ' class="w"' : '') + '>' + x + '</i>').join('') + '</span></button>';
+}
+function renderLib() {
+  const f = view.libF || 'all';
+  $('body').innerHTML = '<input id="libQ" type="search" placeholder="Найти пост по названию или тексту" value="' + esc(view.libQ || '') + '" style="margin:0 0 10px;min-height:48px;width:100%;box-sizing:border-box;font-size:16px">' +
+    '<div class="sc-flt libf" id="libF">' + LIB_F.map(([k, n]) => '<button type="button" data-lf="' + k + '" class="' + (f === k ? 'on' : '') + '">' + n + '</button>').join('') + '</div><p class="small muted" id="libN" style="margin:10px 2px"></p><div class="kinds" id="libL"></div>';
+  const draw = () => {
+    const ff = view.libF || 'all', q = (view.libQ || '').trim().toLowerCase();
+    const list = S.posts.filter((p) => libMatch(p, ff, q)).sort((a, b) => (b.inbox ? 1 : 0) - (a.inbox ? 1 : 0) || b.id - a.id);
+    $('libN').textContent = list.length ? 'Показано: ' + list.length + ' из ' + S.posts.length + '. Нажми на пост, чтобы открыть.' : '';
+    $('libL').innerHTML = list.length ? list.map(libCard).join('') : '<p class="muted" style="padding:12px 2px">' + (S.posts.length ? 'Таких постов нет. Попробуй другой фильтр или слово.' : 'Постов пока нет. Напиши первый в боте командой /new или в расписании через «＋ Пост».') + '</p>';
+    document.querySelectorAll('[data-lib]').forEach((el) => el.onclick = () => { haptic(); openPost(+el.dataset.lib); });
+  };
+  draw();
+  $('libQ').oninput = (e) => { view.libQ = e.target.value; draw(); };
+  $('libF').onclick = (e) => { const b = e.target.closest('[data-lf]'); if (!b) return; view.libF = b.dataset.lf; saveView(); document.querySelectorAll('#libF button').forEach((x) => x.classList.toggle('on', x === b)); draw(); };
+}
 function scEntryRows() {
   const fl = S.flow || { order: Object.keys(ENTRY), off: [] }, opt = S.flowOptional || [];
   const src = S.runSrc || 'site', soc = socialOn();
@@ -2312,7 +2356,7 @@ function scEntryRows() {
       const p = S.posts.find((x) => x.id === +k.slice(5)); if (!p) return;
       if (p.who === 'new' && src === 'audit') return;
       const stepOff = fl.off.includes(k), live = p.status === 'active';
-      add(k, '↳ Свой пост «' + postName(p).slice(0, 30) + '»', stepOff || !live, { chip: !live ? [p.status === 'draft' ? 'Черновик' : 'Пауза', 'off'] : stepOff ? ['Выключен', 'off'] : ['Свой пост', 'own'], sw: live });
+      add(k, '↳ Свой пост «' + postName(p).slice(0, 30) + '»', stepOff || !live, { chip: !live ? [p.status === 'draft' ? 'Черновик' : 'Пауза', 'off'] : stepOff ? ['Выключен', 'off'] : ['Свой пост', 'own'], sw: live, sub: !live ? 'не включён сам пост: нажми, чтобы открыть' : stepOff ? 'выключен во входе: включи справа, текст откроется по нажатию' : 'нажми, чтобы открыть текст и настройки' });
       return;
     }
     if (soc && src === 'site' && (k === 'fbOffer' || k === 'askTrack')) return;
@@ -2324,7 +2368,7 @@ function scEntryRows() {
   return '<div>' + rows.map((r) => {
     const chip = r.chip || (r.off ? ['Выключен', 'off'] : own(r.k) ? ['Свой пост', 'own'] : ['Шаблон', 'tpl']);
     const sk = r.swk || r.k;
-    return '<div class="sc-step' + (r.off ? ' off' : '') + '" role="button" tabindex="0" data-k="' + r.k + '"><span class="n">' + r.n + '</span><span class="tt">' + esc(r.title) + '</span><span class="sc-ch ' + chip[1] + '">' + chip[0] + '</span>' +
+    return '<div class="sc-step' + (r.off ? ' off' : '') + '" role="button" tabindex="0" data-k="' + r.k + '"><span class="n">' + r.n + '</span><span class="tt">' + esc(r.title) + (r.sub ? '<small>' + esc(r.sub) + '</small>' : '') + '</span><span class="sc-ch ' + chip[1] + '">' + chip[0] + '</span>' +
       (r.sw ? '<button type="button" class="sc-sw-w" data-scoff="' + sk + '" role="switch" aria-checked="' + !r.off + '" aria-label="Включить или выключить шаг"><span class="sc-sw' + (r.off ? '' : ' on') + '"></span></button>' : '') + '</div>';
   }).join('') + '</div>';
 }

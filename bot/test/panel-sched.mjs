@@ -105,6 +105,21 @@ for (const w of [390, 320]) {
   assert.equal(await page.locator('.sc-entry .sc-step').count(), 0, 'вход свёрнут по умолчанию');
   await page.click('#scEntryT'); await page.waitForSelector('.sc-entry .sc-step');
   assert.ok(await page.locator('.sc-entry .sc-step').count() > 3, 'шаги входа внутри карточки «Вход в бота»');
+  // библиотека всех постов: поиск, фильтры, открыть пост
+  await page.click('#scLib'); await page.waitForSelector('#libL .lib');
+  assert.ok((await page.locator('#libL .lib').count()) >= 3, 'в библиотеке есть посты');
+  if (!(await noscroll(page))) console.log('OVERLIB', w, await page.evaluate(() => [document.documentElement.scrollWidth, [...document.querySelectorAll('body *')].filter((e) => e.scrollWidth > e.clientWidth + 1 && e.clientWidth > 0).slice(0, 8).map((e) => e.tagName + '.' + e.className + ' sw' + e.scrollWidth + ' cw' + e.clientWidth)]));
+  assert.ok(await noscroll(page), 'нет горизонтального скролла в библиотеке');
+  if (w === 390) { await page.screenshot({ path: OUT + '/sched-lib.png', fullPage: true }); }
+  const allN = await page.locator('#libL .lib').count();
+  await page.fill('#libQ', 'Перенос из памятки'); await page.waitForTimeout(200);
+  assert.ok((await page.locator('#libL .lib').count()) < allN, 'поиск сужает список');
+  await page.fill('#libQ', ''); await page.click('[data-lf="free"]'); await page.waitForTimeout(200);
+  assert.ok(await noscroll(page));
+  await page.click('[data-lf="all"]'); await page.waitForTimeout(200);
+  await page.locator('#libL .lib').first().click(); await page.waitForSelector('#sheet.on #fTitle');
+  await page.click('#sheet .sx'); await page.waitForTimeout(300);
+  await page.click('#backMore'); await page.waitForSelector('.sc-tl');
   // свой пост-шаг, выключенный во входе: есть метка и переключатель, и он включает шаг
   {
     let np = await db.first(`SELECT id FROM posts WHERE kind = 'node' AND status = 'active' LIMIT 1`);
