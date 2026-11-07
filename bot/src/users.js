@@ -259,7 +259,7 @@ export async function previewStep(ctx, id, k, u = {}) {
   if (k === 'fbOffer') return say(ctx, id, 'fbOffer', { кабинет: ctx.env.KABINET_URL || 'https://karoleenok.github.io/di-sign-audit/kabinet/' }, { reply_markup: kb([[{ text: await btn(ctx, 'fbYes'), callback_data: 'fb:yes' }], [{ text: await btn(ctx, 'fbNo'), callback_data: 'fb:no' }]]) });
   if (k === 'askTrack') return say(ctx, id, 'askTrack', {}, { reply_markup: kb([[{ text: await btn(ctx, 'trackCourse'), callback_data: 'tr:course' }], [{ text: await btn(ctx, 'trackMat'), callback_data: 'tr:mat' }]]) });
   if (k === 'testOffer') { const url = ctx.env.TEST_URL; return say(ctx, id, 'testOffer', {}, url ? { reply_markup: kb([[{ text: await btn(ctx, 'testBtn'), url }]]) } : {}); }
-  if (k === 'schedCourse' || k === 'schedMat') return say(ctx, id, k, {});
+  if (k === 'schedCourse' || k === 'schedMat') return say(ctx, id, k, { имя: name }, await openKb(ctx, k === 'schedCourse' ? 'course' : 'mat'));
   if (isPostStep(k)) {
     const p = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [+k.slice(5)]);
     if (!p) throw new Error('поста нет');
@@ -298,16 +298,15 @@ export async function nextStep(ctx, u) {
     if (await STEP_RUN[k](ctx, u)) return;
   }
   if (!u.sched_at) {
-    const key = u.track === 'course' ? 'schedCourse' : 'schedMat';
-    // «получили твои данные, заявка отправлена» пишем только тому, кто правда оставил контакт
-    if (!off.includes('sched') && (u.contact_at || u.phone || u.email)) { await pauseFor(ctx, id, key); await say(ctx, id, key, {}); }
+    // финальное сообщение входа: тем, кто выбрал трек (аудит пройден), с кнопкой в мини-приложение; остальным — только если оставили контакт
+    const ex = u.track ? await openKb(ctx, u.track) : {};
+    const hasContact = !!(u.contact_at || u.phone || u.email);
+    if (!off.includes('sched') && ((u.track && ex && ex.reply_markup) || hasContact)) {
+      const key = u.track === 'course' ? 'schedCourse' : u.track ? 'schedMat' : 'schedNone';
+      await pauseFor(ctx, id, key); await say(ctx, id, key, { имя: u.first_name || 'друг' }, ex || {});
+    }
     // вход пройден — отсюда считается лента
     await ctx.db.run(`UPDATE users SET sched_at = ?, status = 'active', joined_at = COALESCE(joined_at, ?) WHERE tg_id = ?`, [ctx.now, ctx.now, id]);
-    // выбрал трек (аудит пройден): благодарим и зовём в мини-приложение с расписанием, если оно открыто для всех
-    if (u.track && !off.includes('auditDone')) {
-      const ex = await openKb(ctx, u.track);
-      if (ex && ex.reply_markup) { await pauseFor(ctx, id, 'auditDone'); await say(ctx, id, u.track === 'course' ? 'auditCourse' : 'auditMat', { имя: u.first_name || 'друг' }, ex); }
-    }
   } else if (u.status !== 'active') {
     await ctx.db.run(`UPDATE users SET status = 'active', joined_at = COALESCE(joined_at, ?) WHERE tg_id = ?`, [ctx.now, id]);
   }

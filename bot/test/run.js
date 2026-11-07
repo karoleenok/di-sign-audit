@@ -107,7 +107,7 @@ const before = calls.length;
 await pass(200);
 const g = sentTo(200, before);
 assert.ok(g.some((c) => c.method === 'sendMediaGroup'), 'получил подарок-альбом');
-assert.match(lastText(200), /ты с нами[\s\S]*полезные материалы/, 'последним — расписание материалов');
+assert.match(lastText(200), /ты прошёл аудит[\s\S]*полезные материалы/, 'последним — расписание материалов');
 let u = await db.first('SELECT * FROM users WHERE tg_id = 200');
 assert.equal(u.status, 'active'); assert.equal(u.level, 'start'); assert.equal(u.zone, 'P'); assert.equal(u.track, 'mat'); assert.equal(u.email, 'u200@mail.ru'); assert.equal(u.contact_name, 'U200');
 step('ученик из теста: согласия → имя → почта → отзыв пропустил → трек → подарок → расписание');
@@ -121,13 +121,13 @@ assert.match(lastText(300), /обращаться/, 'после согласий
   const off = sentTo(300, c0).find((c) => /аудит-тест/.test(c.body.text || ''));
   assert.ok(off, 'не проходил тест — предложение пройти тест');
   assert.equal(off.body.reply_markup.inline_keyboard[0][0].text, 'Пройти тест');
-  assert.match(lastText(300), /ты с нами/); }
+  assert.match(lastText(300), /ты с нами|ты прошёл аудит/); }
 // прошёл тест и вернулся по ссылке из теста
 { const c0 = calls.length;
   await msg(300, '/start audit_S_pro');
   assert.ok(sentTo(300, c0).some((c) => c.method === 'sendMediaGroup'), 'после теста пришёл общий подарок (зона не важна)');
   assert.match(sentTo(300, c0)[0].body.text, /аудит пройден/);
-  assert.ok(!sentTo(300, c0).some((c) => /ты с нами|обращаться/.test(c.body.text || '')), 'повторно вход не спрашивает'); }
+  assert.ok(!sentTo(300, c0).some((c) => /ты с нами|ты прошёл аудит|обращаться/.test(c.body.text || '')), 'повторно вход не спрашивает'); }
 u = await db.first('SELECT * FROM users WHERE tg_id = 300');
 assert.equal(u.zone, 'S'); assert.equal(u.status, 'active');
 // 400: отказался от рекламы
@@ -829,7 +829,7 @@ step('конструктор сценариев: порядок и выключ�
   assert.ok(note && /Елизавета · @liza_d · \+79001234567/.test(note.body.text) && /тёмную тему/.test(note.body.text), 'админу пришёл отзыв с контактом');
   // трек уже выбран в аудите — не спрашиваем; дальше подарок и расписание мини-курса
   assert.ok(!after.some((c) => c.body.chat_id === U && /Что тебе ближе/.test(c.body.text || '')), 'трек не спрашиваем повторно');
-  assert.match(lastText(U), /ты с нами/);
+  assert.match(lastText(U), /ты с нами|ты прошёл аудит/);
   u = await db.first('SELECT * FROM users WHERE tg_id = ?', [U]);
   assert.equal(u.status, 'active'); assert.ok(u.joined_at && u.sched_at);
   // лента по треку
@@ -846,7 +846,7 @@ step('конструктор сценариев: порядок и выключ�
   await msg(V, 'мояпочта'); assert.match(lastText(V), /ошибка/);
   await msg(V, 'Liza@Mail.ru'); await cb(V, 'fb:no');
   const v = await db.first('SELECT * FROM users WHERE tg_id = ?', [V]);
-  assert.equal(v.email, 'liza@mail.ru'); assert.equal(v.track, 'mat'); assert.equal(v.fb_skip, 1); assert.match(lastText(V), /ты с нами/);
+  assert.equal(v.email, 'liza@mail.ru'); assert.equal(v.track, 'mat'); assert.equal(v.fb_skip, 1); assert.match(lastText(V), /ты с нами|ты прошёл аудит/);
   await db.run(`UPDATE posts SET status = 'archived' WHERE id IN (?, ?, ?, ?)`, [pc, pm, pa, fbp]);
 }
 step('вход: выбор из аудита (мини-курс/материалы), имя, телефон кнопкой или почта, отзыв о кабинете → бонус и уведомление админу, лента по треку');
@@ -877,7 +877,7 @@ step('кнопки шага: спрятать и прислать пост по�
   await msg(Z, '/start audit_top_pro_month'); await cb(Z, 'c:pd'); await cb(Z, 'c:ads:1'); await cb(Z, 'n:ok'); await cb(Z, 'ct:tg'); await cb(Z, 'fb:no');
   const z = await C1.db.first('SELECT * FROM users WHERE tg_id = ?', [Z]);
   assert.ok(z.sched_at && z.status === 'active', 'вход завершён');
-  assert.ok(!/ты с нами/.test(lastText(Z) || ''), 'финальное сообщение не прислано');
+  assert.ok(!/ты с нами|ты прошёл аудит/.test(lastText(Z) || ''), 'финальное сообщение не прислано');
   await C1.db.run(`DELETE FROM settings WHERE key = 'flow:off'`);
 }
 step('финальное сообщение входа можно выключить');
@@ -1096,7 +1096,7 @@ step('несколько постов сразу, автоархив анонс�
     await cb(7700, 'n:ok'); await cb(7700, 'ct:email'); await msg(7700, 'z7700@mail.ru');
     const out = sentTo(7700, c0);
     assert.ok(!out.some((c) => /Хочешь помочь нам/.test(c.body.text || '')), 'отзыв о кабинете без аудита не предлагают');
-    assert.match(lastText(7700), /ты с нами/, 'финальное сообщение после контакта'); }
+    assert.match(lastText(7700), /ты с нами|ты прошёл аудит/, 'финальное сообщение после контакта'); }
   await cb(7700, mk.find((b) => /отзыв/i.test(b.text)).callback_data);
   assert.match(lastText(7700), /понравилось/, 'кнопка отзыва задаёт первый вопрос');
   await msg(7700, 'всё круто'); await msg(7700, 'добавьте больше примеров');
@@ -1115,7 +1115,7 @@ step('несколько постов сразу, автоархив анонс�
   assert.match(lastText(7701), /Хочешь помочь нам/, 'из аудита отзыв о кабинете предлагают');
   { const c0 = calls.length; await cb(7701, 'fb:no');
     assert.ok(sentTo(7701, c0).some((c) => /ПОДАРОК ПОСЛЕ АУДИТА/.test(c.body.text || '')), 'подарок'); }
-  assert.match(lastText(7701), /ты с нами/, 'в конце расписание');
+  assert.match(lastText(7701), /ты с нами|ты прошёл аудит/, 'в конце расписание');
   // 7702: нажала «оставить заявку» до согласия — сначала согласие, имя и телефон спрашиваем только после него
   const lp = (await call('/post/new', { kind: 'node', md: 'ЗАЯВКА', status: 'active', rows: [[{ text: 'Оставить заявку', lead: true }]] })).post;
   await msg(7702, '/start');
