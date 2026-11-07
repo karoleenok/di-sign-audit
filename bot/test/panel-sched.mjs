@@ -254,6 +254,21 @@ for (const w of [390, 320]) {
   await page.locator('.sc-card[data-scid]').first().click(); await page.waitForSelector('#bDeliv');
   assert.ok(await page.locator('#bRepl').count(), 'есть «Заменить другим постом»');
   await page.click('#bRepl'); await page.waitForSelector('[data-rp]'); await page.click('#sheet .sx');
+  // окно шаблона: выбранный свой пост читается целиком, есть «Открыть» и «Дублировать»
+  const pid = (await db.first(`SELECT id FROM posts WHERE text IS NOT NULL AND text <> '' LIMIT 1`)).id;
+  await page.click('#tabs button[data-t="more"]'); await page.waitForSelector('[data-mr]');
+  await page.locator('[data-mr]', { hasText: 'Тексты бота' }).click(); await page.waitForSelector('.msg');
+  await page.locator('.msg', { hasText: 'Приветствие' }).first().click();
+  await page.waitForSelector('#mPost', { timeout: 4000 });
+  {
+    await page.selectOption('#mPost', String(pid)); await page.waitForSelector('#mpOpen');
+    assert.ok(await page.locator('#postBox .phone').count(), 'в окне шаблона виден пост целиком');
+    assert.ok(await page.locator('#mpDup').count(), 'есть «Дублировать»');
+    assert.ok(await noscroll(page), 'нет горизонтального скролла в окне шаблона');
+    if (w === 390) await page.screenshot({ path: OUT + '/msg-post.png' });
+    await page.evaluate(() => { const b = document.querySelector('#sheet .sx, #sheet [id$="X"], #sheet .back'); if (b) b.click(); else document.getElementById('sheet').classList.remove('open'); });
+  }
+  await page.reload(); await page.waitForSelector('#tabs button[data-t="more"]');
   // Ещё и запасной старый вид
   await page.click('#tabs button[data-t="more"]'); await page.waitForSelector('[data-mr]');
   assert.ok(await page.locator('[data-mr]').count() >= 10, 'в «Ещё» все редкие разделы');

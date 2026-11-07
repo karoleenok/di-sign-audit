@@ -2349,17 +2349,25 @@ function renderLib() {
   $('libF').onclick = (e) => { const b = e.target.closest('[data-lf]'); if (!b) return; view.libF = b.dataset.lf; saveView(); document.querySelectorAll('#libF button').forEach((x) => x.classList.toggle('on', x === b)); draw(); };
 }
 
+
+// пост так, как его увидит ученик: пузырь с картинками и текстом, кнопки и куда они ведут
+function postBubble(p) {
+  const rows = (p.rows || []).flat();
+  const tgt = (b) => { if (b.go) { const q = S.posts.find((x) => x.id === +b.go); return 'пост «' + esc(q ? postName(q).slice(0, 40) : 'удалён, #' + b.go) + '»'; } return b.url ? esc(b.url) : b.fb ? 'бонус за отзыв' : '—'; };
+  const empty = !(p.text || '').trim() && !(p.media || []).length;
+  return '<div class="phone"><div class="hd">так увидит ученик</div><div class="m">' + mediaStrip(p, 3) + (p.text ? plainT(p.md || p.text) : '<i class="muted">текста нет</i>') + '</div>' + (rows.length ? '<div class="kbd">' + rows.map((b) => '<span>' + esc(b.text || '') + '</span>').join('') + '</div>' : '') + '</div>' +
+    (empty ? '<div class="note warn" style="margin-top:10px">В этом посте нет ни текста, ни картинок. Ученик получит пустое сообщение. Открой пост и добавь текст.</div>' : '') +
+    (rows.length ? '<p class="small muted" style="margin:10px 2px 0">Кнопки: ' + rows.map((b) => '«' + esc(b.text || '') + '» → ' + tgt(b)).join('; ') + '</p>' : '') +
+    (p.rich ? '<div class="note" style="margin-top:10px">В тексте премиум-эмодзи или особое оформление из бота: здесь они видны как обычные символы, ученик увидит их полностью.</div>' : '');
+}
 // посмотреть пост так, как его увидит ученик, не открывая редактор
 function previewPost(id) {
   const p = S.posts.find((x) => x.id === id); if (!p) { toast('Этот пост не найден: возможно, он в архиве'); return; }
   const fl = S.flow || { order: [], off: [] }, k = 'post:' + id, inFlow = fl.order.includes(k);
-  const tgt = (b) => { if (b.go) { const q = S.posts.find((x) => x.id === +b.go); return 'пост «' + esc(q ? postName(q).slice(0, 40) : 'удалён, #' + b.go) + '»'; } return b.url ? esc(b.url) : b.fb ? 'бонус за отзыв' : '—'; };
   const rows = (p.rows || []).flat();
   const where = [KIND_WHEN(p), p.kind !== 'node' && p.kind !== 'fb' ? trackLbl(p) : '', p.status === 'active' ? 'пост включён' : p.status === 'draft' ? 'черновик' : 'пост выключен', inFlow ? (fl.off.includes(k) ? 'шаг входа выключен' : 'шаг входа включён') : ''].filter(Boolean).join(' · ');
   sheet('<div class="shd"><span class="pill">Пост · #' + p.id + '</span><button type="button" class="sx" id="pvX" aria-label="закрыть">✕</button></div><h2>' + esc(postName(p).slice(0, 80)) + '</h2><p class="small muted">' + esc(where) + '</p>' +
-    '<div class="phone"><div class="hd">так увидит ученик</div><div class="m">' + mediaStrip(p, 3) + (p.text ? plainT(p.md || p.text) : '<i class="muted">текста нет</i>') + '</div>' + (rows.length ? '<div class="kbd">' + rows.map((b) => '<span>' + esc(b.text || '') + '</span>').join('') + '</div>' : '') + '</div>' +
-    (rows.length ? '<p class="small muted" style="margin:10px 2px 0">Кнопки: ' + rows.map((b) => '«' + esc(b.text || '') + '» → ' + tgt(b)).join('; ') + '</p>' : '') +
-    (p.rich ? '<div class="note" style="margin-top:10px">В тексте премиум-эмодзи или особое оформление из бота: здесь они видны как обычные символы, ученик увидит их полностью.</div>' : '') +
+    postBubble(p) +
     '<div class="btns"><button type="button" class="btn" id="pvEdit">✏️ Править</button><button type="button" class="btn ghost" id="pvDup">⎘ Дублировать…</button><button type="button" class="btn ghost" id="pvClose">Закрыть</button></div>');
   $('pvX').onclick = closeSheet; $('pvClose').onclick = closeSheet;
   $('pvEdit').onclick = () => { try { openPost(id); } catch (e) { toast('Не открылось: ' + e.message); } };
@@ -3019,8 +3027,10 @@ function openMsg(key) {
     const showPost = () => {
       const pid = +$('mPost').value, p = (S.posts || []).find((x) => x.id === pid);
       $('tplBox').style.display = p ? 'none' : '';
-      $('postBox').innerHTML = p ? '<div class="card" style="margin:10px 0"><div class="cbody"><div class="ttl' + (p.title ? ' cap' : '') + '">' + esc(postName(p)) + '</div>' + mediaStrip(p) + (p.text ? '<div class="tx">' + esc(p.text) + '</div>' : '') + chipsOf(p) + '</div></div><p class="small muted" style="margin:0 2px">Ученик получит этот пост целиком: текст, картинки и кнопки. Кнопки шага («Даю согласие» и т.п.) встанут под ними. Текст шаблона не отправляется.</p>' : '';
-      if (p) loadThumbs($('postBox'));
+      $('postBox').innerHTML = p ? '<div style="margin:10px 0 0"><b>' + esc(postName(p).slice(0, 70)) + '</b><span class="small muted"> · пост #' + p.id + (p.status === 'active' ? '' : ' · сам пост выключен') + '</span></div>' + postBubble(p) +
+        '<div class="meta" style="margin:10px 0"><button type="button" class="chip" id="mpOpen">✏️ Открыть и править пост</button><button type="button" class="chip" id="mpDup">⎘ Дублировать…</button></div>' +
+        '<p class="small muted" style="margin:0 2px">Ученик получит этот пост целиком: текст, картинки и кнопки. Кнопки шага («Даю согласие» и т.п.) встанут под ними. Текст шаблона не отправляется.</p>' : '';
+      if (p) { loadThumbs($('postBox')); $('mpOpen').onclick = () => { try { openPost(p.id); } catch (e) { toast('Не открылось: ' + e.message); } }; $('mpDup').onclick = () => dupPost(p.id); }
     };
     $('mPost').onchange = showPost; showPost();
   }
