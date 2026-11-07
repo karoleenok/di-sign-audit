@@ -319,17 +319,25 @@ body.selmode .card[data-id].picked::before,body.selmode .fn[data-id].picked::bef
 .sc-day{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--soft);padding-top:4px}
 .sc-card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;cursor:pointer}
 .sc-card .sc-w{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:700}.sc-card .sc-t{font-size:18px;line-height:1.25;font-weight:600}.sc-card .sc-m{font-size:13.5px;line-height:1.35;color:var(--soft)}
-.sc-row{display:flex;align-items:center;justify-content:space-between;gap:8px}.sc-tags{display:flex;flex-wrap:wrap;gap:6px}
+.sc-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}.sc-tags{display:flex;flex-wrap:wrap;gap:6px}
 .sc-tg{border-radius:99px;padding:5px 12px;font-size:13px;font-weight:600}.sc-tg.mini{background:#f8ddeb;color:#7a1f4b}.sc-tg.mat{background:#dcefFA;color:#0b4a6f}.sc-tg.all{background:#eee8e3;color:#4a3e37}.sc-tg.on{background:#ddf2e3;color:#1e6b3a}.sc-tg.pause{background:#fbe6d2;color:#8a4b12}.sc-tg.draft{background:#eee8e3;color:#4a3e37}
 .sc-sw{display:block;flex:none;width:52px;height:30px;border-radius:99px;border:0;background:#bfb2a8;position:relative;cursor:pointer;padding:0}.sc-sw:after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:99px;background:#fff;transition:left .15s}.sc-sw.on{background:#1e6b3a}.sc-sw.on:after{left:25px}
 .sc-sw-w{min-width:48px;min-height:48px;display:flex;align-items:center;justify-content:center;margin:-9px -8px -9px 0;background:transparent;border:0;cursor:pointer}
-.sc-mv{display:flex;gap:6px;flex:none}.sc-mv button{width:48px;height:48px;border-radius:14px;border:1.5px solid var(--ink);background:#fff;font-size:20px;font-weight:700;cursor:pointer}.sc-mv button:disabled{opacity:.3}
+.sc-mv{display:flex;gap:6px;flex-wrap:wrap}.sc-mv button{width:48px;height:48px;border-radius:14px;border:1.5px solid var(--ink);background:#fff;font-size:20px;font-weight:700;cursor:pointer}.sc-mv button:disabled{opacity:.3}
 .sc-entry{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:4px 16px 12px}
 .sc-entry>button.h{width:100%;min-height:56px;display:flex;align-items:center;justify-content:space-between;gap:8px;background:transparent;border:0;padding:0;text-align:left;cursor:pointer}
 .sc-ind{margin-left:18px}
 .sc-add{min-height:56px;width:100%;border:0;border-radius:99px;background:var(--ink);color:#fffbf7;font-weight:600;font-size:16px;cursor:pointer}
 .newtabs #tabs{overflow-x:visible}.newtabs #tabs button{flex:1 1 auto;min-width:0;padding:9px 6px;font-size:clamp(11px,3.5vw,14px);white-space:nowrap}
 .seg.sm button{min-width:0;white-space:normal;font-size:clamp(12.5px,3.6vw,14px)}
+
+.sc-step{min-height:52px;display:flex;align-items:center;gap:10px;font-size:15px;cursor:pointer;border-bottom:1px solid var(--line)}.sc-step:last-child{border-bottom:0}
+.sc-step .n{width:24px;height:24px;border-radius:99px;background:#eee8e3;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex:none}
+.sc-step .tt{flex:1 1 0;min-width:0;line-height:1.25}.sc-step .tt small{display:block;color:var(--soft);font-size:12.5px}
+.sc-step.off .tt{opacity:.55}.sc-ch{flex:none;border-radius:99px;padding:5px 12px;font-size:13px;font-weight:600}.sc-ch.tpl{background:#eee8e3;color:#4a3e37}.sc-ch.own{background:#f8ddeb;color:#7a1f4b}.sc-ch.off{background:#fff;border:1px solid var(--line);color:var(--soft)}
+.sc-bar{position:fixed;left:0;right:0;bottom:0;z-index:40;background:var(--bg);border-top:1px solid var(--line);padding:10px 16px calc(10px + env(safe-area-inset-bottom));display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.sc-bar .sc-chip{min-height:44px;padding:0 12px;font-size:14px}.sc-ck{width:26px;height:26px;border-radius:8px;border:2px solid var(--ink);display:flex;align-items:center;justify-content:center;flex:none;font-size:16px;line-height:1}.sc-ck.on{background:var(--ink);color:#fffbf7}
+.sc-card.sel{outline:2px solid var(--ink)}
 </style>
 </head>
 <body>
@@ -473,6 +481,7 @@ function cardHtml(p, opts) {
 // ---------- отрисовка ----------
 function render() {
   const app = $('app');
+  { const b = document.getElementById('scBar'); if (b && tab !== 'sched') b.remove(); }
   if (tab === 'entry' || tab === 'feed' || tab === 'flow') tab = 'path';
   const counts = { feed: S.posts.filter((p) => p.kind === 'drip').length, dates: S.posts.filter((p) => p.kind === 'date').length, gifts: S.posts.filter((p) => p.kind === 'gift').length, fb: S.fbCount || 0, fb0: S.posts.filter((p) => p.kind === 'fb').length };
   app.innerHTML =
@@ -1940,6 +1949,7 @@ const scBtnN = (p) => (p.rows || []).flat().length;
 const scMeta = (p) => [p.media && p.media.length ? '🖼 ' + p.media.length : '', scBtnN(p) ? 'кнопок ' + scBtnN(p) : '', p.sent ? 'получили ' + p.sent : '', p.clicks ? 'нажали ' + p.clicks : ''].filter(Boolean).join(' · ') || 'ещё никому не уходил';
 const scDay = (d) => d === 0 ? 'В день аудита' : d === 1 ? 'На следующий день' : 'Через ' + d + ' ' + (d % 10 === 1 && d % 100 !== 11 ? 'день' : (d % 10 >= 2 && d % 10 <= 4 && (d % 100 < 10 || d % 100 >= 20)) ? 'дня' : 'дней');
 function scWhen(p, ids) {
+  if (p.__when) return p.__when;
   if (p.kind === 'date') return fmtRun(p.run_at);
   if (p.kind === 'gift') return 'Сразу после теста';
   if (p.kind === 'fb') return 'Когда оставил отзыв';
@@ -1950,15 +1960,19 @@ function scWhen(p, ids) {
 function scCard(p, o) {
   o = o || {};
   const t = scTrk(p), st = scSt(p), ids = byIdMap(), on = p.status === 'active';
-  const ctl = o.re
-    ? '<span class="sc-mv"><button type="button" aria-label="Поднять выше" data-scup="' + p.id + '"' + (o.up ? '' : ' disabled') + '>↑</button><button type="button" aria-label="Опустить ниже" data-scdn="' + p.id + '"' + (o.dn ? '' : ' disabled') + '>↓</button></span>'
+  const ctl = o.sel
+    ? '<span class="sc-ck' + (o.picked ? ' on' : '') + '" aria-hidden="true">' + (o.picked ? '✓' : '') + '</span>'
+    : o.re
+    ? '<span class="sc-mv"><button type="button" aria-label="Поднять выше" data-scup="' + p.id + '"' + (o.up ? '' : ' disabled') + '>↑</button><button type="button" aria-label="Опустить ниже" data-scdn="' + p.id + '"' + (o.dn ? '' : ' disabled') + '>↓</button>' + (p.kind === 'drip' ? '<button type="button" aria-label="Перенести в другой день" data-scday="' + p.id + '" style="width:auto;padding:0 12px;font-size:14px;font-weight:600">В день…</button>' : '') + '</span>'
     : '<button type="button" class="sc-sw-w" data-scsw="' + p.id + '" role="switch" aria-checked="' + on + '" aria-label="Включить или выключить пост"><span class="sc-sw' + (on ? ' on' : '') + '"></span></button>';
-  return '<div class="sc-card' + (o.ind ? ' sc-ind' : '') + '" data-scid="' + p.id + '"><div class="sc-w"><span>' + esc(scWhen(p, ids)) + '</span></div>' +
+  return '<div class="sc-card' + (o.ind ? ' sc-ind' : '') + (o.picked ? ' sel' : '') + '" data-scid="' + p.id + '"><div class="sc-w"><span>' + esc(scWhen(p, ids)) + '</span></div>' +
     '<div class="sc-t">' + esc(postName(p)) + '</div><div class="sc-m">' + esc(scMeta(p)) + '</div>' +
     '<div class="sc-row"><div class="sc-tags">' + (p.kind !== 'node' ? '<span class="sc-tg ' + t[0] + '">' + t[1] + '</span>' : '') + '<span class="sc-tg ' + st[0] + '">' + st[1] + '</span></div>' + ctl + '</div></div>';
 }
 function renderSched() {
-  const ids = byIdMap(), T = view.sTrack || 'all', RE = !!view.sReorder && T === 'all';
+  { const b = document.getElementById('scBar'); if (b) b.remove(); }
+  const ids = byIdMap(), T = view.sTrack || 'all', RE = !!view.sReorder && T === 'all', SEL = !!view.sSel;
+  const picked = (view.sPick = view.sPick || []);
   const keep = (p) => T === 'all' || p.track === 'all' || p.track === T;
   const inboxN = S.posts.filter((p) => p.inbox).length;
   const noGo = S.posts.filter((p) => ['drip', 'date', 'gift', 'fb'].includes(p.kind) && (p.status === 'draft' || p.status === 'paused')).length;
@@ -1972,12 +1986,16 @@ function renderSched() {
     (inboxN ? '<button type="button" class="sc-chip blue" id="scInbox">✉️ Новые из бота · ' + inboxN + '</button>' : '') +
     (noGo ? '<button type="button" class="sc-chip warm" id="scNo">Не уйдут · ' + noGo + '</button>' : '') +
     '<button type="button" class="sc-chip" id="scCheck">Проверить</button>' +
+    '<button type="button" class="sc-chip" id="scStud">👀 Как ученик</button>' +
+    '<button type="button" class="sc-chip' + (SEL ? ' on' : '') + '" id="scSel">' + (SEL ? 'Готово' : '☐ Выбрать') + '</button>' +
     '<button type="button" class="sc-chip' + (RE ? ' on' : '') + '" id="scRe"' + (T !== 'all' ? ' disabled style="opacity:.4"' : '') + '>' + (RE ? 'Готово' : '↕ Порядок') + '</button></div>' +
     '<div class="sc-flt">' + [['all', 'Все'], ['course', 'Мини-курс'], ['mat', 'Материалы']].map(([k, n]) => '<button type="button" data-sctrk="' + k + '" class="' + (T === k ? 'on' : '') + '">' + n + '</button>').join('') + '</div>' +
     (RE ? '<div class="note" style="margin:0 0 12px">Стрелки меняют пост с соседним в этом дне. Время остаётся на своих местах, меняются сами посты.</div>' : '') +
     '<div class="sc-tl">' + mile('1', 'Человек нажал «Старт»', 'Бот здоровается и просит согласия.');
   h += '<div class="sc-it"><div class="sc-dot"><i></i></div><div class="sc-entry"><button type="button" class="h" id="scEntryT"><span><b style="font-size:17px">Вход в бота</b><br><span class="small muted">' + nSteps + ' сообщений, которые бот шлёт сам</span></span><span class="chip">' + (entryOpen ? 'Скрыть' : 'Показать') + '</span></button>' +
-    (entryOpen ? '<div style="border-top:1px solid var(--line);padding-top:8px"><div class="seg sm" style="margin:0 0 8px"><button type="button" data-rsrc="site" class="' + (src === 'site' ? 'on' : '') + '">🌱 из соцсетей</button><button type="button" data-rsrc="audit" class="' + (src === 'audit' ? 'on' : '') + '">✅ после аудита</button></div>' + entryBox() + scaffoldHtml() + '</div>' : '') + '</div></div>';
+    (entryOpen ? '<div style="border-top:1px solid var(--line);padding-top:8px"><div class="seg sm" style="margin:0 0 8px"><button type="button" data-rsrc="site" class="' + (src === 'site' ? 'on' : '') + '">🌱 из соцсетей</button><button type="button" data-rsrc="audit" class="' + (src === 'audit' ? 'on' : '') + '">✅ после аудита</button></div>' +
+      '<p class="small muted" style="margin:0 0 4px">Нажми на сообщение: можно поправить текст, добавить картинку или заменить его своим постом из бота. Переключатель выключает необязательные шаги.</p>' + scEntryRows() +
+      '<button type="button" class="sc-chip" id="scEntryOld" style="margin-top:8px;min-height:44px">' + (view.scEntryOld ? 'Скрыть порядок и вставку постов' : 'Порядок шагов и вставка постов') + '</button>' + (view.scEntryOld ? entryBox() : '') + scaffoldHtml() + '</div>' : '') + '</div></div>';
   h += mile('2', 'Прошёл аудит и выбрал', 'Мини-курс или материалы. С этого момента идёт отсчёт времени.', true);
   const drip = S.posts.filter((p) => p.kind === 'drip' && keep(p)).sort((a, b) => offMin(a, ids) - offMin(b, ids) || a.pos - b.pos || a.id - b.id);
   let last = null;
@@ -1986,16 +2004,27 @@ function renderSched() {
     const b = bucketDay(p, ids);
     if (b !== last) { h += dia(scDay(b)); last = b; }
     const prev = drip[i - 1], next = drip[i + 1];
-    h += dotCard(scCard(p, { re: RE, ind: p.mode === 'after', up: prev && bucketDay(prev, ids) === b, dn: next && bucketDay(next, ids) === b }));
+    h += dotCard(scCard(p, { re: RE, sel: SEL, picked: picked.includes(p.id), ind: p.mode === 'after', up: prev && bucketDay(prev, ids) === b, dn: next && bucketDay(next, ids) === b }));
   });
   const dates = S.posts.filter((p) => p.kind === 'date' && keep(p)).sort((a, b) => (a.run_at || 9e12) - (b.run_at || 9e12));
-  if (dates.length) { h += dia('В конкретные даты · аудит не нужен'); dates.forEach((p) => { h += dotCard(scCard(p)); }); }
+  if (dates.length) { h += dia('В конкретные даты · аудит не нужен'); dates.forEach((p) => { h += dotCard(scCard(p, { sel: SEL, picked: picked.includes(p.id) })); }); }
   const acts = S.posts.filter((p) => (p.kind === 'gift' || p.kind === 'fb') && keep(p));
   const nodes = S.posts.filter((p) => p.kind === 'node');
   if (acts.length || nodes.length) {
     h += dia('Когда человек сам что-то сделал');
-    acts.forEach((p) => { h += dotCard(scCard(p)); });
-    if (nodes.length) h += dotCard('<button type="button" class="sc-card" id="scNodes" style="text-align:left;font:inherit;color:inherit"><div class="sc-w"><span>Когда нажмёт кнопку</span></div><div class="sc-t">Ответы на кнопки: ' + nodes.length + ' ' + (nodes.length === 1 ? 'пост' : nodes.length < 5 ? 'поста' : 'постов') + '</div><div class="sc-m">Открыть карту: какая кнопка к какому посту ведёт</div></button>');
+    acts.forEach((p) => { h += dotCard(scCard(p, { sel: SEL, picked: picked.includes(p.id) })); });
+    if (nodes.length) {
+      const nOpen = view.scNodes === true;
+      h += dotCard('<div class="sc-card" id="scNodes" role="button" tabindex="0"><div class="sc-w"><span>Когда нажмёт кнопку</span></div><div class="sc-t">Ответы на кнопки: ' + nodes.length + ' ' + (nodes.length === 1 ? 'пост' : nodes.length < 5 ? 'поста' : 'постов') + '</div><div class="sc-m">' + (nOpen ? 'Нажми на пост, чтобы изменить' : 'Нажми, чтобы показать список') + '</div></div>');
+      if (nOpen) {
+        nodes.forEach((p) => {
+          const par = parentsOf(p.id);
+          const lbl = p.fork ? 'Развилка по треку' : par.length ? 'Кнопка «' + par[0].b.text + '» в «' + postName(par[0].p).slice(0, 24) + '»' : 'Нет кнопки: пост пока никому не придёт';
+          h += dotCard(scCard(Object.assign({}, p, { __when: lbl }), { sel: SEL, picked: picked.includes(p.id), ind: true }));
+        });
+        h += dotCard('<button type="button" class="sc-card" id="scMap" style="text-align:left;font:inherit;color:inherit"><div class="sc-t">Открыть карту кнопок</div><div class="sc-m">Схема: какая кнопка куда ведёт, привязка и развилки</div></button>');
+      }
+    }
   }
   h += '</div>';
   $('body').innerHTML = h;
@@ -2006,10 +2035,23 @@ function renderSched() {
   $('scRe').onclick = () => { if (T !== 'all') return; view.sReorder = !view.sReorder; saveView(); renderSched(); };
   document.querySelectorAll('[data-sctrk]').forEach((b) => b.onclick = () => { view.sTrack = b.dataset.sctrk; if (view.sTrack !== 'all') view.sReorder = false; saveView(); haptic(); renderSched(); });
   $('scEntryT').onclick = () => { view.scEntry = !entryOpen; saveView(); renderSched(); };
-  if ($('scNodes')) $('scNodes').onclick = () => { view.pv = 'map'; tab = 'path'; render(); window.scrollTo(0, 0); };
+  if ($('scNodes')) $('scNodes').onclick = () => { view.scNodes = view.scNodes !== true; saveView(); renderSched(); };
+  if ($('scMap')) $('scMap').onclick = () => { view.pv = 'map'; tab = 'path'; render(); window.scrollTo(0, 0); };
+  if ($('scEntryOld')) $('scEntryOld').onclick = () => { view.scEntryOld = !view.scEntryOld; saveView(); renderSched(); };
+  $('scStud').onclick = () => { haptic(); scStudent(); };
+  $('scSel').onclick = () => { view.sSel = !view.sSel; view.sPick = []; if (view.sSel) view.sReorder = false; renderSched(); };
+  document.querySelectorAll('.sc-step').forEach((el) => el.onclick = (e) => {
+    const off = e.target.closest('[data-scoff]');
+    if (off) { e.stopPropagation(); const k = off.dataset.scoff, fl = S.flow || { order: Object.keys(ENTRY), off: [] }; saveFlow(fl.order, fl.off.includes(k) ? fl.off.filter((x) => x !== k) : fl.off.concat(k)); return; }
+    const k = el.dataset.k;
+    if (/^post:\d+$/.test(k)) openPost(+k.slice(5)); else if (k === 'gift') toast('Подарки ниже, в блоке «Когда человек сам что-то сделал»'); else openMsg(k);
+  });
+  if (SEL) scBar(picked);
   document.querySelectorAll('.sc-card[data-scid]').forEach((el) => el.onclick = (e) => {
     const id = +el.dataset.scid;
-    const sw = e.target.closest('[data-scsw]'), up = e.target.closest('[data-scup]'), dn = e.target.closest('[data-scdn]');
+    const sw = e.target.closest('[data-scsw]'), up = e.target.closest('[data-scup]'), dn = e.target.closest('[data-scdn]'), dd = e.target.closest('[data-scday]');
+    if (SEL) { const i = picked.indexOf(id); if (i < 0) picked.push(id); else picked.splice(i, 1); renderSched(); return; }
+    if (dd) { e.stopPropagation(); scDayMove(id); return; }
     if (sw) { e.stopPropagation(); scToggle(id); return; }
     if (up || dn) { e.stopPropagation(); scMove(id, up ? -1 : 1, drip); return; }
     openPost(id);
@@ -2128,6 +2170,77 @@ function renderMore() {
   ];
   $('body').innerHTML = '<div class="kinds">' + R.map(([t, n], i) => '<button type="button" class="kind" data-mr="' + i + '"><b>' + t + '</b><span>' + n + '</span></button>').join('') + '</div>';
   document.querySelectorAll('[data-mr]').forEach((el) => el.onclick = () => { haptic(); R[+el.dataset.mr][2](); window.scrollTo(0, 0); });
+}
+
+function scEntryRows() {
+  const fl = S.flow || { order: Object.keys(ENTRY), off: [] }, opt = S.flowOptional || [];
+  const src = S.runSrc || 'site', soc = socialOn();
+  const own = (k) => { const m = mOf(k); return m && m.post ? S.posts.find((x) => x.id === m.post) : null; };
+  const rows = []; let n = 1;
+  const add = (k, title, off, o) => rows.push(Object.assign({ k, title, off, n: n++ }, o || {}));
+  add(src === 'audit' ? 'helloTest' : 'hello', src === 'audit' ? '👋 Приветствие · после теста' : '👋 Приветствие', false);
+  fl.order.forEach((k) => {
+    if (/^post:\d+$/.test(k)) {
+      const p = S.posts.find((x) => x.id === +k.slice(5)); if (!p) return;
+      if (p.who === 'new' && src === 'audit') return;
+      add(k, '↳ Свой пост «' + postName(p).slice(0, 30) + '»', fl.off.includes(k) || p.status !== 'active', { chip: p.status === 'active' ? ['Свой пост', 'own'] : [p.status === 'draft' ? 'Черновик' : 'Пауза', 'off'], sw: true });
+      return;
+    }
+    if (soc && src === 'site' && (k === 'fbOffer' || k === 'askTrack')) return;
+    if (k === 'testOffer' && src === 'audit') { add('gift', '🎁 Подарок после теста', false, { chip: ['Ниже', 'tpl'] }); return; }
+    if (!ENTRY[k]) return;
+    add(k, ENTRY[k][0], fl.off.includes(k), { sw: opt.includes(k) });
+  });
+  add('schedCourse', '🗓 Финальное сообщение', fl.off.includes('sched'), { sw: true, swk: 'sched' });
+  return '<div>' + rows.map((r) => {
+    const chip = r.chip || (r.off ? ['Выключен', 'off'] : own(r.k) ? ['Свой пост', 'own'] : ['Шаблон', 'tpl']);
+    const sk = r.swk || r.k;
+    return '<div class="sc-step' + (r.off ? ' off' : '') + '" role="button" tabindex="0" data-k="' + r.k + '"><span class="n">' + r.n + '</span><span class="tt">' + esc(r.title) + '</span><span class="sc-ch ' + chip[1] + '">' + chip[0] + '</span>' +
+      (r.sw && !/^post:/.test(r.k) ? '<button type="button" class="sc-sw-w" data-scoff="' + sk + '" role="switch" aria-checked="' + !r.off + '" aria-label="Включить или выключить шаг"><span class="sc-sw' + (r.off ? '' : ' on') + '"></span></button>' : '') + '</div>';
+  }).join('') + '</div>';
+}
+function scBar(picked) {
+  const old = document.getElementById('scBar'); if (old) old.remove();
+  const bar = document.createElement('div'); bar.className = 'sc-bar'; bar.id = 'scBar';
+  const n = picked.length;
+  bar.innerHTML = '<b style="margin-right:auto">Выбрано: ' + n + '</b>' + (n ? [['active', 'Включить'], ['paused', 'Выключить'], ['copy', 'Копия'], ['archived', 'В архив']].map(([a, t]) => '<button type="button" class="sc-chip" data-sb="' + a + '">' + t + '</button>').join('') : '<span class="small muted">нажимай на посты</span>');
+  document.body.appendChild(bar);
+  bar.querySelectorAll('[data-sb]').forEach((b) => b.onclick = async () => {
+    const act = b.dataset.sb;
+    if (act === 'archived' && b.dataset.armed !== '1') { b.dataset.armed = '1'; b.textContent = 'Точно в архив?'; toast('Нажми ещё раз: посты уйдут в архив, вернуть можно из «Ещё → Архив»'); return; }
+    try { const r = await api('/bulk', { ids: picked.slice(), action: act }); haptic('medium'); toast('Готово: ' + r.done + (r.skipped ? ', пропущено ' + r.skipped + ' (пустые или без даты)' : '')); view.sSel = false; view.sPick = []; await reload(); } catch (e) { toast(e.message); }
+  });
+}
+function scDayMove(id) {
+  const p = S.posts.find((x) => x.id === id); if (!p) return;
+  let d = p.day || 0;
+  const draw = () => {
+    sheet('<div class="shd"><span class="pill">Перенести пост</span><button type="button" class="sx" id="dmX" aria-label="закрыть">✕</button></div><h2>В какой <i>день?</i></h2><p class="small muted">«' + esc(postName(p).slice(0, 50)) + '». День считается от аудита, время остаётся ' + esc(p.time || '11:00') + '.</p>' +
+      '<div style="display:flex;align-items:center;gap:12px;margin:12px 0"><button type="button" class="chip" id="dmM" style="width:48px;height:48px;font-size:22px">−</button><b style="font-size:24px;min-width:56px;text-align:center">' + d + '</b><button type="button" class="chip" id="dmP" style="width:48px;height:48px;font-size:22px">+</button><span class="muted">' + esc(scDay(d)) + '</span></div>' +
+      '<div class="btns"><button type="button" class="btn" id="dmOk">Перенести</button><button type="button" class="btn ghost" id="dmC">Отмена</button></div>');
+    $('dmX').onclick = closeSheet; $('dmC').onclick = closeSheet;
+    $('dmM').onclick = () => { d = Math.max(0, d - 1); draw(); }; $('dmP').onclick = () => { d = Math.min(365, d + 1); draw(); };
+    $('dmOk').onclick = async () => { try { await api('/post/' + id, { mode: 'day', day: d, time: p.time || '11:00' }); closeSheet(); haptic('medium'); await reload(); toast('Перенесён в день ' + d); } catch (e) { toast(e.message); } };
+  };
+  draw();
+}
+function scStudent() {
+  if (!view.track || view.track === 'all') view.track = 'mat';
+  if (view.step == null) view.step = 0;
+  const draw = () => {
+    const src = S.runSrc || 'site', t = view.track;
+    const seg = (attr, opts, cur) => '<div class="seg sm" style="margin:0 0 8px">' + opts.map(([k, n]) => '<button type="button" ' + attr + '="' + k + '" class="' + (cur === k ? 'on' : '') + '">' + n + '</button>').join('') + '</div>';
+    sheet('<div class="shd"><span class="pill">Как ученик</span><button type="button" class="sx" id="stX" aria-label="закрыть">✕</button></div><h2>Бот глазами <i>ученика</i></h2>' +
+      seg('data-rsrc', [['site', '🌱 из соцсетей'], ['audit', '✅ после аудита']], src) + seg('data-ftrk', [['course', '🎓 мини-курс'], ['mat', '📚 материалы']], t) + studentHtml());
+    $('stX').onclick = closeSheet;
+    document.querySelectorAll('#sheet [data-rsrc]').forEach((b) => b.onclick = () => { S.runSrc = b.dataset.rsrc; view.step = 0; draw(); });
+    document.querySelectorAll('#sheet [data-ftrk]').forEach((b) => b.onclick = () => { view.track = b.dataset.ftrk; view.step = 0; draw(); });
+    document.querySelectorAll('#sheet [data-stnext]').forEach((b) => b.onclick = () => { view.step = (view.step || 0) + 1; draw(); });
+    document.querySelectorAll('#sheet [data-strest]').forEach((b) => b.onclick = () => { view.step = 0; draw(); });
+    document.querySelectorAll('#sheet [data-jump]').forEach((b) => b.onclick = () => { const [k, v] = b.dataset.jump.split(':'); closeSheet(); if (k === 'p') openPost(+v); else openMsg(({ helloTest: 'hello', schedMat: 'schedCourse' }[v]) || v); });
+    setTimeout(() => loadThumbs($('sheet')), 0);
+  };
+  draw();
 }
 async function openTech() {
   let r;
