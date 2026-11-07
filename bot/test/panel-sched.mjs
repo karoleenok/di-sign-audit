@@ -50,9 +50,21 @@ for (const w of [390, 320]) {
   await page.click('#pkList .kind'); await page.waitForTimeout(900);
   const moved = await db.first(`SELECT track, day, kind, mode, status FROM posts WHERE text = ?`, ['Перенос из памятки ' + w]);
   assert.deepEqual([moved.track, moved.day, moved.kind, moved.mode, moved.status], ['course', ix, 'drip', 'day', 'paused'], 'пост перенесён на день урока, трек выставлен, пауза');
-  await page.locator('.pl-r').nth(ix).click(); await page.waitForSelector('#psOn');
-  await page.click('#psOn'); await page.waitForTimeout(800);
+  await page.locator('.pl-r').nth(ix).click(); await page.waitForSelector('[data-psw]');
+  await page.click('[data-psw]'); await page.waitForTimeout(900); await page.waitForSelector('[data-psw]');
   assert.equal((await db.first(`SELECT status FROM posts WHERE text = ?`, ['Перенос из памятки ' + w])).status, 'active', 'кнопка «Включить» в окне урока');
+  // несколько постов на один день: список в окне урока, «ещё один» с часом позже
+  assert.match(await page.textContent('#sheet'), /Постов на этот день: 1/);
+  assert.match(await page.textContent('#psNew'), /Написать ещё один/);
+  assert.ok(await noscroll(page), 'нет горизонтального скролла в окне со списком постов');
+  await page.click('#psNew'); await page.waitForSelector('#fTitle');
+  assert.equal(await page.inputValue('#fTitle'), '', 'у второго поста название пустое');
+  assert.equal(await page.textContent('#dVal'), String(ix));
+  const t2 = await page.inputValue('#fTime'); assert.ok(t2 > '11:00', 'второй пост на час позже, а не в ту же минуту: ' + t2);
+  await page.click('#sheet .sx'); await page.waitForTimeout(300);
+  await db.run(`INSERT INTO posts (kind, audience, track, day, send_time, status, text, created_by, created_at, mode, delay_min) VALUES ('drip', 'all', 'course', ?, '12:00', 'paused', ?, 1, ?, 'day', 0)`, [ix, 'Второй пост урока ' + w, Math.floor(Date.now() / 1000)]);
+  await page.reload(); await page.waitForSelector('.pl-r');
+  assert.match(await page.locator('.pl-r').nth(ix).textContent(), /1 из 2/, 'в строке видно: включён один из двух');
   await page.click('#plT'); assert.equal(await page.locator('.pl-r').count(), 0, 'памятка сворачивается'); await page.click('#plT'); await page.waitForSelector('.pl-r');
   assert.equal(await page.locator('.sc-entry .sc-step').count(), 0, 'вход свёрнут по умолчанию');
   await page.click('#scEntryT'); await page.waitForSelector('.sc-entry .sc-step');

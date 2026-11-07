@@ -2018,23 +2018,19 @@ const PLAN = {
 const planDay = (ymd, start) => Math.round((Date.UTC(+ymd.slice(0, 4), +ymd.slice(5, 7) - 1, +ymd.slice(8)) - Date.UTC(+start.slice(0, 4), +start.slice(5, 7) - 1, +start.slice(8))) / 864e5);
 const planPosts = (tr, day) => S.posts.filter((p) => p.kind === 'drip' && p.track === tr && (p.mode || 'day') === 'day' && Number(p.day) === day && p.status !== 'archived');
 function planSlot(tr, day, name) {
-  const ps = planPosts(tr, day), on = ps.filter((p) => p.status === 'active'), P = PLAN[tr];
-  if (on.length) { openPost(on[0].id); return; }
+  const ps = planPosts(tr, day), P = PLAN[tr];
   const when = 'день ' + day + ' · ' + P.name.toLowerCase();
-  if (ps.length) {
-    const p = ps[0];
-    sheet('<div class="shd"><span class="pill">Урок · ' + esc(when) + '</span><button type="button" class="sx" id="psX" aria-label="закрыть">✕</button></div><h2>' + esc(name || '') + '</h2><p class="small muted">Пост на этот день есть, но он выключен: «' + esc(postName(p).slice(0, 50)) + '». Пока он выключен, никто его не получит.</p>' +
-      '<div class="btns"><button type="button" class="btn" id="psOn">Включить</button><button type="button" class="btn ghost" id="psOpen">Открыть и поправить</button></div>');
-    $('psX').onclick = closeSheet;
-    $('psOpen').onclick = () => { closeSheet(); openPost(p.id); };
-    $('psOn').onclick = async () => { closeSheet(); await scToggle(p.id); };
-    return;
-  }
-  sheet('<div class="shd"><span class="pill">Урок · ' + esc(when) + '</span><button type="button" class="sx" id="psX" aria-label="закрыть">✕</button></div><h2>' + esc(name || '') + '</h2><p class="small muted">Поста на этот день ещё нет. Откуда возьмём?</p>' +
-    '<div class="kinds"><button type="button" class="kind" id="psNew"><b>✏️ Написать новый</b><span>' + (day === 0 ? 'День 0, сразу, когда человек закончил вход' : 'День ' + day + ', 11:00') + ', трек «' + esc(P.name) + '» уже выставлены. Остаётся написать текст.</span></button>' +
+  const hh = ps.map((p) => parseInt(String(p.time || '11:00').slice(0, 2), 10) || 11);
+  const nextTime = ps.length ? String(Math.min(20, Math.max(...hh) + 1)).padStart(2, '0') + ':00' : '11:00';
+  const list = ps.map((p) => '<div class="msg" style="cursor:default"><div class="t">' + esc(postName(p).slice(0, 56)) + '</div><div class="small muted">' + (p.status === 'active' ? 'включён' : p.status === 'draft' ? 'черновик' : 'выключен') + ' · ' + (day === 0 ? 'сразу' : 'в ' + esc(p.time || '11:00')) + '</div><div class="meta" style="margin-top:8px"><button type="button" class="chip" data-pso="' + p.id + '">Открыть</button><button type="button" class="chip" data-psw="' + p.id + '">' + (p.status === 'active' ? 'Выключить' : 'Включить') + '</button></div></div>').join('');
+  sheet('<div class="shd"><span class="pill">Урок · ' + esc(when) + '</span><button type="button" class="sx" id="psX" aria-label="закрыть">✕</button></div><h2>' + esc(name || '') + '</h2>' +
+    (ps.length ? '<p class="small muted">Постов на этот день: ' + ps.length + '. Все они уйдут в свой час, можно добавить ещё.</p>' + list : '<p class="small muted">Поста на этот день ещё нет. Откуда возьмём?</p>') +
+    '<div class="kinds"><button type="button" class="kind" id="psNew"><b>' + (ps.length ? '✏️ Написать ещё один' : '✏️ Написать новый') + '</b><span>' + (day === 0 ? 'День 0, сразу, когда человек закончил вход' : 'День ' + day + ', ' + nextTime) + ', трек «' + esc(P.name) + '» уже выставлены. Остаётся написать текст.</span></button>' +
     '<button type="button" class="kind" id="psPick"><b>📋 Взять готовый</b><span>Из тех, что уже есть в боте или в расписании. Перенесу его на день ' + day + '.</span></button></div>');
   $('psX').onclick = closeSheet;
-  $('psNew').onclick = () => openNew({ kind: 'drip', mode: 'day', day, time: '11:00', track: tr, title: name || '' });
+  document.querySelectorAll('[data-pso]').forEach((b) => b.onclick = () => { closeSheet(); openPost(+b.dataset.pso); });
+  document.querySelectorAll('[data-psw]').forEach((b) => b.onclick = async () => { await scToggle(+b.dataset.psw); planSlot(tr, day, name); });
+  $('psNew').onclick = () => openNew({ kind: 'drip', mode: 'day', day, time: nextTime, track: tr, title: ps.length ? '' : (name || '') });
   $('psPick').onclick = () => pickExisting('drip', day, { track: tr, plan: true });
 }
 function scPlan() {
@@ -2044,7 +2040,8 @@ function scPlan() {
   const body = P.parts.map(([title, k, rows]) => '<div class="pl-pt">' + esc(title.toUpperCase()) + '</div>' + rows.map(([ymd, name, note]) => {
     const day = planDay(ymd, P.start), ps = planPosts(tr, day), on = ps.filter((p) => p.status === 'active');
     all++; if (on.length) live++;
-    const st = on.length ? ['ok', 'есть пост'] : ps.length ? ['off', 'выключен'] : ['no', 'нет поста'];
+    const pl = (n) => n + (n % 10 === 1 && n % 100 !== 11 ? ' пост' : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? ' поста' : ' постов');
+    const st = !ps.length ? ['no', 'нет поста'] : !on.length ? ['off', ps.length === 1 ? 'выключен' : 'выключены'] : on.length === ps.length ? ['ok', ps.length === 1 ? 'есть пост' : pl(ps.length)] : ['off', on.length + ' из ' + ps.length];
     return '<div class="pl-r" role="button" tabindex="0" data-plday="' + day + '" data-plname="' + esc(name) + '"><span class="pl-d p' + k + '">' + fmt(ymd) + '</span><span class="pl-t">' + esc(name) + '<small>день ' + day + (note ? ' · ' + esc(note) : '') + '</small></span><span class="pl-s ' + st[0] + '">' + st[1] + '</span></div>';
   }).join('')).join('');
   const sum = open ? '' : 'Мини-курс и материалы: даты, дни и есть ли пост';
