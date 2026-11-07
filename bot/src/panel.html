@@ -2094,7 +2094,7 @@ function renderSched() {
   const dotCard = (html) => '<div class="sc-it"><div class="sc-dot"><i></i></div>' + html + '</div>';
   const entryOpen = view.scEntry === true;
   const nSteps = ((S.flow && S.flow.order) || []).length + 2;
-  let h = scPlan() + '<div class="sc-chips"><button type="button" class="sc-chip" id="scAdd" style="background:var(--ink);color:#fffbf7;border-color:var(--ink)">＋ Пост</button>' +
+  let h = '<div class="sc-chips"><button type="button" class="sc-chip" id="scAdd" style="background:var(--ink);color:#fffbf7;border-color:var(--ink)">＋ Пост</button>' +
     (inboxN ? '<button type="button" class="sc-chip blue" id="scInbox">✉️ Новые из бота · ' + inboxN + '</button>' : '') +
     (dups.length ? '<button type="button" class="sc-chip" id="scDup" style="background:#f9dada;border-color:transparent;color:#8a1c1c">⚠ Дубли · ' + dups.length + '</button>' : '') +
     (noGo ? '<button type="button" class="sc-chip warm" id="scNo">Не уйдут · ' + noGo + '</button>' : '') +
@@ -2102,7 +2102,7 @@ function renderSched() {
     '<button type="button" class="sc-chip" id="scCheck">Проверить</button>' +
     '<button type="button" class="sc-chip" id="scStud">👀 Как ученик</button>' +
     '<button type="button" class="sc-chip' + (SEL ? ' on' : '') + '" id="scSel">' + (SEL ? 'Готово' : '☐ Выбрать') + '</button>' +
-    '<button type="button" class="sc-chip' + (RE ? ' on' : '') + '" id="scRe">' + (RE ? 'Готово' : '↕ Порядок') + '</button></div>' +
+    '<button type="button" class="sc-chip' + (RE ? ' on' : '') + '" id="scRe">' + (RE ? 'Готово' : '↕ Порядок') + '</button></div>' + scPlan() +
     '<div class="sc-flt">' + [['all', 'Все'], ['course', 'Мини-курс'], ['mat', 'Материалы']].map(([k, n]) => '<button type="button" data-sctrk="' + k + '" class="' + (T === k ? 'on' : '') + '">' + n + '</button>').join('') + '</div>' +
     (RE ? '<div class="note" style="margin:0 0 12px">Стрелки меняют пост местами с соседним: время остаётся на своих местах, меняются сами посты. Чтобы перенести в другой день, нажми «В день…».</div>' : '') +
     '<div class="sc-tl">' + mile('1', 'Человек нажал «Старт»', 'Бот здоровается и просит согласия.');
