@@ -2099,10 +2099,11 @@ function renderSched() {
     (dups.length ? '<button type="button" class="sc-chip" id="scDup" style="background:#f9dada;border-color:transparent;color:#8a1c1c">⚠ Дубли · ' + dups.length + '</button>' : '') +
     (noGo ? '<button type="button" class="sc-chip warm" id="scNo">Не уйдут · ' + noGo + '</button>' : '') +
     '<button type="button" class="sc-chip" id="scLib">📚 Все посты · ' + S.posts.length + '</button>' +
-    '<button type="button" class="sc-chip" id="scCheck">Проверить</button>' +
+    '<button type="button" class="sc-chip' + (view.scMore === true || SEL || RE ? ' on' : '') + '" id="scMore" aria-expanded="' + (view.scMore === true || SEL || RE) + '">' + (view.scMore === true || SEL || RE ? 'Меньше ▴' : 'Ещё ▾') + '</button></div>' +
+    (view.scMore === true || SEL || RE ? '<div class="sc-chips" style="margin-top:0"><button type="button" class="sc-chip" id="scCheck">Проверить</button>' +
     '<button type="button" class="sc-chip" id="scStud">👀 Как ученик</button>' +
     '<button type="button" class="sc-chip' + (SEL ? ' on' : '') + '" id="scSel">' + (SEL ? 'Готово' : '☐ Выбрать') + '</button>' +
-    '<button type="button" class="sc-chip' + (RE ? ' on' : '') + '" id="scRe">' + (RE ? 'Готово' : '↕ Порядок') + '</button></div>' + scPlan() +
+    '<button type="button" class="sc-chip' + (RE ? ' on' : '') + '" id="scRe">' + (RE ? 'Готово' : '↕ Порядок') + '</button></div>' : '') + scPlan() +
     '<div class="sc-flt">' + [['all', 'Все'], ['course', 'Мини-курс'], ['mat', 'Материалы']].map(([k, n]) => '<button type="button" data-sctrk="' + k + '" class="' + (T === k ? 'on' : '') + '">' + n + '</button>').join('') + '</div>' +
     (RE ? '<div class="note" style="margin:0 0 12px">Стрелки меняют пост местами с соседним: время остаётся на своих местах, меняются сами посты. Чтобы перенести в другой день, нажми «В день…».</div>' : '') +
     '<div class="sc-tl">' + mile('1', 'Человек нажал «Старт»', 'Бот здоровается и просит согласия.');
@@ -2146,19 +2147,20 @@ function renderSched() {
   if ($('scInbox')) $('scInbox').onclick = () => { haptic(); scInbox(); };
   if ($('scNo')) $('scNo').onclick = () => { haptic(); scNotGoing(); };
   if ($('scDup')) $('scDup').onclick = () => { haptic(); scDupSheet(); };
-  $('scCheck').onclick = () => { haptic(); scCheck(); };
+  if ($('scCheck')) $('scCheck').onclick = () => { haptic(); scCheck(); };
+  $('scMore').onclick = () => { view.scMore = view.scMore !== true; saveView(); haptic(); renderSched(); };
   $('scLib').onclick = () => { haptic(); tab = 'lib'; render(); window.scrollTo(0, 0); };
   $('plT').onclick = () => { view.scPlan = view.scPlan === false; saveView(); renderSched(); };
   document.querySelectorAll('[data-plt]').forEach((b) => b.onclick = () => { view.scPlanT = b.dataset.plt; saveView(); renderSched(); });
   document.querySelectorAll('[data-plday]').forEach((el) => el.onclick = () => planSlot(view.scPlanT === 'mat' ? 'mat' : 'course', +el.dataset.plday, el.dataset.plname));
-  $('scRe').onclick = () => { view.sReorder = !view.sReorder; saveView(); renderSched(); };
+  if ($('scRe')) $('scRe').onclick = () => { view.sReorder = !view.sReorder; saveView(); renderSched(); };
   document.querySelectorAll('[data-sctrk]').forEach((b) => b.onclick = () => { view.sTrack = b.dataset.sctrk; if (view.sTrack !== 'all') view.sReorder = false; saveView(); haptic(); renderSched(); });
   $('scEntryT').onclick = () => { view.scEntry = !entryOpen; saveView(); renderSched(); };
   if ($('scNodes')) $('scNodes').onclick = () => { view.scNodes = view.scNodes !== true; saveView(); renderSched(); };
   if ($('scMap')) $('scMap').onclick = () => { view.pv = 'map'; tab = 'path'; render(); window.scrollTo(0, 0); };
   if ($('scEntryOld')) $('scEntryOld').onclick = () => { view.scEntryOld = !view.scEntryOld; saveView(); renderSched(); };
-  $('scStud').onclick = () => { haptic(); scStudent(); };
-  $('scSel').onclick = () => { view.sSel = !view.sSel; view.sPick = []; if (view.sSel) view.sReorder = false; renderSched(); };
+  if ($('scStud')) $('scStud').onclick = () => { haptic(); scStudent(); };
+  if ($('scSel')) $('scSel').onclick = () => { view.sSel = !view.sSel; view.sPick = []; if (view.sSel) view.sReorder = false; renderSched(); };
   document.querySelectorAll('.sc-step').forEach((el) => el.onclick = (e) => {
     const off = e.target.closest('[data-scoff]');
     if (off) { e.stopPropagation(); const k = off.dataset.scoff, fl = S.flow || { order: Object.keys(ENTRY), off: [] }; saveFlow(fl.order, fl.off.includes(k) ? fl.off.filter((x) => x !== k) : fl.off.concat(k)); return; }

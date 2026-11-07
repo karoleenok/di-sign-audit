@@ -16,6 +16,9 @@ for (const w of [390, 320]) {
   await page.route('**/telegram-web-app.js', (r) => r.fulfill({ contentType: 'application/javascript', body: stub }));
   await page.goto('http://localhost:8791/admin');
   await page.waitForSelector('.sc-tl');
+  // ряд кнопок компактный: «Проверить», «Как ученик», «Выбрать», «Порядок» прячутся под «Ещё»
+  assert.equal(await page.locator('#scRe').count(), 0, 'редкие кнопки свёрнуты');
+  await page.click('#scMore'); await page.waitForSelector('#scRe');
   // вкладки новые
   const tabs = await page.locator('#tabs button').allTextContents();
   assert.deepEqual(tabs.map((t) => t.replace(/ · \d+/, '')), ['Главная', 'Расписание', 'Люди', 'Игра', 'Ещё']);
