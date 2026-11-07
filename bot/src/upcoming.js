@@ -37,10 +37,10 @@ export async function upcoming(ctx, now, days = 7) {
       const isNow = r.at <= now;
       const key = isNow ? 'now' : mskDay(r.at);
       const o = byDay.get(key) || { n: 0, at: isNow ? now : r.at };
-      o.n++; if (!isNow && p.mode === 'timer') o.at = Math.min(o.at, r.at);
+      o.n++; if (!isNow && p.mode === 'timer' && !p.at_time) o.at = Math.min(o.at, r.at);
       byDay.set(key, o);
     }
-    for (const [key, o] of byDay) items.push({ id: p.id, title, kind: 'drip', timer: p.mode === 'timer' ? Number(p.delay_min) || 0 : null, at: o.at, now: key === 'now', n: o.n });
+    for (const [key, o] of byDay) items.push({ id: p.id, title, kind: 'drip', timer: p.mode === 'timer' && !p.at_time ? Number(p.delay_min) || 0 : null, at: o.at, now: key === 'now', n: o.n });
   }
   // одинаковые включённые посты: уйдут дважды
   const seen = new Map();

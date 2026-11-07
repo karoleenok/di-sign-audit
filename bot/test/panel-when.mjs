@@ -47,6 +47,13 @@ for (const w of [390, 320]) {
   await page.click('#bSave'); await page.waitForTimeout(600);
   const r3 = await db.first(`SELECT kind, mode, delay_min FROM posts WHERE id = ?`, [row.id]);
   assert.deepEqual({ kind: r3.kind, mode: r3.mode, delay_min: r3.delay_min }, { kind: 'drip', mode: 'timer', delay_min: 120 });
+  // составное: через 2 дня после аудита в 11:00
+  await page.locator('.card', { hasText: 'Второй пост дня ' + w }).first().locator('.ttl').click(); await page.waitForSelector('.sheet.on'); await page.waitForTimeout(300);
+  await page.fill('#tNum', '2'); await page.selectOption('#tUnit', '1440'); await page.check('#tAtOn'); await page.fill('#tAt', '11:00');
+  assert.match(await page.textContent('#whenSum'), /через 2 дн после аудита, в 11:00/);
+  await page.click('#bSave'); await page.waitForTimeout(600);
+  const r4 = await db.first(`SELECT mode, delay_min, at_time FROM posts WHERE id = ?`, [row.id]);
+  assert.deepEqual({ mode: r4.mode, delay_min: r4.delay_min, at_time: r4.at_time }, { mode: 'timer', delay_min: 2880, at_time: '11:00' });
   assert.deepEqual(errs, []);
   console.log('✓', w, 'px: новый пост на день, таймер после аудита, дата, обратно в ленту');
   await page.close();

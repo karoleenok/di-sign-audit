@@ -145,6 +145,8 @@ export const MIGRATIONS = [
       PRIMARY KEY (task_id, owner)
     )`,
   ],
+  // v8: «через N после … в конкретное время суток» для постов по таймеру и «после поста»
+  [`ALTER TABLE posts ADD COLUMN at_time TEXT`],
 ];
 
 // Обновить базу при первом запуске после выкладки новой версии (один раз на процесс)

@@ -425,9 +425,9 @@ step('«печатает…» в чате: пузырёк • → • • → �
   const pv = calls.slice(p0).filter((c) => c.body.chat_id === 100 && c.method === 'sendMessage').map((c) => c.body.text || '');
   assert.match(pv[0], /Предпросмотр ленты — как её получит ученик/);
   const labels = pv.filter((t) => t.startsWith('🧪 ') && !/Конец/.test(t));
-  assert.ok(labels.some((t) => /⏱ через 2 ч после входа/.test(t)) && labels.some((t) => /↳ через 1 ч после «Таймер 2ч»/.test(t)), 'подписи «когда»: ' + labels.join(' | '));
+  assert.ok(labels.some((t) => /⏱ через 2 ч после аудита/.test(t)) && labels.some((t) => /↳ через 1 ч после «Таймер 2ч»/.test(t)), 'подписи «когда»: ' + labels.join(' | '));
   assert.ok(labels.findIndex((t) => /Таймер 2ч/.test(t)) < labels.findIndex((t) => /После таймера/.test(t)), 'порядок по времени');
-  assert.ok(labels.some((t) => /^🧪 «Таймер 2ч»\n📍 Путь → ③ Лента по дням → ⏱ через 2 ч после входа$/.test(t)), 'подпись: название и где пост лежит в панели: ' + labels.join(' | '));
+  assert.ok(labels.some((t) => /^🧪 «Таймер 2ч»\n📍 Путь → ③ Лента по дням → ⏱ через 2 ч после аудита$/.test(t)), 'подпись: название и где пост лежит в панели: ' + labels.join(' | '));
   assert.ok(!labels.some((t) => /шаг \d|#\d/.test(t)), 'технических пометок нет');
   // ускоренный: 1 день = 1 минута
   const f0 = calls.length;

@@ -99,6 +99,13 @@ const server = http.createServer(async (req, res) => {
       const __html = __appHtml().replace('/*__APPCFG__*/null', () => JSON.stringify(__view).replace(/</g, '\\u003c'));
       return send(200, __html, 'text/html; charset=utf-8', { 'cache-control': 'no-store' });
     }
+    // лёгкий опрос из аппки: выбрал ли человек трек (вернулся из аудита). Только по подписи Telegram, отдаём только его собственный трек
+    if (url.pathname === '/api/app/me' && req.method === 'POST') {
+      const __u = await __checkInit(String(req.headers['x-init-data'] || ''), env.BOT_TOKEN, Math.floor(Date.now() / 1000));
+      if (!__u) return send(401, '{"error":"unauthorized"}', 'application/json; charset=utf-8', { 'cache-control': 'no-store' });
+      const __row = await ctxFor().db.first(`SELECT track FROM users WHERE tg_id = ?`, [__u.id]);
+      return send(200, JSON.stringify({ track: __appTrack(__row && __row.track) }), 'application/json; charset=utf-8', { 'cache-control': 'no-store' });
+    }
     // расписание открытия игр: сохраняет только админ
     if (url.pathname === '/api/app/cfg' && req.method === 'POST') {
       const J = (code, o) => send(code, JSON.stringify(o), 'application/json; charset=utf-8', { 'cache-control': 'no-store' });

@@ -55,7 +55,7 @@ function postOut(p, sent, clicks) {
   return {
     id: p.id, kind: p.kind, fork: p.fork || null, who: p.who === 'new' ? 'new' : 'all', inbox: !!p.inbox, status: p.status, title: p.title || '', text: (p.text || '').slice(0, 400),
     md: f.md, rich: f.rich, once: !!p.once, files: media, track: p.track || 'all',
-    day: p.day, time: p.send_time, mode: p.mode || 'day', delay: p.delay_min || 0, after: p.after_id || null, run_at: p.run_at, audience: p.audience, catchup: !!p.catchup, pos: p.pos || 0,
+    day: p.day, time: p.send_time, mode: p.mode || 'day', delay: p.delay_min || 0, after: p.after_id || null, at: p.at_time || null, run_at: p.run_at, audience: p.audience, catchup: !!p.catchup, pos: p.pos || 0,
     media: media.map((m) => m.type), buttons: j(p.buttons, []).flat().map((b) => b.text), rows: j(p.buttons, []),
     emoji: j(p.entities, []).some((e) => e.type === 'custom_emoji'), sent: sent || 0, clicks: clicks || 0,
   };
@@ -250,6 +250,7 @@ async function panelRest(ctx, request, url, user, path, body) {
     if (body.mode !== undefined && p.kind === 'drip') {
       if (!['day', 'timer', 'after'].includes(body.mode)) return json({ error: 'Неизвестный способ отправки' }, 400);
       put('mode', body.mode);
+      put('at_time', body.mode !== 'day' && body.at ? pad(body.at) : null);
       if (body.mode !== 'day') {
         const dm = parseInt(body.delay_min, 10);
         if (!(dm >= 0 && dm <= 365 * 1440)) return json({ error: 'Время — от 0 минут до 365 дней' }, 400);
@@ -426,14 +427,14 @@ async function panelRest(ctx, request, url, user, path, body) {
     if (to === 'drip') {
       const day = body.day === undefined ? (p.kind === 'node' ? 1 : 0) : parseInt(body.day, 10);
       if (!(day >= 0 && day <= 365)) return json({ error: 'День — от 0 до 365' }, 400);
-      await ctx.db.run(`UPDATE posts SET kind = 'drip', day = ?, send_time = ?, run_at = NULL, mode = 'day', after_id = NULL, delay_min = 0, status = ? WHERE id = ?`, [day, day === 0 ? '00:00' : '11:00', st, p.id]);
+      await ctx.db.run(`UPDATE posts SET kind = 'drip', day = ?, send_time = ?, run_at = NULL, mode = 'day', after_id = NULL, delay_min = 0, at_time = NULL, status = ? WHERE id = ?`, [day, day === 0 ? '00:00' : '11:00', st, p.id]);
       return json({ ok: true });
     }
     if (to === 'date') {
-      await ctx.db.run(`UPDATE posts SET kind = 'date', day = NULL, run_at = NULL, mode = 'day', after_id = NULL, delay_min = 0, status = ? WHERE id = ?`, [st, p.id]);
+      await ctx.db.run(`UPDATE posts SET kind = 'date', day = NULL, run_at = NULL, mode = 'day', after_id = NULL, delay_min = 0, at_time = NULL, status = ? WHERE id = ?`, [st, p.id]);
       return json({ ok: true, needDate: true });
     }
-    await ctx.db.run(`UPDATE posts SET kind = ?, day = NULL, run_at = NULL, mode = 'day', after_id = NULL, delay_min = 0, status = ? WHERE id = ?`, [to, st, p.id]);
+    await ctx.db.run(`UPDATE posts SET kind = ?, day = NULL, run_at = NULL, mode = 'day', after_id = NULL, delay_min = 0, at_time = NULL, status = ? WHERE id = ?`, [to, st, p.id]);
     return json({ ok: true });
   }
 
@@ -477,6 +478,7 @@ async function panelRest(ctx, request, url, user, path, body) {
         kind === 'date' ? (Number(body.run_at) || null) : null, body.catchup ? 1 : 0, status, f.text, JSON.stringify(f.entities), JSON.stringify(files.files),
         user.id, ctx.now, kind === 'drip' ? mode : 'day', Math.max(0, parseInt(body.delay_min, 10) || 0), parseInt(body.after_id, 10) || null, body.once ? 1 : 0]);
     const row = await ctx.db.first(`SELECT * FROM posts WHERE created_by = ? ORDER BY id DESC LIMIT 1`, [user.id]);
+    if (kind === 'drip' && mode !== 'day' && body.at && pad(body.at)) await ctx.db.run(`UPDATE posts SET at_time = ? WHERE id = ?`, [pad(body.at), row.id]);
     if (fork) await ctx.db.run(`UPDATE posts SET fork = 'track', status = 'active' WHERE id = ?`, [row.id]);
     if (TRACKS[body.track] && body.track !== 'all') await ctx.db.run(`UPDATE posts SET track = ? WHERE id = ?`, [body.track, row.id]);
     if (body.who === 'new' && kind === 'node' && !fork) await ctx.db.run(`UPDATE posts SET who = 'new' WHERE id = ?`, [row.id]);

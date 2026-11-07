@@ -22,7 +22,7 @@ export async function feedOrder(db, level, { withDrafts = false } = {}) {
 
 export function whenLabel(p, off, byId) {
   if (p.kind === 'gift') return '🎁 подарок после теста';
-  if (p.mode === 'timer') return `⏱ через ${fmtDelay(p.delay_min)} после входа`;
+  if (p.mode === 'timer') return `⏱ через ${fmtDelay(p.delay_min)} после аудита${p.at_time ? ' в ' + p.at_time : ''}`;
   if (p.mode === 'after') {
     const par = byId && byId[p.after_id];
     return `↳ через ${fmtDelay(p.delay_min)} после «${par ? (par.title || (par.text || '').split('\n')[0]).slice(0, 30) : '#' + p.after_id}»`;
@@ -36,7 +36,8 @@ const SEC = { entry: 'Путь → ① Вход', gift: 'Путь → ② Под
 export function whereOf(p, off, byId) {
   if (p.kind === 'gift') return SEC.gift;
   if (p.kind === 'fb') return SEC.fb;
-  return SEC.drip + ' → ' + whenLabel(p, off, byId);
+  const trk = p.track === 'course' ? ' · 🎓 мини-курс' : p.track === 'mat' ? ' · 📚 материалы' : '';
+  return SEC.drip + ' → ' + whenLabel(p, off, byId) + trk;
 }
 const labelOf = (name, where) => `🧪 «${name}»\n📍 ${where}`;
 

@@ -303,6 +303,11 @@ export async function nextStep(ctx, u) {
     if (!off.includes('sched') && (u.contact_at || u.phone || u.email)) { await pauseFor(ctx, id, key); await say(ctx, id, key, {}); }
     // вход пройден — отсюда считается лента
     await ctx.db.run(`UPDATE users SET sched_at = ?, status = 'active', joined_at = COALESCE(joined_at, ?) WHERE tg_id = ?`, [ctx.now, ctx.now, id]);
+    // выбрал трек (аудит пройден): благодарим и зовём в мини-приложение с расписанием, если оно открыто для всех
+    if (u.track && !off.includes('auditDone')) {
+      const ex = await openKb(ctx, u.track);
+      if (ex && ex.reply_markup) { await pauseFor(ctx, id, 'auditDone'); await say(ctx, id, u.track === 'course' ? 'auditCourse' : 'auditMat', { имя: u.first_name || 'друг' }, ex); }
+    }
   } else if (u.status !== 'active') {
     await ctx.db.run(`UPDATE users SET status = 'active', joined_at = COALESCE(joined_at, ?) WHERE tg_id = ?`, [ctx.now, id]);
   }

@@ -92,6 +92,7 @@ body:not(.full) .card .ttl,body:not(.full) .fn>.ttl{display:-webkit-box;-webkit-
 .time{background:var(--blue);border-radius:8px;padding:2px 8px;font-weight:600;font-size:13px}
 .ttl{font-weight:500;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.tag.trk{background:#e6f4fb}
 .tag{font-size:12px;border-radius:99px;padding:2px 8px;background:rgba(44,13,2,.06)}
 .tag.zone{background:var(--pill)}
 .tag.paused{background:var(--warn-bg);color:var(--warn)}
@@ -366,12 +367,16 @@ const fmtDelay = (min) => { const m = +min || 0; if (!m) return '0 мин'; cons
 const byIdMap = () => Object.fromEntries(S.posts.map((p) => [p.id, p]));
 // смещение от входа (вход условно в 10:00), в минутах
 function offMin(p, ids, depth) { depth = depth || 0; if (!p || depth > 20) return 0;
-  if (p.mode === 'timer') return p.delay || 0;
-  if (p.mode === 'after') return offMin(ids[p.after], ids, depth + 1) + (p.delay || 0);
+  const tod = p.at ? timeMin(p.at) : null;
+  const timed = (anchor) => { const d = p.delay || 0; if (tod === null) return anchor + d; const abs = 600 + anchor;
+    if (d % 1440 === 0) { let c = (Math.floor(abs / 1440) + d / 1440) * 1440 + tod; if (c < abs) c += 1440; return c - 600; }
+    return Math.ceil((abs + d - tod) / 1440) * 1440 + tod - 600; };
+  if (p.mode === 'timer') return timed(0);
+  if (p.mode === 'after') return timed(offMin(ids[p.after], ids, depth + 1));
   return p.day ? p.day * 1440 + timeMin(p.time) - 600 : 0; }
 const bucketDay = (p, ids) => p.mode === 'day' || !p.mode ? (p.day || 0) : Math.floor(Math.max(0, offMin(p, ids) + 600) / 1440);
 function whenShort(p, ids) {
-  if (p.mode === 'timer') return '⏱ через ' + fmtDelay(p.delay) + ' после аудита';
+  if (p.mode === 'timer') return '⏱ через ' + fmtDelay(p.delay) + ' после аудита' + (p.at ? ' в ' + p.at : '');
   if (p.mode === 'after') { const par = ids[p.after]; return '↳ через ' + fmtDelay(p.delay) + ' после «' + (par ? postName(par).slice(0, 26) : '#' + p.after) + '»'; }
   return p.day === 0 ? 'сразу' : p.time;
 }
@@ -383,7 +388,7 @@ function tags(p) {
   let h = '';
   if (p.status === 'paused') h += '<span class="tag paused">⏸ пауза</span>';
   if (p.status === 'draft') h += '<span class="tag draft">📝 черновик</span>';
-  if (p.emoji) h += '<span class="tag">✨ премиум</span>';
+  if (p.kind !== 'node') h += '<span class="tag trk">' + trackLbl(p) + '</span>';
   if (view.level !== 'all' && !gets(p)) h += '<span class="tag no">не получит</span>';
   return h;
 }
@@ -416,13 +421,14 @@ function loadThumbs(root) {
 
 const snip = (p) => p.text && p.title ? '<div class="tx">' + esc(p.text) + '</div>' : '';
 const chipsOf = (p) => (p.buttons && p.buttons.length) ? '<div class="chips2">' + p.buttons.slice(0, 6).map((t) => '<span>' + esc(t) + '</span>').join('') + '</div>' : '';
+const trackLbl = (p) => p.track === 'course' ? '🎓 мини-курс' : p.track === 'mat' ? '📚 материалы' : '👥 всем';
 const whoOf = (p) => p.track === 'course' ? 'тем, кто выбрал мини-курс' : p.track === 'mat' ? 'тем, кто выбрал материалы' : 'всем';
 function comesWhen(p) {
   if (p.kind === 'gift') return 'после теста';
   if (p.kind === 'fb') return 'после отзыва о кабинете';
   if (p.kind === 'node') return 'по кнопке или как шаг входа';
   if (p.kind === 'date') return fmtRun(p.run_at);
-  if (p.mode === 'timer') return 'через ' + fmtDelay(p.delay) + ' после аудита';
+  if (p.mode === 'timer') return 'через ' + fmtDelay(p.delay) + ' после аудита' + (p.at ? ' в ' + p.at : '');
   if (p.mode === 'after') { const par = byIdMap()[p.after]; return 'через ' + fmtDelay(p.delay) + ' после «' + (par ? postName(par).slice(0, 26) : '#' + p.after) + '»'; }
   return p.day === 0 ? 'сразу после входа' : 'на день ' + p.day + ' в ' + p.time;
 }
@@ -1133,8 +1139,8 @@ function whenOf(p) {
   if (p.kind === 'node') return '🔘 по кнопке';
   if (p.kind === 'fb') return '💬 за отзыв';
   if (p.kind === 'date') return '🕒 ' + fmtRun(p.run_at);
-  if (p.mode === 'after') return '⏱ через ' + fmtDelay(p.delay);
-  return '📅 ' + (p.mode === 'timer' ? 'через ' + fmtDelay(p.delay) + ' после аудита' : p.day === 0 ? 'день 0 · сразу' : 'день ' + p.day + ' · ' + p.time);
+  if (p.mode === 'after') return '⏱ через ' + fmtDelay(p.delay) + (p.at ? ' в ' + p.at : '');
+  return '📅 ' + (p.mode === 'timer' ? 'через ' + fmtDelay(p.delay) + ' после аудита' + (p.at ? ' в ' + p.at : '') : p.day === 0 ? 'день 0 · сразу' : 'день ' + p.day + ' · ' + p.time);
 }
 
 function makeNode(shown) {
@@ -1929,7 +1935,7 @@ function pickExisting(kind, day) {
   const rows = () => {
     const f = q.trim().toLowerCase();
     const l = list.filter((p) => !f || (postName(p) + ' ' + (p.text || '')).toLowerCase().includes(f));
-    return l.length ? l.map((p) => '<button type="button" class="kind" data-id="' + p.id + '"><b>' + esc(postName(p).slice(0, 60)) + '</b><span>' + (p.inbox ? '✉️ новый из бота · ' : '') + esc(whereNow(p)) + (refd(p) ? ' · на него ведут кнопки или шаги' : '') + '</span></button>').join('') : '<p class="small muted" style="margin:8px 2px">Ничего не нашлось.</p>';
+    return l.length ? l.map((p) => '<button type="button" class="kind" data-id="' + p.id + '"><b>' + esc(postName(p).slice(0, 60)) + '</b><span>' + (p.inbox ? '✉️ новый из бота · ' : '') + (p.kind !== 'node' ? esc(trackLbl(p)) + ' · ' : '') + esc(whereNow(p)) + (refd(p) ? ' · на него ведут кнопки или шаги' : '') + '</span></button>').join('') : '<p class="small muted" style="margin:8px 2px">Ничего не нашлось.</p>';
   };
   sheet('<span class="pill">Поставить в путь</span><h2>Что поставить в «' + esc(place) + '»?</h2>' +
     segHtml('pkMode', [['move', 'Перенести сюда'], ['copy', 'Сделать копию']], mode) +
@@ -1989,7 +1995,7 @@ function openPost(id, opt) {
   opt = opt || {};
   const p = opt.draft || S.posts.find((x) => x.id === id); if (!p) return;
   const isNew = !p.id;
-  const st = { who: p.who === 'new' ? 'new' : 'all', track: p.track || 'all', day: p.day ?? 1, time: p.time || '11:00', audience: p.audience, status: p.status, catchup: p.catchup, run_at: p.run_at, mode: p.kind === 'date' ? 'date' : (p.mode || 'day'), delay: p.delay || 0, after: p.after, once: !!p.once, files: JSON.parse(JSON.stringify(p.files || [])), editRich: false };
+  const st = { who: p.who === 'new' ? 'new' : 'all', track: p.track || 'all', day: p.day ?? 1, time: p.time || '11:00', audience: p.audience, status: p.status, catchup: p.catchup, run_at: p.run_at, at: p.at || null, mode: p.kind === 'date' ? 'date' : (p.mode || 'day'), delay: p.delay || 0, after: p.after, once: !!p.once, files: JSON.parse(JSON.stringify(p.files || [])), editRich: false };
   const unitOf = (m) => (m >= 1440 && m % 1440 === 0 ? 1440 : m >= 60 && m % 60 === 0 ? 60 : 1);
   const unitSel = (sid, m) => '<select id="' + sid + '" style="width:auto;flex:none">' + [[1, 'минут'], [60, 'часов'], [1440, 'дней']].map(([v, t]) => '<option value="' + v + '"' + (unitOf(m) === v ? ' selected' : '') + '>' + t + '</option>').join('') + '</select>';
   const others = S.posts.filter((x) => ['drip', 'node', 'gift'].includes(x.kind) && x.id !== p.id);
@@ -2009,13 +2015,14 @@ function openPost(id, opt) {
   // когда
   if (p.kind === 'drip' || p.kind === 'date') {
     const WO = [['timer', '⏱', 'Через время после аудита', 'Отсчёт от входа: человек прошёл аудит и согласился на рассылку'], ['after', '↳', 'После другого поста', 'Через сколько-то после того, как человек получил выбранный пост'], ['day', '📅', 'В день ленты и время', 'День 0 — сразу, день 1 — на следующий день, и так далее'], ['date', '🗓', 'В конкретную дату', 'Один раз, всем, кто к этому моменту уже в боте']];
+    const atRow = (f) => '<div class="row atr"><label class="small" style="display:flex;gap:8px;align-items:center;margin:0"><input type="checkbox" id="' + f + 'AtOn" style="width:auto"' + (st.at ? ' checked' : '') + '> в конкретное время</label><input type="time" id="' + f + 'At" style="width:auto" value="' + esc(st.at || '11:00') + '"></div>';
     const chipsFor = (f, arr) => '<div class="dtq" data-for="' + f + '">' + arr.map(([m, t]) => '<button type="button" class="chip" data-m="' + m + '">' + t + '</button>').join('') + '</div>';
     h += '<label class="f">Когда отправлять</label><div class="whensum" id="whenSum" aria-live="polite"></div><div class="wopts" id="fMode" style="margin-top:8px">' + WO.map(([k, ic, t, n]) => '<button type="button" data-v="' + k + '" class="wopt' + (st.mode === k ? ' on' : '') + '"><span class="wi">' + ic + '</span><span><b>' + t + '</b><i>' + n + '</i></span></button>').join('') + '</div>' +
       '<div id="pDay" style="margin-top:10px"><div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:12px"><div class="step"><button type="button" id="dMinus">−</button><b id="dVal">' + st.day + '</b><button type="button" id="dPlus">+</button></div>' +
       '<div id="tWrap" style="flex:1;min-width:140px"><input type="time" id="fTime" value="' + esc(st.time) + '"></div></div><p class="small muted" id="dHint" style="margin:6px 2px 0"></p></div>' +
-      '<div id="pTimer" style="margin-top:10px"><div class="row"><span>через</span><input type="number" id="tNum" min="0" step="1" style="width:90px" value="' + (st.mode === 'timer' ? st.delay / unitOf(st.delay) : 30) + '">' + unitSel('tUnit', st.mode === 'timer' ? st.delay : 1) + '</div>' + chipsFor('t', [[0, 'сразу'], [5, '5 мин'], [30, '30 мин'], [60, '1 час'], [1440, '1 день']]) + '<p class="small muted" id="tHint" style="margin:6px 2px 0"></p></div>' +
+      '<div id="pTimer" style="margin-top:10px"><div class="row"><span>через</span><input type="number" id="tNum" min="0" step="1" style="width:90px" value="' + (st.mode === 'timer' ? st.delay / unitOf(st.delay) : 30) + '">' + unitSel('tUnit', st.mode === 'timer' ? st.delay : 1) + '</div>' + chipsFor('t', [[0, 'сразу'], [5, '5 мин'], [30, '30 мин'], [60, '1 час'], [1440, '1 день']]) + atRow('t') + '<p class="small muted" id="tHint" style="margin:6px 2px 0"></p></div>' +
       '<div id="pAfter" style="margin-top:10px">' + (others.length ? '<select id="aPost">' + others.map((x) => '<option value="' + x.id + '"' + (st.after === x.id ? ' selected' : '') + '>' + esc((x.kind === 'node' ? '🔘 ' : x.kind === 'gift' ? '🎁 ' : '') + postName(x).slice(0, 40)) + ' — ' + esc(whenOf(x)) + '</option>').join('') + '</select>' +
-        '<div class="row" style="margin-top:8px"><span>через</span><input type="number" id="aNum" min="0" step="1" style="width:90px" value="' + (st.mode === 'after' ? st.delay / unitOf(st.delay) : 1) + '">' + unitSel('aUnit', st.mode === 'after' ? st.delay : 60) + '</div>' + chipsFor('a', [[5, '5 мин'], [60, '1 час'], [1440, '1 день'], [4320, '3 дня']]) + '<p class="small muted" id="aHint" style="margin:6px 2px 0"></p>'
+        '<div class="row" style="margin-top:8px"><span>через</span><input type="number" id="aNum" min="0" step="1" style="width:90px" value="' + (st.mode === 'after' ? st.delay / unitOf(st.delay) : 1) + '">' + unitSel('aUnit', st.mode === 'after' ? st.delay : 60) + '</div>' + chipsFor('a', [[5, '5 мин'], [60, '1 час'], [1440, '1 день'], [4320, '3 дня']]) + atRow('a') + '<p class="small muted" id="aHint" style="margin:6px 2px 0"></p>'
         : '<p class="small muted">Других постов пока нет.</p>') + '</div>' +
       '<div id="pDate" style="margin-top:10px"><label class="f" style="margin-top:0">Дата и время (по Москве)</label>' + dtp('id="fRun"', toLocal(st.run_at), false) + '</div>' +
       '<div class="toggle" id="catchWrap"><span><b>Догонять опоздавших</b><br><span class="small muted">Пост получат и те, у кого этот день уже прошёл</span></span><label class="sw"><input type="checkbox" id="fCatch" ' + (st.catchup ? 'checked' : '') + '><span></span></label></div>';
@@ -2098,21 +2105,23 @@ function openPost(id, opt) {
   // когда (лента)
   const showMode = () => { if (!$('pDay')) return; $('pDay').style.display = st.mode === 'day' ? '' : 'none'; $('pTimer').style.display = st.mode === 'timer' ? '' : 'none'; $('pAfter').style.display = st.mode === 'after' ? '' : 'none'; $('pDate').style.display = st.mode === 'date' ? '' : 'none'; $('catchWrap').style.display = st.mode === 'date' ? 'none' : ''; hints(); };
   const delayOf = (n, u) => Math.max(0, Math.round((+$(n).value || 0) * +$(u).value));
+  const atTxt = (f) => $(f + 'AtOn') && $(f + 'AtOn').checked && $(f + 'At').value ? ', в ' + $(f + 'At').value : '';
   const sumLine2 = () => {
-    if (st.mode === 'timer') return 'Придёт через ' + fmtDelay(delayOf('tNum', 'tUnit')) + ' после аудита' + (delayOf('tNum', 'tUnit') ? '' : ' (сразу)');
-    if (st.mode === 'after') { const par = $('aPost') && S.posts.find((x) => x.id === +$('aPost').value); return par ? 'Придёт через ' + fmtDelay(delayOf('aNum', 'aUnit')) + ' после поста «' + postName(par).slice(0, 34) + '»' : 'Выбери пост, после которого отправлять'; }
+    if (st.mode === 'timer') return 'Придёт через ' + fmtDelay(delayOf('tNum', 'tUnit')) + ' после аудита' + (delayOf('tNum', 'tUnit') || atTxt('t') ? atTxt('t') : ' (сразу)');
+    if (st.mode === 'after') { const par = $('aPost') && S.posts.find((x) => x.id === +$('aPost').value); return par ? 'Придёт через ' + fmtDelay(delayOf('aNum', 'aUnit')) + ' после поста «' + postName(par).slice(0, 34) + '»' + atTxt('a') : 'Выбери пост, после которого отправлять'; }
     if (st.mode === 'date') { const t = fromLocal($('fRun') && $('fRun').value); return t ? 'Уйдёт один раз: ' + fmtRun(t) : 'Выбери дату и время'; }
     return st.day === 0 ? 'Придёт сразу после входа' : 'Придёт на день ' + st.day + ' в ' + (($('fTime') && $('fTime').value) || st.time) + ' по Москве';
   };
+  const atHint = (f, nUnit) => $(f + 'AtOn') && $(f + 'AtOn').checked ? (delayOf(f + 'Num', f + 'Unit') % 1440 === 0 ? ' Дни считаются по календарю: «через 2 дня в 11:00» — это послезавтра в 11:00 по Москве.' : ' Если срок выпадет не на это время, пост уйдёт в ближайшие такие часы по Москве.') : '';
   const hints = () => {
     if ($('whenSum')) $('whenSum').textContent = sumLine2();
-    if ($('tHint')) $('tHint').textContent = 'Отсчёт идёт от момента, когда человек прошёл аудит и согласился на рассылку, в любое время суток.';
-    if ($('aHint') && $('aPost')) { const par = S.posts.find((x) => x.id === +$('aPost').value); $('aHint').textContent = par && par.kind === 'node' ? 'Отсчёт от нажатия кнопки, которая ведёт на этот пост.' : 'Отсчёт от момента, когда человек получил выбранный пост.'; }
+    if ($('tHint')) $('tHint').textContent = 'Отсчёт идёт от момента, когда человек прошёл аудит и согласился на рассылку.' + atHint('t');
+    if ($('aHint') && $('aPost')) { const par = S.posts.find((x) => x.id === +$('aPost').value); $('aHint').textContent = (par && par.kind === 'node' ? 'Отсчёт от нажатия кнопки, которая ведёт на этот пост.' : 'Отсчёт от момента, когда человек получил выбранный пост.') + atHint('a'); }
   };
   const setDelay = (f, m) => { const u = (m >= 1440 && m % 1440 === 0 ? 1440 : m >= 60 && m % 60 === 0 ? 60 : 1); $(f + 'Unit').value = u; $(f + 'Num').value = m / u; hints(); };
   document.querySelectorAll('.dtq[data-for]').forEach((q) => q.addEventListener('click', (e) => { const c = e.target.closest('.chip'); if (!c) return; haptic(); setDelay(q.dataset.for === 't' ? 't' : 'a', +c.dataset.m); }));
   if ($('fRun')) $('fRun').addEventListener('change', hints);
-  if ($('fMode')) { segBind('fMode', (v) => { st.mode = v; haptic(); showMode(); }); ['tNum', 'tUnit', 'aNum', 'aUnit', 'aPost', 'fTime'].forEach((i) => { if ($(i)) $(i).oninput = hints; }); showMode(); }
+  if ($('fMode')) { segBind('fMode', (v) => { st.mode = v; haptic(); showMode(); }); ['tNum', 'tUnit', 'aNum', 'aUnit', 'aPost', 'fTime', 'tAtOn', 'tAt', 'aAtOn', 'aAt'].forEach((i) => { if ($(i)) { $(i).oninput = hints; $(i).onchange = hints; } }); showMode(); }
   const upd = () => { if (!$('dVal')) return; $('dVal').textContent = st.day; $('tWrap').style.display = st.day === 0 ? 'none' : ''; $('dHint').textContent = 'День ' + st.day + ' — ' + dayLabel(st.day) + (st.day ? ', в ' + ($('fTime').value || st.time) + ' по Москве' : ''); hints(); };
   if ($('dMinus')) { $('dMinus').onclick = () => { st.day = Math.max(0, st.day - 1); haptic(); upd(); }; $('dPlus').onclick = () => { st.day = Math.min(365, st.day + 1); haptic(); upd(); }; $('fTime').oninput = upd; upd(); }
   if ($('fAud')) segBind('fAud', (v) => st.audience = v);
@@ -2241,8 +2250,8 @@ function openPost(id, opt) {
       if (p.kind === 'drip') {
         body.mode = st.mode; body.catchup = $('fCatch').checked;
         if (st.mode === 'day') { body.day = st.day; body.time = st.day > 0 ? ($('fTime').value || st.time) : '00:00'; }
-        if (st.mode === 'timer') body.delay_min = delayOf('tNum', 'tUnit');
-        if (st.mode === 'after') { if (!$('aPost')) throw new Error('Нет поста, после которого отправлять'); body.after_id = +$('aPost').value; body.delay_min = delayOf('aNum', 'aUnit'); }
+        if (st.mode === 'timer') { body.delay_min = delayOf('tNum', 'tUnit'); body.at = $('tAtOn').checked ? $('tAt').value : null; }
+        if (st.mode === 'after') { if (!$('aPost')) throw new Error('Нет поста, после которого отправлять'); body.after_id = +$('aPost').value; body.delay_min = delayOf('aNum', 'aUnit'); body.at = $('aAtOn').checked ? $('aAt').value : null; }
       }
       if (p.kind === 'date') { const t = fromLocal($('fRun').value); if (!t && st.status === 'active') throw new Error('Выбери дату и время'); if (t) body.run_at = t; }
       let r;

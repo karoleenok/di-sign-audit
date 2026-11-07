@@ -95,15 +95,27 @@ export const NOT_SENT = `NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.post_id 
 //   день 0  -> сразу после входа
 //   день N  -> полночь по Москве дня входа + N дней + время отправки
 export function dueSql(post) {
-  const delay = (Number(post.delay_min) || 0) * 60;
+  const dmin = Number(post.delay_min) || 0;
+  const delay = dmin * 60;
+  const tod = post.at_time && /^\d{1,2}:\d{2}$/.test(post.at_time) ? timeSec(post.at_time) : null;
+  // «через N …» + конкретное время суток: целые дни считаем по календарю (через 2 дня в 11:00), остальное — ближайшее такое время после срока
+  const withTime = (A) => {
+    if (tod === null) return `(${A} + ${delay})`;
+    if (dmin % 1440 === 0) {
+      const cand = `(((${A}) + ${MSK}) / ${DAY} * ${DAY} - ${MSK} + ${delay} + ${tod})`;
+      return `(${cand} + ${DAY} * (${cand} < (${A})))`;
+    }
+    const B = `((${A}) + ${delay})`;
+    return `((${B} + ${MSK} - ${tod} + ${DAY} - 1) / ${DAY} * ${DAY} + ${tod} - ${MSK})`;
+  };
   // по таймеру: через N минут после входа
-  if (post.mode === 'timer') return `(u.joined_at + ${delay})`;
+  if (post.mode === 'timer') return withTime('u.joined_at');
   // после другого поста: через N минут после того, как этот человек получил тот пост
-  if (post.mode === 'after') return `((SELECT d2.sent_at FROM deliveries d2 WHERE d2.post_id = ${Number(post.after_id) || 0} AND d2.tg_id = u.tg_id AND d2.ok = 1) + ${delay})`;
-  const tod = timeSec(post.send_time);
+  if (post.mode === 'after') return withTime(`(SELECT d2.sent_at FROM deliveries d2 WHERE d2.post_id = ${Number(post.after_id) || 0} AND d2.tg_id = u.tg_id AND d2.ok = 1)`);
+  const todDay = timeSec(post.send_time);
   return Number(post.day) === 0
     ? `u.joined_at`
-    : `(((u.joined_at + ${MSK}) / ${DAY}) * ${DAY} - ${MSK} + ${Number(post.day) * DAY} + ${tod})`;
+    : `(((u.joined_at + ${MSK}) / ${DAY}) * ${DAY} - ${MSK} + ${Number(post.day) * DAY} + ${todDay})`;
 }
 export function timeSec(s) {
   const m = /^(\d{1,2}):(\d{2})$/.exec(s || '11:00');
@@ -157,8 +169,8 @@ export function postWhen(p) {
   if (p.kind === 'node') return 'по нажатию кнопки';
   if (p.kind === 'fb') return 'бонус за отзыв о кабинете';
   if (p.kind === 'date') return p.run_at ? `дата ${fmtWhen(p.run_at)}` : 'дата не задана';
-  if (p.mode === 'timer') return `через ${fmtDelay(p.delay_min)} после входа`;
-  if (p.mode === 'after') return `через ${fmtDelay(p.delay_min)} после поста #${p.after_id}`;
+  if (p.mode === 'timer') return `через ${fmtDelay(p.delay_min)} после аудита${p.at_time ? ' в ' + p.at_time : ''}`;
+  if (p.mode === 'after') return `через ${fmtDelay(p.delay_min)} после поста #${p.after_id}${p.at_time ? ' в ' + p.at_time : ''}`;
   return Number(p.day) === 0 ? 'день 0 · сразу' : `день ${p.day} · ${p.send_time}`;
 }
 export function postSummary(p) {
@@ -185,8 +197,16 @@ export function fmtDelay(min) {
 // Вход считаем в 10:00 по Москве (как средний случай). Цепочки «после поста» разворачиваем.
 export function offsetMin(p, byId, depth = 0) {
   if (!p || depth > 20) return 0;
-  if (p.mode === 'timer') return Number(p.delay_min) || 0;
-  if (p.mode === 'after') return offsetMin(byId[p.after_id], byId, depth + 1) + (Number(p.delay_min) || 0);
+  const tod = p.at_time ? timeSec(p.at_time) / 60 : null;
+  const timed = (anchor) => {
+    const d = Number(p.delay_min) || 0;
+    if (tod === null) return anchor + d;
+    const abs = 600 + anchor; // минуты от полуночи дня входа
+    if (d % 1440 === 0) { let c = (Math.floor(abs / 1440) + d / 1440) * 1440 + tod; if (c < abs) c += 1440; return c - 600; }
+    const b = abs + d; return Math.ceil((b - tod) / 1440) * 1440 + tod - 600;
+  };
+  if (p.mode === 'timer') return timed(0);
+  if (p.mode === 'after') return timed(offsetMin(byId[p.after_id], byId, depth + 1));
   const day = Number(p.day) || 0;
   if (day === 0) return 0;
   const t = timeSec(p.send_time) / 60;

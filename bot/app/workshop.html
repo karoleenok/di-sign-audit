@@ -499,7 +499,7 @@ details a,.src a{color:var(--blue)}
   </div>
   <div class="hello-img big"><img data-img="glasses" alt=""></div>
   <p class="small hello-sub">Пройди бесплатный аудит навыков, получи план из трёх шагов и забери бонусы.</p>
-  <div class="dock"><button class="btn primary" id="auGo" type="button">Пройти аудит</button><p class="small" id="auNo" hidden style="text-align:center">Ссылка на аудит пока не готова. Напиши в боте, мы поможем.</p></div>
+  <div class="dock"><button class="btn primary" id="auGo" type="button">Пройти аудит</button><p class="small" id="auHint" style="text-align:center" hidden>Когда закончишь, вернись в бот: это окно закроется само, и мы пришлём следующее сообщение.</p><p class="small" id="auNo" hidden style="text-align:center">Ссылка на аудит пока не готова. Напиши в боте, мы поможем.</p></div>
 </section>
 
 <!-- входной экран: один раз, после выбора трека -->
@@ -872,7 +872,7 @@ function enterHome(){
   cur='home';show('home');
 }
 function route(){
-  if(APPCFG&&!APPCFG.admin&&!APPCFG.track){cur='audit';$('#auGo').hidden=!APPCFG.audit;$('#auNo').hidden=!!APPCFG.audit;show('audit');return}
+  if(APPCFG&&!APPCFG.admin&&!APPCFG.track){cur='audit';$('#auGo').hidden=!APPCFG.audit;$('#auNo').hidden=!!APPCFG.audit;show('audit');startAuWatch();return}
   var p=parse((location.hash||'').slice(1)),mine=APPCFG&&APPCFG.track&&!APPCFG.admin?APPCFG.track:null;
   if(mine&&p&&p.t!==mine){p.t=mine;try{history.replaceState(null,'','#'+mine+(p.m?'-'+p.m:''))}catch(e){}}
   $('#swTrack').closest('.card').hidden=!!mine;
@@ -887,6 +887,14 @@ function route(){
 window.addEventListener('hashchange',function(){var h=(location.hash||'').slice(1);if(h===hashOf(cur))return;route()});
 $$('[data-back]').forEach(function(b){b.addEventListener('click',function(){go('home')})});
 $$('[data-pick]').forEach(function(b){b.addEventListener('click',function(){TRACK=b.getAttribute('data-pick');paintHome();go('home')})});
+var auTimer=null;
+/* после аудита человек возвращается в бот, а это окно остаётся открытым: следим, появился ли у него трек, и закрываем окно */
+function auCheck(){var w=window.Telegram&&window.Telegram.WebApp;if(!w||!w.initData||cur!=='audit')return;
+  fetch('/api/app/me',{method:'POST',headers:{'x-init-data':w.initData}}).then(function(r){return r.ok?r.json():null}).then(function(j){
+    if(!j||!j.track||cur!=='audit')return;stopAuWatch();try{w.close()}catch(e){}setTimeout(function(){location.reload()},600)}).catch(function(){})}
+function stopAuWatch(){if(auTimer){clearInterval(auTimer);auTimer=null}}
+function startAuWatch(){stopAuWatch();$('#auHint').hidden=!APPCFG.audit;auTimer=setInterval(auCheck,3000)}
+document.addEventListener('visibilitychange',function(){if(!document.hidden)auCheck()});window.addEventListener('focus',auCheck);
 $('#auGo').addEventListener('click',function(){var u=APPCFG&&APPCFG.audit;if(!u)return;try{var w=window.Telegram&&window.Telegram.WebApp;if(w&&w.openLink){w.openLink(u);return}}catch(e){}window.open(u,'_blank')});
 $('#heGo').addEventListener('click',function(){try{localStorage.setItem(HELLO_KEY+TRACK,'1')}catch(e){}go('home')});
 $('#swTrack').addEventListener('click',function(){TRACK=null;go('pick')});
