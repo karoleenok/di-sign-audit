@@ -120,7 +120,7 @@ for (const w of [390, 320]) {
   await page.fill('#libQ', ''); await page.click('[data-lf="free"]'); await page.waitForTimeout(200);
   assert.ok(await noscroll(page));
   await page.click('[data-lf="all"]'); await page.waitForTimeout(200);
-  await page.locator('#libL .lib').first().click(); await page.waitForSelector('#sheet.on #fTitle');
+  await page.locator('#libL .lib').first().click(); await page.waitForSelector('#pvEdit'); await page.click('#pvEdit'); await page.waitForSelector('#fTitle');
   await page.click('#sheet .sx'); await page.waitForTimeout(300);
   await page.click('#backMore'); await page.waitForSelector('.sc-tl');
   // свой пост-шаг, выключенный во входе: есть метка и переключатель, и он включает шаг
@@ -137,6 +137,19 @@ for (const w of [390, 320]) {
       assert.match(await row.textContent(), /Выключен/, 'метка: пост выключен в самом входе');
       if (!(await noscroll(page))) console.log('OVER2', w, await page.evaluate(() => [document.documentElement.scrollWidth, [...document.querySelectorAll('body *')].filter((e) => e.getBoundingClientRect().right > innerWidth + 1).slice(0, 6).map((e) => e.tagName + '.' + e.className + ':' + e.textContent.slice(0, 18))]));
       assert.ok(await noscroll(page), 'нет горизонтального скролла со строкой выключенного поста');
+      // нажатие на пост во входе: предпросмотр, правка и дубль для другого трека
+      await row.click(); await page.waitForSelector('#pvEdit');
+      assert.match(await page.textContent('#sheet'), /так увидит ученик/);
+      assert.match(await page.textContent('#sheet'), /Welcome to Di Sign University/);
+      assert.ok(await noscroll(page), 'нет горизонтального скролла в предпросмотре поста');
+      await page.click('#pvEdit'); await page.waitForSelector('#fTitle'); await page.click('#sheet .sx'); await page.waitForTimeout(300);
+      await row.click(); await page.waitForSelector('#pvDup'); await page.click('#pvDup'); await page.waitForSelector('[data-dt="mat"]');
+      await page.click('[data-dt="mat"]'); await page.waitForSelector('#fTitle'); await page.waitForTimeout(300);
+      const cp = await db.first(`SELECT id, track, status, kind, title FROM posts WHERE title LIKE '%(копия)' ORDER BY id DESC LIMIT 1`);
+      assert.deepEqual([cp.track, cp.status, cp.kind], ['mat', 'draft', 'node'], 'копия: другой трек, черновик');
+      assert.match(cp.title, /Welcome to Di Sign University \(копия\)/);
+      await db.run(`DELETE FROM posts WHERE id = ?`, [cp.id]);
+      await page.click('#sheet .sx'); await page.waitForTimeout(300); await page.reload(); await page.waitForSelector('.sc-tl'); await page.waitForSelector('.sc-entry .sc-step');
       await row.locator('[data-scoff]').click(); await page.waitForTimeout(700);
       const off = JSON.parse((await db.first(`SELECT value FROM settings WHERE key = 'flow:off'`)).value);
       assert.ok(!off.includes(k), 'переключатель включил шаг входа');

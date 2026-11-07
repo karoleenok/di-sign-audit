@@ -479,7 +479,7 @@ async function panelRest(ctx, request, url, user, path, body) {
     await ctx.db.run(
       `INSERT INTO posts (title, kind, audience, track, day, send_time, run_at, catchup, status, text, entities, media, buttons, created_by, created_at, mode, delay_min, after_id, once)
        VALUES (?, ?, ?, ?, ?, '11:00', NULL, 0, 'draft', ?, ?, ?, ?, ?, ?, 'day', 0, NULL, ?)`,
-      [src.title || null, kind, src.audience || 'all', src.track || 'all', kind === 'drip' ? 1 : null, src.text, src.entities, src.media, src.buttons, user.id, ctx.now, src.once ? 1 : 0]);
+      [src.title || null, kind, src.audience || 'all', (TRACKS[body.track] ? body.track : src.track || 'all'), kind === 'drip' ? 1 : null, src.text, src.entities, src.media, src.buttons, user.id, ctx.now, src.once ? 1 : 0]);
     const row = await ctx.db.first(`SELECT * FROM posts WHERE created_by = ? ORDER BY id DESC LIMIT 1`, [user.id]);
     return json({ ok: true, post: postOut(row) });
   }

@@ -2167,7 +2167,7 @@ function renderSched() {
     const off = e.target.closest('[data-scoff]');
     if (off) { e.stopPropagation(); const k = off.dataset.scoff, fl = S.flow || { order: Object.keys(ENTRY), off: [] }; saveFlow(fl.order, fl.off.includes(k) ? fl.off.filter((x) => x !== k) : fl.off.concat(k)); return; }
     const k = el.dataset.k;
-    if (/^post:\d+$/.test(k)) { try { openPost(+k.slice(5)); } catch (err) { toast('Не открылось: ' + err.message); } } else if (k === 'gift') toast('Подарки ниже, в блоке «Когда человек сам что-то сделал»'); else openMsg(k);
+    if (/^post:\d+$/.test(k)) { try { previewPost(+k.slice(5)); } catch (err) { toast('Не открылось: ' + err.message); } } else if (k === 'gift') toast('Подарки ниже, в блоке «Когда человек сам что-то сделал»'); else openMsg(k);
   });
   if (SEL) scBar(picked);
   document.querySelectorAll('.sc-card[data-scid]').forEach((el) => el.onclick = (e) => {
@@ -2340,13 +2340,49 @@ function renderLib() {
   const draw = () => {
     const ff = view.libF || 'all', q = (view.libQ || '').trim().toLowerCase();
     const list = S.posts.filter((p) => libMatch(p, ff, q)).sort((a, b) => (b.inbox ? 1 : 0) - (a.inbox ? 1 : 0) || b.id - a.id);
-    $('libN').textContent = list.length ? 'Показано: ' + list.length + ' из ' + S.posts.length + '. Нажми на пост, чтобы открыть.' : '';
+    $('libN').textContent = list.length ? 'Показано: ' + list.length + ' из ' + S.posts.length + '. Нажми на пост: посмотришь, как его увидит ученик, и сможешь править или дублировать.' : '';
     $('libL').innerHTML = list.length ? list.map(libCard).join('') : '<p class="muted" style="padding:12px 2px">' + (S.posts.length ? 'Таких постов нет. Попробуй другой фильтр или слово.' : 'Постов пока нет. Напиши первый в боте командой /new или в расписании через «＋ Пост».') + '</p>';
-    document.querySelectorAll('[data-lib]').forEach((el) => el.onclick = () => { haptic(); openPost(+el.dataset.lib); });
+    document.querySelectorAll('[data-lib]').forEach((el) => el.onclick = () => { haptic(); try { previewPost(+el.dataset.lib); } catch (e) { toast('Не открылось: ' + e.message); } });
   };
   draw();
   $('libQ').oninput = (e) => { view.libQ = e.target.value; draw(); };
   $('libF').onclick = (e) => { const b = e.target.closest('[data-lf]'); if (!b) return; view.libF = b.dataset.lf; saveView(); document.querySelectorAll('#libF button').forEach((x) => x.classList.toggle('on', x === b)); draw(); };
+}
+
+// посмотреть пост так, как его увидит ученик, не открывая редактор
+function previewPost(id) {
+  const p = S.posts.find((x) => x.id === id); if (!p) { toast('Этот пост не найден: возможно, он в архиве'); return; }
+  const fl = S.flow || { order: [], off: [] }, k = 'post:' + id, inFlow = fl.order.includes(k);
+  const tgt = (b) => { if (b.go) { const q = S.posts.find((x) => x.id === +b.go); return 'пост «' + esc(q ? postName(q).slice(0, 40) : 'удалён, #' + b.go) + '»'; } return b.url ? esc(b.url) : b.fb ? 'бонус за отзыв' : '—'; };
+  const rows = (p.rows || []).flat();
+  const where = [KIND_WHEN(p), p.kind !== 'node' && p.kind !== 'fb' ? trackLbl(p) : '', p.status === 'active' ? 'пост включён' : p.status === 'draft' ? 'черновик' : 'пост выключен', inFlow ? (fl.off.includes(k) ? 'шаг входа выключен' : 'шаг входа включён') : ''].filter(Boolean).join(' · ');
+  sheet('<div class="shd"><span class="pill">Пост · #' + p.id + '</span><button type="button" class="sx" id="pvX" aria-label="закрыть">✕</button></div><h2>' + esc(postName(p).slice(0, 80)) + '</h2><p class="small muted">' + esc(where) + '</p>' +
+    '<div class="phone"><div class="hd">так увидит ученик</div><div class="m">' + mediaStrip(p, 3) + (p.text ? plainT(p.md || p.text) : '<i class="muted">текста нет</i>') + '</div>' + (rows.length ? '<div class="kbd">' + rows.map((b) => '<span>' + esc(b.text || '') + '</span>').join('') + '</div>' : '') + '</div>' +
+    (rows.length ? '<p class="small muted" style="margin:10px 2px 0">Кнопки: ' + rows.map((b) => '«' + esc(b.text || '') + '» → ' + tgt(b)).join('; ') + '</p>' : '') +
+    (p.rich ? '<div class="note" style="margin-top:10px">В тексте премиум-эмодзи или особое оформление из бота: здесь они видны как обычные символы, ученик увидит их полностью.</div>' : '') +
+    '<div class="btns"><button type="button" class="btn" id="pvEdit">✏️ Править</button><button type="button" class="btn ghost" id="pvDup">⎘ Дублировать…</button><button type="button" class="btn ghost" id="pvClose">Закрыть</button></div>');
+  $('pvX').onclick = closeSheet; $('pvClose').onclick = closeSheet;
+  $('pvEdit').onclick = () => { try { openPost(id); } catch (e) { toast('Не открылось: ' + e.message); } };
+  $('pvDup').onclick = () => dupPost(id);
+  setTimeout(() => loadThumbs($('sheet')), 0);
+}
+// копия поста: сразу выбрать, для какого трека она нужна
+function dupPost(id) {
+  const p = S.posts.find((x) => x.id === id); if (!p) return;
+  const cur = p.track || 'all';
+  sheet('<div class="shd"><span class="pill">Дублировать</span><button type="button" class="sx" id="dpX" aria-label="закрыть">✕</button></div><h2>Для кого <i>копия?</i></h2><p class="small muted">«' + esc(postName(p).slice(0, 50)) + '». Текст, картинки и кнопки те же. Копия получится выключенной (черновик), исходный пост не меняется.</p>' +
+    '<div class="kinds">' + [['course', '🎓 Для мини-курса', 'трек «Мини-курс»'], ['mat', '📚 Для материалов', 'трек «Месяц материалов»'], ['all', '👥 Для всех', 'без деления по трекам'], ['keep', 'Просто копия', 'тот же трек, как у исходного, поправлю потом']].map(([v, t, n]) => '<button type="button" class="kind" data-dt="' + v + '"><b>' + t + (v === cur ? ' · как сейчас' : '') + '</b><span>' + n + '</span></button>').join('') + '</div>');
+  $('dpX').onclick = closeSheet;
+  document.querySelectorAll('[data-dt]').forEach((b) => b.onclick = async () => {
+    const v = b.dataset.dt;
+    try {
+      const r = await api('/post/' + id + '/copy', v === 'keep' ? { kind: p.kind } : { kind: p.kind, track: v });
+      await api('/post/' + r.post.id, { title: (postName(p).slice(0, 60) + ' (копия)') });
+      haptic('medium'); closeSheet(); await reload();
+      toast('Копия готова и выключена. Поправь текст, поставь день или шаг и включи');
+      openPost(r.post.id);
+    } catch (e) { toast(e.message); }
+  });
 }
 function scEntryRows() {
   const fl = S.flow || { order: Object.keys(ENTRY), off: [] }, opt = S.flowOptional || [];
@@ -2360,7 +2396,7 @@ function scEntryRows() {
       const p = S.posts.find((x) => x.id === +k.slice(5)); if (!p) return;
       if (p.who === 'new' && src === 'audit') return;
       const stepOff = fl.off.includes(k), live = p.status === 'active';
-      add(k, '↳ Свой пост «' + postName(p).slice(0, 30) + '»', stepOff || !live, { chip: !live ? [p.status === 'draft' ? 'Черновик' : 'Пауза', 'off'] : stepOff ? ['Выключен', 'off'] : ['Свой пост', 'own'], sw: live, sub: !live ? 'не включён сам пост: нажми, чтобы открыть' : stepOff ? 'выключен во входе: включи справа, текст откроется по нажатию' : 'нажми, чтобы открыть текст и настройки' });
+      add(k, '↳ Свой пост «' + postName(p).slice(0, 30) + '»', stepOff || !live, { chip: !live ? [p.status === 'draft' ? 'Черновик' : 'Пауза', 'off'] : stepOff ? ['Выключен', 'off'] : ['Свой пост', 'own'], sw: live, sub: !live ? 'не включён сам пост: нажми, чтобы открыть' : stepOff ? 'выключен во входе: включи справа, текст откроется по нажатию' : 'нажми, чтобы посмотреть, править или дублировать' });
       return;
     }
     if (soc && src === 'site' && (k === 'fbOffer' || k === 'askTrack')) return;
@@ -2679,7 +2715,7 @@ function openPost(id, opt) {
       '<div class="btns" style="margin-top:8px"><button class="btn ghost" id="bToFeed" type="button">↔ Поставить в ленту</button></div></div>';
   }
   h += '<div class="btns"><button class="btn" id="bSave">' + (isNew ? 'Создать пост' : 'Сохранить') + '</button>' +
-    (isNew ? '<button class="btn ghost" id="bClose">Отмена</button>' : '<div class="btns two" style="margin:0"><button class="btn ghost" id="bPrev">👁 Прислать мне</button><button class="btn ghost" id="bClose">Закрыть</button></div><button class="btn ghost" id="bRepl" type="button">🔁 Заменить другим постом</button><button class="btn ghost" id="bDeliv" type="button">📬 Кому ушёл пост</button><button class="btn ghost" id="bHist" type="button">🕘 История текста</button><button class="btn ghost" id="bRew" type="button">✏️ Заменить содержимое через бота (как /new)</button><p class="small muted" style="margin:4px 2px 8px">Бот попросит прислать новый текст, картинки или альбом. Старое содержимое поста заменится, кнопки и время останутся.</p><button class="btn danger" id="bArch">🗄 Убрать в архив</button>') + '</div>';
+    (isNew ? '<button class="btn ghost" id="bClose">Отмена</button>' : '<div class="btns two" style="margin:0"><button class="btn ghost" id="bPrev">👁 Прислать мне</button><button class="btn ghost" id="bClose">Закрыть</button></div><button class="btn ghost" id="bDup" type="button">⎘ Дублировать…</button><button class="btn ghost" id="bRepl" type="button">🔁 Заменить другим постом</button><button class="btn ghost" id="bDeliv" type="button">📬 Кому ушёл пост</button><button class="btn ghost" id="bHist" type="button">🕘 История текста</button><button class="btn ghost" id="bRew" type="button">✏️ Заменить содержимое через бота (как /new)</button><p class="small muted" style="margin:4px 2px 8px">Бот попросит прислать новый текст, картинки или альбом. Старое содержимое поста заменится, кнопки и время останутся.</p><button class="btn danger" id="bArch">🗄 Убрать в архив</button>') + '</div>';
   sheet(h);
 
   // текст: панель оформления и счётчик
@@ -2827,6 +2863,7 @@ function openPost(id, opt) {
   if ($('bRew')) $('bRew').onclick = async () => { try { await api('/post/' + p.id + '/rewrite', {}); haptic('medium'); toast('Открой чат с ботом и пришли новое содержимое, потом нажми «Готово»'); setTimeout(() => { try { tg && tg.close(); } catch (e) {} }, 1200); } catch (e) { toast(e.message); } };
   if ($('bDeliv')) $('bDeliv').onclick = () => openDelivery(p.id);
   if ($('bRepl')) $('bRepl').onclick = () => replacePost(p.id);
+  if ($('bDup')) $('bDup').onclick = () => dupPost(p.id);
   if ($('bPrev')) $('bPrev').onclick = async () => { try { const r = await api('/post/' + p.id + '/preview', {}); toast(r.warn ? '⚠️ ' + r.warn : 'Отправила тебе в бот 👀'); } catch (e) { toast(e.message); } };
   if ($('bToStep')) $('bToStep').onclick = async () => { try { await api('/post/' + p.id + '/move', { to: 'node' }); closeSheet(); haptic('medium'); toast('Теперь это пост для шага: он в блоке «Свои посты для шагов»'); await reload(); } catch (e) { toast(e.message); } };
   const feedList = () => { const d = parseInt($('bFeedDay').value, 10); return S.posts.filter((x) => x.kind === 'drip' && x.day === d && x.id !== p.id).sort((a, b) => (a.pos || 0) - (b.pos || 0) || String(a.time).localeCompare(String(b.time))); };
