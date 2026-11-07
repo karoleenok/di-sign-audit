@@ -312,7 +312,8 @@ async function panelRest(ctx, request, url, user, path, body) {
       if (r.error) return json({ error: r.error }, 400);
       put('buttons', r.rows.length ? JSON.stringify(r.rows) : null);
     }
-    if (p.inbox) put('inbox', 0); // любое действие с постом в панели — он больше не «новый из бота»
+    if (body.inbox !== undefined) put('inbox', body.inbox ? 1 : 0); // убрать пост из дня: он ждёт среди «новых из бота»
+    else if (p.inbox) put('inbox', 0); // любое действие с постом в панели — он больше не «новый из бота»
     if (body.once !== undefined) put('once', body.once ? 1 : 0);
     if (body.who !== undefined) put('who', body.who === 'new' ? 'new' : null);
     if (body.track !== undefined) { if (!TRACKS[body.track]) return json({ error: 'Неизвестный трек' }, 400); put('track', body.track); }

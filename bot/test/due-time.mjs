@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { nodeSqliteAdapter } from '../src/db-node.js';
 import { migrate } from '../src/schema.js';
-import { dueSql, setCohorts } from '../src/posts.js';
+import { dueSql, setCohorts, dueUsers, catchesUp, isStreamPost } from '../src/posts.js';
 const db = await nodeSqliteAdapter(':memory:'); await migrate(db);
 const U = (y, m, d, h, mi) => Date.UTC(y, m - 1, d, h, mi) / 1000 - 10800; // московское время -> unix
 await db.run(`INSERT INTO users (tg_id, status, created_at, joined_at) VALUES (1, 'active', 0, ?)`, [U(2026, 11, 7, 15, 20)]);
@@ -30,6 +30,16 @@ assert.equal(await dueU(D0(30), 3), U(2026, 11, 20, 14, 30), 'день 0 с па
 assert.equal(await dueU(D0(30), 2), U(2026, 11, 6, 11, 30), 'вошёл до старта: в дату старта 11:00 + 30 мин');
 setCohorts({});
 assert.equal(await dueU(D0(30), 3), U(2026, 11, 20, 14, 30), 'без даты старта пауза та же');
+// посты потока догоняют сами: у них не нужен переключатель «срок прошёл»
+await db.run(`UPDATE users SET consent_ads_at = 1, paid_at = NULL, track = 'course' WHERE tg_id IN (2, 3)`);
+const LATE = { id: 77, kind: 'drip', audience: 'all', track: 'course', mode: 'day', day: 1, send_time: '11:00', delay_min: 0, catchup: 0, created_at: U(2026, 11, 9, 12, 0) };
+setCohorts({ course: '2026-11-06', mat: '' });
+assert.ok(isStreamPost(LATE) && catchesUp(LATE), 'пост трека с датой старта — пост потока');
+assert.ok(!isStreamPost({ ...LATE, track: 'mat' }) && !catchesUp({ ...LATE, track: 'mat' }), 'у трека без даты старта всё как раньше');
+assert.ok(!isStreamPost({ ...LATE, mode: 'timer' }), 'таймер не пост потока');
+const NOW = U(2026, 11, 9, 12, 5);
+assert.deepEqual((await dueUsers(db, LATE, NOW, 10)).map((r) => r.tg_id), [2], 'пост создан позже срока: ранний получает без переключателя, поздний (вход 20 нояб) ещё нет');
+assert.deepEqual((await dueUsers(db, { ...LATE, track: 'all' }, NOW, 10)).map((r) => r.tg_id), [], 'пост трека «для всех» без переключателя опоздавшим не уходит');
 setCohorts({});
 console.log('✓ старт потока: ранние ждут дату, поздние считают от входа');
 process.exit(0);

@@ -1,5 +1,5 @@
 // Кому и когда ушёл пост, и что пришло конкретному человеку. Только чтение.
-import { audienceSql, dueSql, BASE, NOT_SENT } from './posts.js';
+import { audienceSql, dueSql, BASE, NOT_SENT, catchesUp } from './posts.js';
 
 const nameOf = (u) => u.contact_name || u.first_name || (u.username ? '@' + u.username : 'без имени');
 const titleOf = (p) => (p.title || (p.text || '').replace(/\s+/g, ' ').trim()).slice(0, 60) || 'без текста';
@@ -28,7 +28,7 @@ export async function postDelivery(ctx, id) {
       for (const u of q) {
         const o = { id: u.tg_id, name: nameOf(u), track: u.track || null, at: u.at };
         if (u.at === null || u.at === undefined) continue; // «после поста»: срок появится, когда он получит тот пост
-        if (!p.catchup && u.at < p.created_at) skipped.push({ ...o, why: 'его момент прошёл до создания поста' });
+        if (!catchesUp(p) && u.at < p.created_at) skipped.push({ ...o, why: 'его момент прошёл до создания поста' });
         else wait.push(o);
       }
     } else if (p.run_at) {
@@ -60,7 +60,7 @@ export async function personLog(ctx, tgId) {
     at = p.kind === 'date' ? p.run_at : mine.at;
     if (p.kind === 'date' && (!p.run_at || !mine.ok)) { items.push({ post: p.id, title: titleOf(p), kind: p.kind, state: 'skip', why: 'пришёл в бота позже даты', at: null }); continue; }
     if (at === null || at === undefined) { items.push({ post: p.id, title: titleOf(p), kind: p.kind, state: 'wait', why: 'после другого поста', at: null }); continue; }
-    if (p.kind === 'drip' && !p.catchup && at < p.created_at) { items.push({ post: p.id, title: titleOf(p), kind: p.kind, state: 'skip', why: 'его момент прошёл до создания поста', at }); continue; }
+    if (p.kind === 'drip' && !catchesUp(p) && at < p.created_at) { items.push({ post: p.id, title: titleOf(p), kind: p.kind, state: 'skip', why: 'его момент прошёл до создания поста', at }); continue; }
     items.push({ post: p.id, title: titleOf(p), kind: p.kind, state: 'wait', at });
   }
   const order = (x) => (x.at === null ? 9e12 : x.at);

@@ -104,6 +104,9 @@ export async function loadCohorts(db) {
   const o = {}; for (const r of rows) { try { o[r.key.slice(7)] = JSON.parse(r.value); } catch { /* пусто */ } }
   setCohorts(o); return o;
 }
+// Пост потока: день ленты у трека, для которого задан «Старт потока». Такие посты догоняют сами: кому срок прошёл до создания поста, тоже придёт
+export const isStreamPost = (p) => p.kind === 'drip' && (p.mode || 'day') === 'day' && !!COHORT[p.track];
+export const catchesUp = (p) => !!p.catchup || isStreamPost(p);
 export function dueSql(post) {
   const dmin = Number(post.delay_min) || 0;
   const delay = dmin * 60;
@@ -137,10 +140,10 @@ export function timeSec(s) {
 export async function dueUsers(db, post, now, limit) {
   const a = audienceSql(post);
   if (post.kind === 'drip') {
-    await loadCohorts(db);
     const due = dueSql(post);
-    const catchup = post.catchup ? '' : ` AND ${due} >= ?`;
-    const params = [...a.p, now, post.id, ...(post.catchup ? [] : [post.created_at]), limit];
+    const cu = catchesUp(post);
+    const catchup = cu ? '' : ` AND ${due} >= ?`;
+    const params = [...a.p, now, post.id, ...(cu ? [] : [post.created_at]), limit];
     return db.all(
       `SELECT u.tg_id FROM users u WHERE ${BASE}${a.c} AND ${due} <= ? AND ${NOT_SENT}${catchup} ORDER BY u.joined_at LIMIT ?`,
       params,

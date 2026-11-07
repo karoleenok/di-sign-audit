@@ -82,6 +82,12 @@ for (const w of [390, 320]) {
   assert.deepEqual(after2.map((r) => r.send_time), ['11:00', '11:30'], 'время осталось на местах, поменялись посты');
   await page.fill('#psTime', '09:00'); await page.locator('#psTime').dispatchEvent('change'); await page.waitForTimeout(900); await page.waitForSelector('.ps');
   assert.deepEqual((await two()).map((r) => r.send_time), ['09:00', '09:30'], 'время первого сдвигает и второй');
+  // «Убрать из дня»: пост уходит в «Новые из бота» и выключается
+  const gone = (await two())[1].id;
+  await page.click('[data-psr="' + gone + '"]'); await page.waitForTimeout(900); await page.waitForSelector('.ps');
+  assert.equal(await page.locator('.ps').count(), 1, 'пост убран из списка дня');
+  const gp = await db.first(`SELECT status, inbox FROM posts WHERE id = ?`, [gone]);
+  assert.deepEqual([gp.status, gp.inbox], ['paused', 1], 'пост выключен и лежит среди новых из бота');
   await page.click('#sheet .sx'); await page.waitForTimeout(300);
   // день 0: пауза хранится как «через N минут после входа»
   await db.run(`DELETE FROM posts WHERE text LIKE 'День ноль %'`);

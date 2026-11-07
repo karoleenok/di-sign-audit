@@ -2020,7 +2020,7 @@ const PLAN = {
   ] }
 };
 const planDay = (ymd, start) => Math.round((Date.UTC(+ymd.slice(0, 4), +ymd.slice(5, 7) - 1, +ymd.slice(8)) - Date.UTC(+start.slice(0, 4), +start.slice(5, 7) - 1, +start.slice(8))) / 864e5);
-const planPosts = (tr, day) => S.posts.filter((p) => p.kind === 'drip' && p.track === tr && (p.mode || 'day') === 'day' && Number(p.day) === day && p.status !== 'archived');
+const planPosts = (tr, day) => S.posts.filter((p) => p.kind === 'drip' && p.track === tr && (p.mode || 'day') === 'day' && Number(p.day) === day && p.status !== 'archived' && !p.inbox);
 const GAPS = [0, 5, 10, 15, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720];
 function slotSorted(ps, day) {
   return ps.slice().sort((a, b) => (day === 0 ? (a.delay || 0) - (b.delay || 0) : timeMin(a.time) - timeMin(b.time)) || (a.pos || 0) - (b.pos || 0) || a.id - b.id);
@@ -2039,7 +2039,7 @@ function planSlot(tr, day, name) {
     '<button type="button" class="ar2" data-psu="' + i + '" aria-label="Поставить выше"' + (i === 0 ? ' disabled' : '') + '>↑</button><button type="button" class="ar2" data-psd="' + i + '" aria-label="Поставить ниже"' + (i === ps.length - 1 ? ' disabled' : '') + '>↓</button></div>' +
     '<div class="small muted" style="margin:4px 0 8px">' + (p.status === 'active' ? 'включён' : p.status === 'draft' ? 'черновик' : 'выключен') + '</div>' +
     '<div class="psw">' + (i === 0 ? (day === 0 ? '<span class="small">Первым: сразу, когда человек закончил вход</span>' : '<span class="small">Первым, в</span><input type="time" id="psTime" value="' + esc(base) + '" aria-label="Время первого поста">') : '<span class="small">Следом</span>' + gapSel(i) + '<span class="small muted">после предыдущего</span>') + '</div>' +
-    '<div class="meta" style="margin-top:8px"><button type="button" class="chip" data-pso="' + p.id + '">Открыть</button><button type="button" class="chip" data-psw="' + p.id + '">' + (p.status === 'active' ? 'Выключить' : 'Включить') + '</button></div></div>').join('');
+    '<div class="meta" style="margin-top:8px"><button type="button" class="chip" data-pso="' + p.id + '">Открыть</button><button type="button" class="chip" data-psw="' + p.id + '">' + (p.status === 'active' ? 'Выключить' : 'Включить') + '</button><button type="button" class="chip" data-psr="' + p.id + '">Убрать из дня</button></div></div>').join('');
   sheet('<div class="shd"><span class="pill">Урок · ' + esc(when) + '</span><button type="button" class="sx" id="psX" aria-label="закрыть">✕</button></div><h2>' + esc(name || '') + '</h2>' +
     (ps.length ? '<p class="small muted">Постов на этот день: ' + ps.length + '. Порядок меняй стрелками, паузу выбирай у каждого следующего поста.</p>' + list : '<p class="small muted">Поста на этот день ещё нет. Откуда возьмём?</p>') +
     '<div class="kinds"><button type="button" class="kind" id="psNew"><b>' + (ps.length ? '✏️ Написать ещё один' : '✏️ Написать новый') + '</b><span>' + (day === 0 ? 'День 0, сразу, когда человек закончил вход' : 'День ' + day + ', ' + nextTime) + ', трек «' + esc(P.name) + '» уже выставлены. Остаётся написать текст.</span></button>' +
@@ -2048,6 +2048,9 @@ function planSlot(tr, day, name) {
   const ids = ps.map((p) => p.id);
   document.querySelectorAll('[data-pso]').forEach((b) => b.onclick = () => { closeSheet(); openPost(+b.dataset.pso); });
   document.querySelectorAll('[data-psw]').forEach((b) => b.onclick = async () => { await scToggle(+b.dataset.psw); planSlot(tr, day, name); });
+  document.querySelectorAll('[data-psr]').forEach((b) => b.onclick = async () => {
+    try { await api('/post/' + b.dataset.psr, { status: 'paused', inbox: 1 }); haptic('medium'); await reload(); planSlot(tr, day, name); toast('Пост убран из дня и выключен. Он лежит в «✉️ Новые из бота» вверху расписания: оттуда его можно поставить на другой день'); } catch (e) { toast(e.message); }
+  });
   const swap = (i, k) => { const n = ids.slice(); [n[i], n[i + k]] = [n[i + k], n[i]]; save(n, gaps, base); };
   document.querySelectorAll('[data-psu]').forEach((b) => b.onclick = () => swap(+b.dataset.psu, -1));
   document.querySelectorAll('[data-psd]').forEach((b) => b.onclick = () => swap(+b.dataset.psd, 1));
@@ -2602,7 +2605,7 @@ function openPost(id, opt) {
         '<div class="row" style="margin-top:8px"><span>через</span><input type="number" id="aNum" min="0" step="1" style="width:90px" value="' + (st.mode === 'after' ? st.delay / unitOf(st.delay) : 1) + '">' + unitSel('aUnit', st.mode === 'after' ? st.delay : 60) + '</div>' + chipsFor('a', [[5, '5 мин'], [60, '1 час'], [1440, '1 день'], [4320, '3 дня']]) + atRow('a') + '<p class="small muted" id="aHint" style="margin:6px 2px 0"></p>'
         : '<p class="small muted">Других постов пока нет.</p>') + '</div>' +
       '<div id="pDate" style="margin-top:10px"><label class="f" style="margin-top:0">Дата и время (по Москве)</label>' + dtp('id="fRun"', toLocal(st.run_at), false) + '</div>' +
-      '<div class="toggle" id="catchWrap"><span><b>Прислать и тем, у кого срок уже прошёл</b><br><span class="small muted">Нужно, когда пост добавлен позже: человек уже в боте, а его день был раньше. Выключено: пост получат только те, кому срок ещё впереди. Новые люди сюда не относятся: они получат пост в свой день в любом случае.</span></span><label class="sw"><input type="checkbox" id="fCatch" ' + (st.catchup ? 'checked' : '') + '><span></span></label></div>';
+      '<div class="note" id="catchNote" style="display:none;margin-top:10px">Пост потока: если у кого-то этот день уже прошёл, пост придёт сам. По одному сообщению в минуту, чтобы не засыпать человека.</div><div class="toggle" id="catchWrap"><span><b>Прислать и тем, у кого срок уже прошёл</b><br><span class="small muted">Нужно, когда пост добавлен позже: человек уже в боте, а его день был раньше. Выключено: пост получат только те, кому срок ещё впереди. Новые люди сюда не относятся: они получат пост в свой день в любом случае.</span></span><label class="sw"><input type="checkbox" id="fCatch" ' + (st.catchup ? 'checked' : '') + '><span></span></label></div>';
   }
   if (p.kind === 'node') h += '<div class="note">' + (parents.length ? 'Сюда ведут: ' + parents.map((x) => '«' + esc(postName(x.p).slice(0, 30)) + '» → кнопка «' + esc(x.b.text) + '»').join('; ') : 'Пока сюда не ведёт ни одна кнопка. Привяжи его: в нужном посте добавь кнопку → «Пост» → выбери этот.') + '</div>';
   // кнопки
@@ -2680,7 +2683,7 @@ function openPost(id, opt) {
   drawFiles();
 
   // когда (лента)
-  const showMode = () => { if (!$('pDay')) return; if ($('catchWrap')) $('catchWrap').style.display = st.mode === 'date' ? 'none' : ''; $('pDay').style.display = st.mode === 'day' ? '' : 'none'; $('pTimer').style.display = st.mode === 'timer' ? '' : 'none'; $('pAfter').style.display = st.mode === 'after' ? '' : 'none'; $('pDate').style.display = st.mode === 'date' ? '' : 'none'; $('catchWrap').style.display = st.mode === 'date' ? 'none' : ''; hints(); };
+  const showMode = () => { if (!$('pDay')) return; if ($('catchWrap')) { const stream = st.mode === 'day' && !!(S.cohort || {})[st.track]; $('catchWrap').style.display = st.mode === 'date' || stream ? 'none' : ''; $('catchNote').style.display = stream ? '' : 'none'; } $('pDay').style.display = st.mode === 'day' ? '' : 'none'; $('pTimer').style.display = st.mode === 'timer' ? '' : 'none'; $('pAfter').style.display = st.mode === 'after' ? '' : 'none'; $('pDate').style.display = st.mode === 'date' ? '' : 'none'; $('catchWrap').style.display = st.mode === 'date' ? 'none' : ''; hints(); };
   const delayOf = (n, u) => Math.max(0, Math.round((+$(n).value || 0) * +$(u).value));
   const atTxt = (f) => $(f + 'AtOn') && $(f + 'AtOn').checked && $(f + 'At').value ? ', в ' + $(f + 'At').value : '';
   const sumLine2 = () => {
@@ -2706,7 +2709,7 @@ function openPost(id, opt) {
   const upd = () => { if (!$('dVal')) return; $('dVal').textContent = st.day; $('tWrap').style.display = st.day === 0 ? 'none' : ''; $('dHint').textContent = 'День ' + st.day + ' — ' + dayLabel(st.day) + (st.day ? ', в ' + ($('fTime').value || st.time) + ' по Москве' : ''); hints(); };
   if ($('dMinus')) { $('dMinus').onclick = () => { st.day = Math.max(0, st.day - 1); haptic(); upd(); }; $('dPlus').onclick = () => { st.day = Math.min(365, st.day + 1); haptic(); upd(); }; $('fTime').oninput = upd; upd(); }
   if ($('fAud')) segBind('fAud', (v) => st.audience = v);
-  if ($('fTrack')) segBind('fTrack', (v) => st.track = v);
+  if ($('fTrack')) segBind('fTrack', (v) => { st.track = v; showMode(); hints(); });
   if ($('fWho')) segBind('fWho', (v) => st.who = v);
   segBind('fSt', (v) => st.status = v);
 

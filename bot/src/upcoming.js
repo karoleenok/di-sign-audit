@@ -1,6 +1,6 @@
 // Что уйдёт в ближайшие дни: для вкладки «Главная» в панели. Только чтение, ничего не отправляет.
 // Считаем людей, которые уже в боте. Кто придёт позже, получит ленту по своему расписанию.
-import { audienceSql, dueSql, BASE, NOT_SENT } from './posts.js';
+import { audienceSql, dueSql, BASE, NOT_SENT, catchesUp } from './posts.js';
 import { MSK, DAY } from './time.js';
 
 const mskDay = (ts) => Math.floor((ts + MSK) / DAY);
@@ -28,10 +28,10 @@ export async function upcoming(ctx, now, days = 7) {
     if (p.mode === 'after') { afterN++; continue; }
     if (p.mode !== 'timer' && Number(p.day) === 0) continue;
     const due = dueSql(p);
-    const catchup = p.catchup ? '' : ` AND ${due} >= ?`;
+    const catchup = catchesUp(p) ? '' : ` AND ${due} >= ?`;
     const rows = await ctx.db.all(
       `SELECT ${due} AS at FROM users u WHERE ${BASE}${a.c} AND ${NOT_SENT} AND ${due} <= ?${catchup} LIMIT 5000`,
-      [...a.p, p.id, to, ...(p.catchup ? [] : [p.created_at])]);
+      [...a.p, p.id, to, ...(catchesUp(p) ? [] : [p.created_at])]);
     const byDay = new Map();
     for (const r of rows) {
       const isNow = r.at <= now;

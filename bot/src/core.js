@@ -5,7 +5,7 @@ import { nowSec } from './time.js';
 import { userCommands, adminCommands } from './msgs.js';
 import { onStart, onUserCallback, onUserCommand, onUserText, getUState } from './users.js';
 import { isAdmin, envAdmins, onAdminCommand, onAdminMessage, onAdminCallback } from './admin.js';
-import { sendPost, dueUsers, recordDeliveries, loadDocs } from './posts.js';
+import { sendPost, dueUsers, recordDeliveries, loadDocs, isStreamPost, loadCohorts } from './posts.js';
 import { btn } from './msgs.js';
 import { loadCfg, MENU_TEXT } from './appcfg.js';
 
@@ -74,6 +74,7 @@ export async function tick(ctx, budget, queryBudget) {
   await ctx.db.run(`INSERT INTO settings (key, value) VALUES ('last_tick', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(now)]);
   const pause = await ctx.db.first(`SELECT value FROM settings WHERE key = 'pause_until'`);
   if (pause && +pause.value > now) return { sent: 0, paused: true };
+  await loadCohorts(ctx.db); // даты «Старт потока»: раз за запуск
 
   const posts = await ctx.db.all(
     `SELECT * FROM posts WHERE status = 'active' AND ((kind = 'date' AND run_at <= ?) OR kind = 'drip')
@@ -94,7 +95,7 @@ export async function tick(ctx, budget, queryBudget) {
     const per = media.length > 1 ? 1 + ((p.buttons || long) ? 1 : 0) : media.length === 1 ? 1 + (long ? 1 : 0) : 1;
     const can = Math.floor(left / per);
     if (can <= 0) { cutShort = true; break; }
-    const users = (await dueUsers(ctx.db, p, now, can)).filter((u) => !(p.kind === 'drip' && p.day === 0 && (!p.mode || p.mode === 'day') && gotNow.has(u.tg_id)));
+    const users = (await dueUsers(ctx.db, p, now, can)).filter((u) => !(p.kind === 'drip' && (p.day === 0 || isStreamPost(p)) && (!p.mode || p.mode === 'day') && gotNow.has(u.tg_id)));
     if (!users.length) continue;
     if (arrow === null) { arrow = await btn(ctx, 'buttonsArrow'); ctx.docs = await loadDocs(ctx); }
     const rows = [];
@@ -102,7 +103,7 @@ export async function tick(ctx, budget, queryBudget) {
     for (const u of users) {
       try {
         await sendPost(ctx.tg, u.tg_id, p, { uid: u.tg_id, publicUrl: ctx.publicUrl, arrow, docs: ctx.docs });
-        rows.push({ tg_id: u.tg_id, ok: true }); sent++; if (p.kind === 'drip' && p.day === 0) gotNow.add(u.tg_id);
+        rows.push({ tg_id: u.tg_id, ok: true }); sent++; if (p.kind === 'drip' && (p.day === 0 || isStreamPost(p)) && (!p.mode || p.mode === 'day')) gotNow.add(u.tg_id);
       } catch (e) {
         if (e.code === 403) { rows.push({ tg_id: u.tg_id, ok: false }); await ctx.db.run(`UPDATE users SET status = 'blocked' WHERE tg_id = ?`, [u.tg_id]); }
         else if (e.code === 429) {
