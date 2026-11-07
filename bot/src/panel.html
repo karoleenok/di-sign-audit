@@ -200,7 +200,8 @@ textarea{min-height:120px;resize:vertical;line-height:1.45}
 .stp.skipd{opacity:.55}
 .btns.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .lnk{border:0;background:none;padding:0;color:inherit;text-decoration:underline;text-underline-offset:3px;font-size:12.5px;cursor:pointer}
-.lnk2{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:11px 14px;margin:8px 0}
+.lnk2{flex-wrap:wrap;display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:11px 14px;margin:8px 0}
+.lnk2>div:first-child{flex:1 1 150px;min-width:0}
 .stp .chip{padding:4px 9px;font-size:12.5px}.stp .mv .chip{padding:4px 8px}.stp .st-t{font-size:14.5px}
 /* новая система: пузыри как в телеграме, линия времени, режим «как ученик» */
 .railw{position:relative;padding-left:26px}
@@ -1841,9 +1842,61 @@ async function openPeople() {
     const contact = [u.username ? '@' + u.username : '', u.phone || '', u.email || ''].filter(Boolean).join(' · ') || 'контакт не оставил';
     return '<div class="msg" style="cursor:default"><div class="t">' + esc(name) + (u.track ? '<span class="tag zone">' + tr[u.track] + '</span>' : '') + '<span class="stat">' + fmtD(u.created_at) + '</span></div>' +
       '<div class="small muted" style="margin-top:2px">' + esc(contact) + ' · ' + esc(st[u.status] || u.status) + (u.level ? ' · ' + esc(S.levels[u.level] || u.level) : '') + (u.zone ? ' · из аудита' : '') + '</div>' +
-      (u.fb_at ? '<div class="preview" style="margin-top:8px">👍 ' + esc(u.fb_like || '—') + '\n\n🛠 ' + esc(u.fb_improve || '—') + '</div>' : '') + '</div>';
+      (u.fb_at ? '<div class="preview" style="margin-top:8px">👍 ' + esc(u.fb_like || '—') + '\n\n🛠 ' + esc(u.fb_improve || '—') + '</div>' : '') +
+      '<div class="meta" style="margin-top:8px"><button type="button" class="chip" data-log="' + u.tg_id + '">📬 Что пришло</button></div></div>';
   }).join('') || '<p class="muted">Пока никого.</p>';
   $('sheet').innerHTML = '<div class="grab"></div>' + h; $('pX').onclick = closeSheet;
+  document.querySelectorAll('[data-log]').forEach((el) => el.onclick = () => openLog(+el.dataset.log));
+}
+
+// ----- кому ушёл пост и что пришло человеку -----
+const trkTxt = (t) => t === 'course' ? '🎓 мини-курс' : t === 'mat' ? '📚 материалы' : '';
+function dlRow(x, label) {
+  return '<div class="msg" style="cursor:default"><div class="t">' + esc(x.name) + (x.track ? '<span class="tag zone">' + trkTxt(x.track) + '</span>' : '') + '</div>' +
+    '<div class="small muted" style="margin-top:2px">' + esc(label) + '</div></div>';
+}
+async function openDelivery(id) {
+  let r;
+  try { r = await api('/post/' + id + '/delivery'); } catch (e) { toast(e.message); return; }
+  const c = r.counts;
+  const tabs = [['sent', 'Получили', c.sent], ['wait', 'Ждут', c.wait], ['skipped', 'Пропущены', c.skipped], ['failed', 'Не дошло', c.failed]];
+  let cur = c.sent ? 'sent' : c.wait ? 'wait' : c.failed ? 'failed' : 'skipped';
+  const notes = {
+    sent: 'Время по Москве: это момент, когда бот отправил сообщение.',
+    wait: 'Бот отправит сам, когда придёт срок. Ничего делать не нужно. Посты «после другого поста» появятся здесь, когда человек получит тот пост.',
+    skipped: 'Им этот пост не уйдёт: их момент прошёл до создания поста. Чтобы отправить и им, включи в посте «Догонять опоздавших».',
+    failed: 'Телеграм не доставил сообщение: человек заблокировал бота или удалил аккаунт.'
+  };
+  const draw = () => {
+    const list = r[cur] || [];
+    const rows = list.map((x) => dlRow(x, cur === 'sent' ? 'получил(а) ' + fmtRun(x.at) : cur === 'wait' ? (x.at && x.at > r.now ? 'придёт ' + fmtRun(x.at) : 'уйдёт в ближайшие минуты') : (x.why || ''))).join('') || '<p class="muted small">Здесь пока никого.</p>';
+    sheet('<div class="shd"><span class="pill">Кому ушёл пост</span><button type="button" class="sx" id="dlX" aria-label="закрыть">✕</button></div><h2>' + esc(r.title) + '</h2>' +
+      '<div class="meta" style="margin:4px 0 8px"><span class="tag">получили ' + c.sent + '</span><span class="tag">ждут ' + c.wait + '</span><span class="tag">пропущены ' + c.skipped + '</span><span class="tag">не дошло ' + c.failed + '</span>' + (r.clicked ? '<span class="tag">нажали ' + r.clicked + '</span>' : '') + '</div>' +
+      (r.status !== 'active' ? '<div class="note warn">Пост сейчас не включён: он никому не уйдёт, пока его не включить.</div>' : '') +
+      '<div class="seg" style="margin:8px 0;flex-wrap:wrap">' + tabs.map(([k, n, v]) => '<button type="button" data-dt="' + k + '" class="' + (k === cur ? 'on' : '') + '">' + n + ' ' + v + '</button>').join('') + '</div>' +
+      rows + '<p class="small muted">' + notes[cur] + '</p><div class="btns"><button class="btn ghost" id="dlC">Закрыть</button></div>');
+    $('dlX').onclick = closeSheet; $('dlC').onclick = closeSheet;
+    document.querySelectorAll('[data-dt]').forEach((b) => b.onclick = () => { cur = b.dataset.dt; draw(); });
+  };
+  draw();
+}
+async function openLog(id) {
+  let r;
+  try { r = await api('/person/' + id + '/log'); } catch (e) { toast(e.message); return; }
+  const tabs = [['all', 'Всё'], ['sent', 'Получил(а)'], ['wait', 'Придёт'], ['skip', 'Не придёт']];
+  let cur = 'all';
+  const lbl = (x) => x.state === 'sent' ? 'получил(а) ' + fmtRun(x.at) : x.state === 'failed' ? 'не дошло ' + fmtRun(x.at) : x.state === 'wait' ? (x.at ? (x.at > r.now ? 'придёт ' + fmtRun(x.at) : 'уйдёт в ближайшие минуты') : x.why) : 'не придёт: ' + (x.why || '');
+  const draw = () => {
+    const list = r.items.filter((x) => cur === 'all' || x.state === cur || (cur === 'sent' && x.state === 'failed'));
+    sheet('<div class="shd"><span class="pill">Что пришло человеку</span><button type="button" class="sx" id="lgX" aria-label="закрыть">✕</button></div><h2>' + esc(r.name) + '</h2>' +
+      '<div class="meta" style="margin:4px 0 8px">' + (r.track ? '<span class="tag zone">' + trkTxt(r.track) + '</span>' : '') + '<span class="tag">' + (r.joined_at ? 'вход ' + fmtRun(r.joined_at) : 'вход не пройден') + '</span></div>' +
+      '<div class="seg" style="margin:8px 0;flex-wrap:wrap">' + tabs.map(([k, n]) => '<button type="button" data-lt="' + k + '" class="' + (k === cur ? 'on' : '') + '">' + n + '</button>').join('') + '</div>' +
+      (list.map((x) => dlRow({ name: x.title, track: null }, lbl(x))).join('') || '<p class="muted small">Здесь пока ничего.</p>') +
+      '<p class="small muted">Время по Москве. Показаны включённые посты и всё, что уже ушло.</p><div class="btns"><button class="btn ghost" id="lgC">Закрыть</button></div>');
+    $('lgX').onclick = closeSheet; $('lgC').onclick = closeSheet;
+    document.querySelectorAll('[data-lt]').forEach((b) => b.onclick = () => { cur = b.dataset.lt; draw(); });
+  };
+  draw();
 }
 async function openTech() {
   let r;
@@ -2051,7 +2104,7 @@ function openPost(id, opt) {
       '<div class="btns" style="margin-top:8px"><button class="btn ghost" id="bToFeed" type="button">↔ Поставить в ленту</button></div></div>';
   }
   h += '<div class="btns"><button class="btn" id="bSave">' + (isNew ? 'Создать пост' : 'Сохранить') + '</button>' +
-    (isNew ? '<button class="btn ghost" id="bClose">Отмена</button>' : '<div class="btns two" style="margin:0"><button class="btn ghost" id="bPrev">👁 Прислать мне</button><button class="btn ghost" id="bClose">Закрыть</button></div><button class="btn ghost" id="bHist" type="button">🕘 История текста</button><button class="btn ghost" id="bRew" type="button">✏️ Заменить содержимое через бота (как /new)</button><p class="small muted" style="margin:4px 2px 8px">Бот попросит прислать новый текст, картинки или альбом. Старое содержимое поста заменится, кнопки и время останутся.</p><button class="btn danger" id="bArch">🗄 Убрать в архив</button>') + '</div>';
+    (isNew ? '<button class="btn ghost" id="bClose">Отмена</button>' : '<div class="btns two" style="margin:0"><button class="btn ghost" id="bPrev">👁 Прислать мне</button><button class="btn ghost" id="bClose">Закрыть</button></div><button class="btn ghost" id="bDeliv" type="button">📬 Кому ушёл пост</button><button class="btn ghost" id="bHist" type="button">🕘 История текста</button><button class="btn ghost" id="bRew" type="button">✏️ Заменить содержимое через бота (как /new)</button><p class="small muted" style="margin:4px 2px 8px">Бот попросит прислать новый текст, картинки или альбом. Старое содержимое поста заменится, кнопки и время останутся.</p><button class="btn danger" id="bArch">🗄 Убрать в архив</button>') + '</div>';
   sheet(h);
 
   // текст: панель оформления и счётчик
@@ -2193,6 +2246,7 @@ function openPost(id, opt) {
     } catch (e) { toast(e.message); }
   };
   if ($('bRew')) $('bRew').onclick = async () => { try { await api('/post/' + p.id + '/rewrite', {}); haptic('medium'); toast('Открой чат с ботом и пришли новое содержимое, потом нажми «Готово»'); setTimeout(() => { try { tg && tg.close(); } catch (e) {} }, 1200); } catch (e) { toast(e.message); } };
+  if ($('bDeliv')) $('bDeliv').onclick = () => openDelivery(p.id);
   if ($('bPrev')) $('bPrev').onclick = async () => { try { const r = await api('/post/' + p.id + '/preview', {}); toast(r.warn ? '⚠️ ' + r.warn : 'Отправила тебе в бот 👀'); } catch (e) { toast(e.message); } };
   if ($('bToStep')) $('bToStep').onclick = async () => { try { await api('/post/' + p.id + '/move', { to: 'node' }); closeSheet(); haptic('medium'); toast('Теперь это пост для шага: он в блоке «Свои посты для шагов»'); await reload(); } catch (e) { toast(e.message); } };
   const feedList = () => { const d = parseInt($('bFeedDay').value, 10); return S.posts.filter((x) => x.kind === 'drip' && x.day === d && x.id !== p.id).sort((a, b) => (a.pos || 0) - (b.pos || 0) || String(a.time).localeCompare(String(b.time))); };

@@ -1,6 +1,7 @@
 // API панели админа (Telegram Mini App).
 // Вход: панель присылает initData от Telegram, мы проверяем подпись токеном бота
 // (так подделать вход нельзя) и что человек — админ.
+import { postDelivery, personLog } from './delivery.js';
 import { isAdmin, startContentEdit } from './admin.js';
 import { lastBackup } from './backup.js';
 import { AUD, LEVELS } from './texts.js';
@@ -492,6 +493,17 @@ async function panelRest(ctx, request, url, user, path, body) {
   }
 
   // люди: контакты, выбор из аудита, отзывы о кабинете (последние 200)
+  m = /^\/post\/(\d+)\/delivery$/.exec(path);
+  if (m && request.method === 'GET') {
+    const r = await postDelivery(ctx, +m[1]);
+    return r ? json(r) : json({ error: 'Пост не найден' }, 404);
+  }
+  m = /^\/person\/(\d+)\/log$/.exec(path);
+  if (m && request.method === 'GET') {
+    const r = await personLog(ctx, +m[1]);
+    return r ? json(r) : json({ error: 'Человек не найден' }, 404);
+  }
+
   if (path === '/people') {
     const rows = await ctx.db.all(`SELECT tg_id, first_name, username, contact_name, phone, email, level, zone, track, status, fb_like, fb_improve, fb_at, created_at, sched_at FROM users ORDER BY COALESCE(fb_at, 0) DESC, created_at DESC LIMIT 200`);
     const n = await ctx.db.first(`SELECT COUNT(*) AS all_n, SUM(CASE WHEN sched_at IS NOT NULL THEN 1 ELSE 0 END) AS done, SUM(CASE WHEN track = 'course' THEN 1 ELSE 0 END) AS course, SUM(CASE WHEN track = 'mat' THEN 1 ELSE 0 END) AS mat, SUM(CASE WHEN fb_at IS NOT NULL THEN 1 ELSE 0 END) AS fb FROM users`);
