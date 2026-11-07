@@ -19,7 +19,7 @@ for (const w of [390, 320]) {
   const before = (await db.all(`SELECT id FROM posts`)).length;
   await page.locator('[data-newday="1"]').first().click(); await page.waitForSelector('#fMd');
   assert.equal(await page.textContent('#dVal'), '1', 'новый пост встаёт на выбранный день');
-  assert.match(await page.textContent('#whenSum'), /день 1/);
+  assert.match(await page.textContent('#whenSum'), /[Дд]ень 1/);
   await page.fill('#fMd', 'Второй пост дня ' + w);
   await page.click('#fMode button[data-v="timer"]');
   await page.click('.dtq[data-for="t"] .chip[data-m="5"]');

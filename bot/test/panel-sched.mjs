@@ -29,8 +29,30 @@ for (const w of [390, 320]) {
   await page.click('[data-plt="mat"]'); await page.waitForSelector('.pl-r');
   assert.equal(await page.locator('.pl-r').count(), 9, 'материалы: 9 уроков');
   assert.ok(await noscroll(page), 'нет горизонтального скролла с памяткой материалов');
-  await page.locator('.pl-r').first().click(); await page.waitForTimeout(300);
+  await page.locator('.pl-r').first().click(); await page.waitForSelector('#psX'); await page.click('#psX'); await page.waitForTimeout(400);
   await page.click('[data-plt="course"]');
+  // строка памятки без поста: «Написать новый» открывает пост с днём, треком и названием
+  await page.locator('.pl-r').first().click(); await page.waitForSelector('#psNew');
+  assert.ok(await noscroll(page), 'нет горизонтального скролла в окне урока');
+  await page.waitForTimeout(500); if (w === 390) await page.screenshot({ path: OUT + '/sched-plan-add.png' });
+  await page.click('#psNew'); await page.waitForSelector('#fTitle');
+  assert.match(await page.inputValue('#fTitle'), /Карточки-разбор/);
+  assert.equal(await page.textContent('#dVal'), '0');
+  assert.equal(await page.locator('#fTrack .on').getAttribute('data-v'), 'course');
+  assert.match(await page.textContent('#whenSum'), /^Итог: День 0/);
+  await page.click('#sheet .sx'); await page.waitForTimeout(300);
+  // «Взять готовый»: пост переезжает на день урока и получает трек
+  await db.run(`INSERT INTO posts (kind, audience, track, day, send_time, status, text, created_by, created_at, mode, delay_min) VALUES ('drip', 'all', 'all', 30, '12:00', 'active', ?, 1, ?, 'day', 0)`, ['Перенос из памятки ' + w, Math.floor(Date.now() / 1000)]);
+  await page.reload(); await page.waitForSelector('.pl-r');
+  const ix = w === 390 ? 1 : 2;
+  await page.locator('.pl-r').nth(ix).click(); await page.waitForSelector('#psPick'); await page.click('#psPick');
+  await page.waitForSelector('#pkList .kind'); await page.fill('#pkQ', 'Перенос из памятки ' + w); await page.waitForTimeout(200);
+  await page.click('#pkList .kind'); await page.waitForTimeout(900);
+  const moved = await db.first(`SELECT track, day, kind, mode, status FROM posts WHERE text = ?`, ['Перенос из памятки ' + w]);
+  assert.deepEqual([moved.track, moved.day, moved.kind, moved.mode, moved.status], ['course', ix, 'drip', 'day', 'paused'], 'пост перенесён на день урока, трек выставлен, пауза');
+  await page.locator('.pl-r').nth(ix).click(); await page.waitForSelector('#psOn');
+  await page.click('#psOn'); await page.waitForTimeout(800);
+  assert.equal((await db.first(`SELECT status FROM posts WHERE text = ?`, ['Перенос из памятки ' + w])).status, 'active', 'кнопка «Включить» в окне урока');
   await page.click('#plT'); assert.equal(await page.locator('.pl-r').count(), 0, 'памятка сворачивается'); await page.click('#plT'); await page.waitForSelector('.pl-r');
   assert.equal(await page.locator('.sc-entry .sc-step').count(), 0, 'вход свёрнут по умолчанию');
   await page.click('#scEntryT'); await page.waitForSelector('.sc-entry .sc-step');

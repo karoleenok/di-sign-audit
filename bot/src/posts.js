@@ -124,7 +124,7 @@ export function dueSql(post) {
   if (post.mode === 'after') return withTime(`(SELECT d2.sent_at FROM deliveries d2 WHERE d2.post_id = ${Number(post.after_id) || 0} AND d2.tg_id = u.tg_id AND d2.ok = 1)`);
   const todDay = timeSec(post.send_time);
   const S = COHORT[post.track] || 0;
-  if (Number(post.day) === 0) return S ? `MAX(u.joined_at, ${S + todDay})` : `u.joined_at`;
+  if (Number(post.day) === 0) return S ? `MAX(u.joined_at, ${S + (todDay || 11 * 3600)})` : `u.joined_at`;
   const A = S ? `MAX(u.joined_at, ${S})` : `u.joined_at`;
   return `(((${A} + ${MSK}) / ${DAY}) * ${DAY} - ${MSK} + ${Number(post.day) * DAY} + ${todDay})`;
 }

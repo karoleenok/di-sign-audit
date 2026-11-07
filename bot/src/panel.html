@@ -2000,6 +2000,7 @@ function scCard(p, o) {
     '<div class="sc-row"><div class="sc-tags">' + (p.kind !== 'node' ? '<span class="sc-tg ' + t[0] + '">' + t[1] + '</span>' : '') + '<span class="sc-tg ' + st[0] + '">' + st[1] + '</span>' + (o.dup ? '<span class="sc-tg" style="background:#f9dada;color:#8a1c1c">⚠ Похож на другой</span>' : '') + '</div>' + ctl + '</div></div>';
 }
 
+const ruDM = (ymd) => +ymd.slice(8) + ' ' + ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'][+ymd.slice(5, 7) - 1];
 const PLAN = {
   course: { name: 'Бесплатный мини-курс', start: '2026-11-06', parts: [
     ['Часть 1 · добро пожаловать в мир дизайна', 1, [['2026-11-06', 'Карточки-разбор: какие бывают дизайнеры'], ['2026-11-07', 'Мини-игра на принципы композиции'], ['2026-11-08', 'Тест «какой ты стиль в дизайне»']]],
@@ -2016,6 +2017,26 @@ const PLAN = {
 };
 const planDay = (ymd, start) => Math.round((Date.UTC(+ymd.slice(0, 4), +ymd.slice(5, 7) - 1, +ymd.slice(8)) - Date.UTC(+start.slice(0, 4), +start.slice(5, 7) - 1, +start.slice(8))) / 864e5);
 const planPosts = (tr, day) => S.posts.filter((p) => p.kind === 'drip' && p.track === tr && (p.mode || 'day') === 'day' && Number(p.day) === day && p.status !== 'archived');
+function planSlot(tr, day, name) {
+  const ps = planPosts(tr, day), on = ps.filter((p) => p.status === 'active'), P = PLAN[tr];
+  if (on.length) { openPost(on[0].id); return; }
+  const when = 'день ' + day + ' · ' + P.name.toLowerCase();
+  if (ps.length) {
+    const p = ps[0];
+    sheet('<div class="shd"><span class="pill">Урок · ' + esc(when) + '</span><button type="button" class="sx" id="psX" aria-label="закрыть">✕</button></div><h2>' + esc(name || '') + '</h2><p class="small muted">Пост на этот день есть, но он выключен: «' + esc(postName(p).slice(0, 50)) + '». Пока он выключен, никто его не получит.</p>' +
+      '<div class="btns"><button type="button" class="btn" id="psOn">Включить</button><button type="button" class="btn ghost" id="psOpen">Открыть и поправить</button></div>');
+    $('psX').onclick = closeSheet;
+    $('psOpen').onclick = () => { closeSheet(); openPost(p.id); };
+    $('psOn').onclick = async () => { closeSheet(); await scToggle(p.id); };
+    return;
+  }
+  sheet('<div class="shd"><span class="pill">Урок · ' + esc(when) + '</span><button type="button" class="sx" id="psX" aria-label="закрыть">✕</button></div><h2>' + esc(name || '') + '</h2><p class="small muted">Поста на этот день ещё нет. Откуда возьмём?</p>' +
+    '<div class="kinds"><button type="button" class="kind" id="psNew"><b>✏️ Написать новый</b><span>' + (day === 0 ? 'День 0, сразу после входа' : 'День ' + day + ', 11:00') + ', трек «' + esc(P.name) + '» уже выставлены. Остаётся написать текст.</span></button>' +
+    '<button type="button" class="kind" id="psPick"><b>📋 Взять готовый</b><span>Из тех, что уже есть в боте или в расписании. Перенесу его на день ' + day + '.</span></button></div>');
+  $('psX').onclick = closeSheet;
+  $('psNew').onclick = () => openNew({ kind: 'drip', mode: 'day', day, time: '11:00', track: tr, title: name || '' });
+  $('psPick').onclick = () => pickExisting('drip', day, { track: tr, plan: true });
+}
 function scPlan() {
   const open = view.scPlan !== false, tr = view.scPlanT === 'mat' ? 'mat' : 'course', P = PLAN[tr];
   const fmt = (ymd) => +ymd.slice(8) + ' ' + ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'][+ymd.slice(5, 7) - 1];
@@ -2024,7 +2045,7 @@ function scPlan() {
     const day = planDay(ymd, P.start), ps = planPosts(tr, day), on = ps.filter((p) => p.status === 'active');
     all++; if (on.length) live++;
     const st = on.length ? ['ok', 'есть пост'] : ps.length ? ['off', 'выключен'] : ['no', 'нет поста'];
-    return '<div class="pl-r" role="button" tabindex="0" data-plday="' + day + '"><span class="pl-d p' + k + '">' + fmt(ymd) + '</span><span class="pl-t">' + esc(name) + '<small>день ' + day + (note ? ' · ' + esc(note) : '') + '</small></span><span class="pl-s ' + st[0] + '">' + st[1] + '</span></div>';
+    return '<div class="pl-r" role="button" tabindex="0" data-plday="' + day + '" data-plname="' + esc(name) + '"><span class="pl-d p' + k + '">' + fmt(ymd) + '</span><span class="pl-t">' + esc(name) + '<small>день ' + day + (note ? ' · ' + esc(note) : '') + '</small></span><span class="pl-s ' + st[0] + '">' + st[1] + '</span></div>';
   }).join('')).join('');
   const sum = open ? '' : 'Мини-курс и материалы: даты, дни и есть ли пост';
   return '<div class="pl"><button type="button" class="pl-h" id="plT" aria-expanded="' + open + '"><span><b>Памятка: что и когда выходит</b><span class="small muted">' + (open ? 'Даты для первой волны. Остальным уроки приходят по дням от входа.' : sum) + '</span></span><span class="ar">' + (open ? '▴' : '▾') + '</span></button>' +
@@ -2099,10 +2120,7 @@ function renderSched() {
   $('scCheck').onclick = () => { haptic(); scCheck(); };
   $('plT').onclick = () => { view.scPlan = view.scPlan === false; saveView(); renderSched(); };
   document.querySelectorAll('[data-plt]').forEach((b) => b.onclick = () => { view.scPlanT = b.dataset.plt; saveView(); renderSched(); });
-  document.querySelectorAll('[data-plday]').forEach((el) => el.onclick = () => {
-    const tr = view.scPlanT === 'mat' ? 'mat' : 'course', day = +el.dataset.plday, ps = planPosts(tr, day);
-    if (ps.length) openPost((ps.find((p) => p.status === 'active') || ps[0]).id); else toast('Поста на день ' + day + ' нет. Нажми «＋ Пост» и выбери «На день ' + day + '»');
-  });
+  document.querySelectorAll('[data-plday]').forEach((el) => el.onclick = () => planSlot(view.scPlanT === 'mat' ? 'mat' : 'course', +el.dataset.plday, el.dataset.plname));
   $('scRe').onclick = () => { view.sReorder = !view.sReorder; saveView(); renderSched(); };
   document.querySelectorAll('[data-sctrk]').forEach((b) => b.onclick = () => { view.sTrack = b.dataset.sctrk; if (view.sTrack !== 'all') view.sReorder = false; saveView(); haptic(); renderSched(); });
   $('scEntryT').onclick = () => { view.scEntry = !entryOpen; saveView(); renderSched(); };
@@ -2461,7 +2479,7 @@ function whereNow(p) {
   return (k === 'drip' ? (p.mode && p.mode !== 'day' ? '③ лента, по таймеру' : '③ лента, день ' + (p.day ?? 0)) : k === 'gift' ? '② подарок после теста' : k === 'fb' ? '④ после отзыва' : k === 'date' ? '⑤ на дату' : '🔘 пост-ответ')
     + (p.status !== 'active' ? ' · ' + (p.status === 'draft' ? 'черновик' : 'пауза') : '');
 }
-function pickExisting(kind, day) {
+function pickExisting(kind, day, opt) {
   const hasDay = day !== undefined && day !== null && day !== '';
   const refd = (p) => (S.posts || []).some((q) => (q.rows || []).flat().some((b) => b.go === p.id)) || ((S.flow && S.flow.order) || []).includes('post:' + p.id) || (S.msgs || []).some((m) => m.post === p.id);
   const list = S.posts.filter((p) => !p.fork && !(p.kind === kind && (kind !== 'drip' || !hasDay || +p.day === +day)))
@@ -2489,10 +2507,13 @@ function pickExisting(kind, day) {
       if (mode === 'copy') {
         const r = await api('/post/' + id + '/copy', { kind });
         if (kind === 'drip') await api('/post/' + r.post.id + '/move', { to: 'drip', day: d });
+        if (opt && opt.track) await api('/post/' + r.post.id, { track: opt.track });
         closeSheet(); await reload(); haptic('medium'); openPost(r.post.id); toast('Копия готова: поправь и включи');
       } else {
         const r = await api('/post/' + id + '/move', kind === 'drip' ? { to: 'drip', day: d } : { to: kind });
+        if (opt && opt.track) await api('/post/' + id, { track: opt.track });
         closeSheet(); await reload(); haptic('medium');
+        if (opt && opt.plan) { toast('Пост поставлен на день ' + d + '. Он выключен: проверь и включи'); renderSched(); return; }
         if (r.needDate) { openPost(id); toast('Поставь дату и включи'); } else toast('Готово: пост теперь здесь. Если он был включён, он на паузе');
       }
     } catch (e) { toast(e.message); }
@@ -2561,7 +2582,7 @@ function openPost(id, opt) {
         '<div class="row" style="margin-top:8px"><span>через</span><input type="number" id="aNum" min="0" step="1" style="width:90px" value="' + (st.mode === 'after' ? st.delay / unitOf(st.delay) : 1) + '">' + unitSel('aUnit', st.mode === 'after' ? st.delay : 60) + '</div>' + chipsFor('a', [[5, '5 мин'], [60, '1 час'], [1440, '1 день'], [4320, '3 дня']]) + atRow('a') + '<p class="small muted" id="aHint" style="margin:6px 2px 0"></p>'
         : '<p class="small muted">Других постов пока нет.</p>') + '</div>' +
       '<div id="pDate" style="margin-top:10px"><label class="f" style="margin-top:0">Дата и время (по Москве)</label>' + dtp('id="fRun"', toLocal(st.run_at), false) + '</div>' +
-      '<div class="toggle" id="catchWrap"><span><b>Догонять опоздавших</b><br><span class="small muted">Пост получат и те, у кого этот день уже прошёл</span></span><label class="sw"><input type="checkbox" id="fCatch" ' + (st.catchup ? 'checked' : '') + '><span></span></label></div>';
+      '<div class="toggle" id="catchWrap"><span><b>Прислать и тем, у кого срок уже прошёл</b><br><span class="small muted">Нужно, когда пост добавлен позже: человек уже в боте, а его день был раньше. Выключено: пост получат только те, кому срок ещё впереди. Новые люди сюда не относятся: они получат пост в свой день в любом случае.</span></span><label class="sw"><input type="checkbox" id="fCatch" ' + (st.catchup ? 'checked' : '') + '><span></span></label></div>';
   }
   if (p.kind === 'node') h += '<div class="note">' + (parents.length ? 'Сюда ведут: ' + parents.map((x) => '«' + esc(postName(x.p).slice(0, 30)) + '» → кнопка «' + esc(x.b.text) + '»').join('; ') : 'Пока сюда не ведёт ни одна кнопка. Привяжи его: в нужном посте добавь кнопку → «Пост» → выбери этот.') + '</div>';
   // кнопки
@@ -2639,18 +2660,22 @@ function openPost(id, opt) {
   drawFiles();
 
   // когда (лента)
-  const showMode = () => { if (!$('pDay')) return; $('pDay').style.display = st.mode === 'day' ? '' : 'none'; $('pTimer').style.display = st.mode === 'timer' ? '' : 'none'; $('pAfter').style.display = st.mode === 'after' ? '' : 'none'; $('pDate').style.display = st.mode === 'date' ? '' : 'none'; $('catchWrap').style.display = st.mode === 'date' ? 'none' : ''; hints(); };
+  const showMode = () => { if (!$('pDay')) return; if ($('catchWrap')) $('catchWrap').style.display = st.mode === 'date' ? 'none' : ''; $('pDay').style.display = st.mode === 'day' ? '' : 'none'; $('pTimer').style.display = st.mode === 'timer' ? '' : 'none'; $('pAfter').style.display = st.mode === 'after' ? '' : 'none'; $('pDate').style.display = st.mode === 'date' ? '' : 'none'; $('catchWrap').style.display = st.mode === 'date' ? 'none' : ''; hints(); };
   const delayOf = (n, u) => Math.max(0, Math.round((+$(n).value || 0) * +$(u).value));
   const atTxt = (f) => $(f + 'AtOn') && $(f + 'AtOn').checked && $(f + 'At').value ? ', в ' + $(f + 'At').value : '';
   const sumLine2 = () => {
     if (st.mode === 'timer') return 'Придёт через ' + fmtDelay(delayOf('tNum', 'tUnit')) + ' после аудита' + (delayOf('tNum', 'tUnit') || atTxt('t') ? atTxt('t') : ' (сразу)');
     if (st.mode === 'after') { const par = $('aPost') && S.posts.find((x) => x.id === +$('aPost').value); return par ? 'Придёт через ' + fmtDelay(delayOf('aNum', 'aUnit')) + ' после поста «' + postName(par).slice(0, 34) + '»' + atTxt('a') : 'Выбери пост, после которого отправлять'; }
     if (st.mode === 'date') { const t = fromLocal($('fRun') && $('fRun').value); return t ? 'Уйдёт один раз: ' + fmtRun(t) : 'Выбери дату и время'; }
-    return st.day === 0 ? 'Придёт сразу после входа' : 'Придёт на день ' + st.day + ' в ' + (($('fTime') && $('fTime').value) || st.time) + ' по Москве';
+    const tm = ($('fTime') && $('fTime').value) || st.time, cs = (S.cohort || {})[st.track];
+    const own = st.day === 0 ? 'День 0: сразу, как только человек вошёл в бота' : 'День ' + st.day + ' после входа, в ' + tm + ' по Москве';
+    if (!cs) return own;
+    const ymd = new Date(Date.UTC(+cs.slice(0, 4), +cs.slice(5, 7) - 1, +cs.slice(8)) + st.day * 864e5).toISOString().slice(0, 10);
+    return own + '. Кто вошёл до старта потока (' + ruDM(cs) + '): ' + ruDM(ymd) + ' в ' + (st.day === 0 ? '11:00' : tm);
   };
   const atHint = (f, nUnit) => $(f + 'AtOn') && $(f + 'AtOn').checked ? (delayOf(f + 'Num', f + 'Unit') % 1440 === 0 ? ' Дни считаются по календарю: «через 2 дня в 11:00» — это послезавтра в 11:00 по Москве.' : ' Если срок выпадет не на это время, пост уйдёт в ближайшие такие часы по Москве.') : '';
   const hints = () => {
-    if ($('whenSum')) $('whenSum').textContent = sumLine2();
+    if ($('whenSum')) $('whenSum').textContent = 'Итог: ' + sumLine2();
     if ($('tHint')) $('tHint').textContent = 'Отсчёт идёт от момента, когда человек прошёл аудит и согласился на рассылку.' + atHint('t');
     if ($('aHint') && $('aPost')) { const par = S.posts.find((x) => x.id === +$('aPost').value); $('aHint').textContent = (par && par.kind === 'node' ? 'Отсчёт от нажатия кнопки, которая ведёт на этот пост.' : 'Отсчёт от момента, когда человек получил выбранный пост.') + atHint('a'); }
   };
