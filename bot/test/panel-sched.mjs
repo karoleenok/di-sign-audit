@@ -59,6 +59,16 @@ for (const w of [390, 320]) {
   assert.match(await page.textContent('#sheet'), /бот глазами ученика/i);
   assert.ok(await noscroll(page), 'нет горизонтального скролла в «Как ученик»');
   await page.click('#sheet .sx');
+  // «Как ученик» показывает и посты на конкретные даты
+  const RUN = Math.floor(Date.now() / 1000) + 5 * 86400;
+  await db.run(`INSERT INTO posts (kind, audience, track, day, send_time, status, text, created_by, created_at, mode, delay_min, run_at) VALUES ('date', 'all', 'all', 0, '11:00', 'active', ?, 1, ?, 'day', 0, ?)`, [`Анонс эфира в конкретную дату ${w}`, RUN, RUN]);
+  await page.reload(); await page.waitForSelector('#scStud'); await page.click('#scStud'); await page.waitForSelector('[data-stnext]');
+  for (let i = 0; i < 80 && await page.locator('[data-stnext]').count(); i++) await page.click('[data-stnext]');
+  const stTxt = await page.textContent('#sheet');
+  assert.match(stTxt, /в конкретную дату/); assert.match(stTxt, new RegExp('Анонс эфира в конкретную дату ' + w));
+  assert.ok(await noscroll(page), 'нет горизонтального скролла в «Как ученик» до конца');
+  if (w === 390) await page.screenshot({ path: OUT + '/sched-student.png', fullPage: true });
+  await page.click('#sheet .sx');
   // перенос в другой день (режим порядка)
   await page.click('#scRe'); await page.waitForSelector('[data-scday]');
   const dayCard = page.locator('[data-scday]').first();
