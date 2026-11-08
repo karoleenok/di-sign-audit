@@ -1304,7 +1304,7 @@ step('кнопка «Игра»: админам всегда, людям при 
   pp.set('hash', crypto.createHmac('sha256', secret).update(dcs).digest('hex'));
   const call = async (path, body) => { const req = new Request('https://bot.test/api/panel' + path, { method: body ? 'POST' : 'GET', headers: { 'x-init-data': pp.toString(), 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }); const r = await handlePanelApi(C(), req, new URL(req.url)); return r.json(); };
   let g = await call('/game');
-  assert.equal(g.items.length, 2, 'в панели видны обе игры');
+  assert.equal(g.items.length, 3, 'в панели видны все игры');
   assert.equal(g.cfg.public, false);
   g = await call('/game', { public: true, items: { poster: { mode: 'sched', from: NOW + 600, until: null }, fonts: { mode: 'closed' } } });
   assert.equal(g.ok, true); assert.equal(g.cfg.public, true);

@@ -2,6 +2,7 @@
 // Режимы игры: open — открыта, closed — закрыта, sched — открыть с даты (from) и закрыть к дате (until, можно не задавать).
 export const ITEMS = [
   { id: 'poster', name: 'Принципы дизайна', track: 'Мини-курс' },
+  { id: 'style', name: 'Какой ты стиль в дизайне', track: 'Мини-курс' },
   { id: 'fonts', name: 'Шрифтовая примерочная', track: 'Месяц материалов' },
 ];
 const KEY = 'app_cfg';

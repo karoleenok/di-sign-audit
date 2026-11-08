@@ -466,6 +466,56 @@ details a,.src a{color:var(--blue)}
 .adm-dt .row{display:flex;gap:var(--s2);align-items:flex-end}
 .adm-dt .row label{flex:1;min-width:0}
 .adm-x{min-height:44px;min-width:44px;border-radius:50%;border:1px solid rgba(44,13,2,.32);background:transparent;cursor:pointer;font:500 18px/1 var(--f-text);flex:none}
+
+/* ---------- тест «Какой ты стиль в дизайне» ---------- */
+.sq-prog{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:var(--s1)}
+.sq-prog i{height:4px;border-radius:2px;background:var(--track)}
+.sq-prog i.done{background:var(--ink)}
+.sq-prog i.on{background:var(--rose-text)}
+.sq-q{display:flex;flex-direction:column;gap:var(--s2)}
+.sq-opts{display:flex;flex-direction:column;gap:var(--s3)}
+.sq-o{min-height:56px;padding:var(--s3) var(--s4);border-radius:var(--r-l);border:1px solid var(--line);background:var(--card);font:500 16px/22px var(--f-text);text-align:left;cursor:pointer;display:block;width:100%;transition:transform .12s ease,background .15s ease,border-color .15s ease}
+.sq-o:active{transform:scale(.99)}
+.sq-o.sel{background:var(--pb);border-color:var(--blue)}
+.sq-vis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s3)}
+.sq-vis.eight{gap:var(--s2)}
+.sq-t{padding:0;border-radius:var(--r-l);border:1.5px solid var(--line);background:var(--card);cursor:pointer;aspect-ratio:1;overflow:hidden;display:block;width:100%;transition:transform .12s ease,border-color .15s ease}
+.sq-vis.eight .sq-t{aspect-ratio:4/3}
+.sq-t svg{display:block;width:100%;height:100%}
+.sq-t:active{transform:scale(.98)}
+.sq-t.sel{border-color:var(--blue);box-shadow:0 0 0 2px var(--blue)}
+.sq-start{align-items:center;text-align:center;gap:var(--s5)}
+.sq-start .hero{align-items:center}
+.sq-start .dock{align-items:stretch;align-self:stretch}
+
+/* карта: рубашка, переворот, заглушка лица */
+.tarot-wrap{display:flex;justify-content:center;perspective:1200px}
+.tarot{position:relative;width:min(72vw,260px);aspect-ratio:2/3;transform-style:preserve-3d;transition:transform .8s cubic-bezier(.2,.7,.2,1)}
+.tarot.flip{transform:rotateY(180deg)}
+.tarot>*{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;border-radius:14px;overflow:hidden}
+.tarot>.tfc{transform:rotateY(180deg)}
+.tarot img.art{width:100%;height:100%;object-fit:cover}
+.tbk,.tfc{--gold:#c9a15a;--mauve:#aa868f;--peach:#edc1a4;--brown:#3f2c21;background:linear-gradient(160deg,#edc1a4 0%,#cfa3a3 55%,#aa868f 100%);border:2px solid var(--gold);box-shadow:inset 0 0 0 5px #f6dcd2,inset 0 0 0 6px var(--gold),0 10px 28px rgba(63,44,33,.22)}
+.tbk{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:var(--s3);color:var(--brown)}
+.tbk .px{font-size:22px;line-height:22px;color:var(--brown)}
+.tbk svg{width:46%;height:auto}
+.tfc{display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:var(--s5) var(--s4) var(--s4);color:var(--brown)}
+.tfc .no{font:400 20px/20px var(--f-pix);color:var(--brown)}
+.tfc .gl{flex:1;display:grid;place-items:center;width:100%}
+.tfc .gl svg{width:62%;height:auto}
+.tfc .nm{font:italic 600 22px/26px 'Cormorant Garamond',Georgia,serif;letter-spacing:.02em;text-align:center}
+.sq-res{display:flex;flex-direction:column;gap:var(--s5)}
+.sq-res .big{display:flex;flex-direction:column;gap:var(--s2);text-align:center;align-items:center}
+.sq-res .lead{font-size:17px;line-height:26px;text-wrap:pretty}
+.sq-two{display:grid;grid-template-columns:72px minmax(0,1fr);gap:var(--s4);align-items:center}
+.sq-two .tarot-mini{width:72px;aspect-ratio:2/3;border-radius:8px;overflow:hidden}
+.sq-two .tarot-mini .tfc{padding:var(--s2);position:relative;inset:auto;width:100%;height:100%;transform:none;box-shadow:inset 0 0 0 3px #f6dcd2,inset 0 0 0 4px var(--gold)}
+.sq-two .tarot-mini .tfc .no{font-size:12px;line-height:12px}
+.sq-two .tarot-mini .tfc .nm{display:none}
+.sq-two .tarot-mini img.art{width:100%;height:100%;object-fit:cover}
+.sq-tip{display:flex;flex-direction:column;gap:var(--s2)}
+@media (prefers-reduced-motion:reduce){.tarot{transition:none}}
+@media (max-height:640px){.tarot{width:min(60vw,200px)}}
 </style>
 
 <main class="app">
@@ -536,6 +586,15 @@ details a,.src a{color:var(--blue)}
         <div class="meta"><span class="pill">3 этапа</span><span class="pill blue">5 минут</span><span class="pill good" id="d-poster" hidden>пройдено</span><span class="pill pink" id="l-poster" hidden></span></div>
       </div>
       <img data-img="magnifier" alt="">
+    </button>
+    <button class="game" id="g-style" type="button" data-track="mini">
+      <div>
+        <p class="px sm">game 02.</p>
+        <h2 class="h2">Какой ты стиль в дизайне</h2>
+        <p class="small" style="margin-top:6px">Девять вопросов про тебя. В конце выпадет карта таро с таксой.</p>
+        <div class="meta"><span class="pill">9 вопросов</span><span class="pill blue">2 минуты</span><span class="pill good" id="d-style" hidden>пройдено</span><span class="pill pink" id="l-style" hidden></span></div>
+      </div>
+      <img data-img="palette" alt="">
     </button>
     <button class="game" id="g-fonts" type="button" data-track="mat">
       <div>
@@ -678,6 +737,66 @@ details a,.src a{color:var(--blue)}
   </div>
 </section>
 
+<!-- тест «Какой ты стиль в дизайне» -->
+<section id="s-sintro" class="screen hello sq-start" data-screen="sintro" hidden>
+  <header class="top">
+    <button class="back" type="button" data-back aria-label="Назад"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l-6 6 6 6"/></svg></button>
+    <span class="lab px">style test.</span><span></span>
+  </header>
+  <div class="hero">
+    <h1 class="h1">Какой ты <span class="mk-hl">стиль</span> в дизайне?</h1>
+    <p class="hello-sub">Девять вопросов про тебя, а не про дизайн. В конце тебе выпадет карта таро, и на ней будет такса.</p>
+  </div>
+  <div class="hello-img"><img data-img="dog" alt=""></div>
+  <div class="dock">
+    <span class="small" style="text-align:center">9 вопросов · 2 минуты</span>
+    <button class="btn primary" id="sqGo" type="button">Тянуть карту</button>
+    <button class="btn ghost" id="sqMine" type="button" hidden>Моя карта</button>
+  </div>
+</section>
+
+<section id="s-squiz" class="screen" data-screen="squiz" hidden>
+  <header class="top">
+    <button class="back" id="sqBack" type="button" aria-label="Назад"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l-6 6 6 6"/></svg></button>
+    <span class="lab">Какой ты стиль</span>
+    <span class="pill blue num" id="sqCount"></span>
+  </header>
+  <div class="sq-prog" id="sqProg" aria-hidden="true"></div>
+  <div class="sq-q">
+    <h2 class="h2" id="sqQ"></h2>
+    <p class="small" id="sqHint" hidden></p>
+  </div>
+  <div id="sqOpts"></div>
+</section>
+
+<section id="s-sres" class="screen" data-screen="sres" hidden>
+  <header class="top">
+    <button class="back" type="button" data-back aria-label="Назад"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l-6 6 6 6"/></svg></button>
+    <span class="lab px">your card.</span><span></span>
+  </header>
+  <div class="sq-res">
+    <div class="tarot-wrap"><div class="tarot" id="sqCard"></div></div>
+    <p class="small" id="sqFlipHint" style="text-align:center">Карта лежит рубашкой вверх. Переверни её.</p>
+    <div id="sqDetail" hidden class="sq-res">
+      <div class="big">
+        <p class="lab" id="sqKicker"></p>
+        <h1 class="h1" id="sqTitle"></h1>
+        <p class="lead" id="sqLead"></p>
+      </div>
+      <div class="card sq-tip"><p class="lab">Что за стиль</p><p id="sqDesign"></p></div>
+      <div class="card sq-tip"><p class="lab">Что взять в работу</p><p id="sqTip"></p></div>
+      <div class="card sq-two" id="sqComp"></div>
+      <div class="card sq-tip" id="sqNext"></div>
+    </div>
+  </div>
+  <div class="dock">
+    <button class="btn primary" id="sqFlip" type="button">Перевернуть карту</button>
+    <button class="btn primary" id="sqShare" type="button" hidden>Сохранить для сторис</button>
+    <button class="btn ghost" id="sqAgain" type="button" hidden>Вытянуть заново</button>
+    <button class="btn ghost" id="sqHome" type="button" hidden>К мини-курсу</button>
+  </div>
+</section>
+
 <!-- шрифты -->
 <section id="s-fonts" class="screen" data-screen="fonts" hidden>
   <header class="top">
@@ -771,7 +890,7 @@ $$('[data-img]').forEach(function(i){i.src=IMG[i.getAttribute('data-img')]});$('
 /* ---------- память прохождения (удобство одного браузера) ---------- */
 function mem(){try{return JSON.parse(localStorage.getItem('dsu-workshop')||'{}')}catch(e){return {}}}
 function remember(k){try{var m=mem();m[k]=1;localStorage.setItem('dsu-workshop',JSON.stringify(m))}catch(e){}}
-function paintDone(){var m=mem();$('#d-poster').hidden=!m.poster;$('#d-fonts').hidden=!m.fonts}
+function paintDone(){var m=mem();$('#d-poster').hidden=!m.poster;$('#d-fonts').hidden=!m.fonts;$('#d-style').hidden=!m.style}
 
 /* ---------- мелочи: тост, вибрация, конфетти ---------- */
 var toastT;
@@ -802,7 +921,7 @@ var MON=['января','февраля','марта','апреля','мая','�
 function whenTxt(ts){var d=new Date((ts+10800)*1000),p=function(n){return n<10?'0'+n:n};return d.getUTCDate()+' '+MON[d.getUTCMonth()]+', '+p(d.getUTCHours())+':'+p(d.getUTCMinutes())}
 function lockText(id){var g=gi(id);return g&&g.from&&nowSec()<g.from?'откроется '+whenTxt(g.from):'закрыто'}
 function paintLocks(){
-  ['poster','fonts'].forEach(function(id){
+  ['poster','style','fonts'].forEach(function(id){
     var el=$('#l-'+id),b=$('#g-'+id),lk=!itemOpen(id);
     b.classList.toggle('is-locked',lk);
     el.hidden=!lk;
@@ -819,16 +938,17 @@ function showClosed(id){
   want=null;go('locked');
 }
 var TRACKS={
-  mini:{name:'Мини-курс',sub:'Короткие игры и задания к постерам. Играй прямо в чате.',hello:'Здесь будут появляться полезные штучки по курсу: игры, постеры и задания.',mods:['poster'],soon:['Рандомайзер ТЗ от таксёнышей','Промпты для мокапов','Шаблон кейсов']},
+  mini:{name:'Мини-курс',sub:'Короткие игры и задания к постерам. Играй прямо в чате.',hello:'Здесь будут появляться полезные штучки по курсу: игры, постеры и задания.',mods:['poster','style'],soon:['Рандомайзер ТЗ от таксёнышей','Промпты для мокапов','Шаблон кейсов']},
   mat:{name:'Месяц материалов',sub:'Материалы по неделям: шрифты, Figma, портфолио, клиенты.',hello:'Здесь будут появляться полезные материалы: шрифты, Figma, портфолио, клиенты.',mods:['fonts'],soon:['Мокап-пак, сделанный ИИ','Калькулятор цены и КП','Красные флаги в брифе']}
 };
-var TRACK=null,SCREENS=['pick','audit','hello','home','intro','poster','result','fonts','locked','adm'],cur='pick',want=null;
+var TRACK=null,SCREENS=['pick','audit','hello','home','intro','poster','result','sintro','squiz','sres','fonts','locked','adm'],cur='pick',want=null;
 function show(n){SCREENS.forEach(function(s){$('#s-'+s).hidden=s!==n});window.scrollTo(0,0)}
-function parse(h){var m=/^(mini|mat)(?:-(poster|fonts))?$/.exec(h||'');return m?{t:m[1],m:m[2]||null}:null}
+function parse(h){var m=/^(mini|mat)(?:-(poster|fonts|style))?$/.exec(h||'');return m?{t:m[1],m:m[2]||null}:null}
 function hashOf(n){
   if(n==='pick'||!TRACK)return 'pick';
   if(n==='home')return TRACK;
   if(n==='poster'||n==='result'||n==='intro')return TRACK+'-poster';
+  if(n==='sintro'||n==='squiz'||n==='sres')return TRACK+'-style';
   if(n==='fonts')return TRACK+'-fonts';
   return want||TRACK;
 }
@@ -895,7 +1015,7 @@ function route(){
   TRACK=p.t;paintHome();
   if(!p.m){enterHome();return}
   if(TRACKS[TRACK].mods.indexOf(p.m)<0){want=location.hash.slice(1);cur='locked';lockOther();show('locked');return}
-  if(p.m==='poster')startPoster();else startFonts();
+  if(p.m==='poster')startPoster();else if(p.m==='style')startStyle();else startFonts();
 }
 window.addEventListener('hashchange',function(){var h=(location.hash||'').slice(1);if(h===hashOf(cur))return;route()});
 $$('[data-back]').forEach(function(b){b.addEventListener('click',function(){go('home')})});
@@ -918,7 +1038,7 @@ $('#g-fonts').addEventListener('click',function(){startFonts()});
 
 /* ---------- экран админа: когда открыть и закрыть игры ---------- */
 var AD=null;
-var ADI=[['poster','Принципы дизайна','Мини-курс'],['fonts','Шрифтовая примерочная','Месяц материалов']];
+var ADI=[['poster','Принципы дизайна','Мини-курс'],['style','Какой ты стиль в дизайне','Мини-курс'],['fonts','Шрифтовая примерочная','Месяц материалов']];
 function toMsk(ts){return ts?new Date((ts+10800)*1000).toISOString().slice(0,16):''}
 function fromMsk(v){if(!v)return null;var m=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(v);if(!m)return null;return Math.floor(Date.UTC(+m[1],m[2]-1,+m[3],+m[4],+m[5])/1000)-10800}
 function mskNow(){return nowSec()}
@@ -1336,6 +1456,160 @@ function showResult(){
 $('#rShare').addEventListener('click',function(){toast('В боте здесь сохранится картинка 1080×1920 для сторис')});
 $('#rAgain').addEventListener('click',startPoster);
 $('#rHome').addEventListener('click',function(){go('home')});
+
+/* ---------- тест «Какой ты стиль в дизайне» ---------- */
+/* Восемь стилей = восемь старших арканов. Ответ даёт стилю одно очко; ничью решают визуальные вопросы (последний главнее). */
+var SK=['br','sw','rf','ad','mm','nw','bh','jp'];
+var STY={
+ br:{card:'Башня',no:'XVI',st:'Брутализм',lead:'Ты не любишь прихорашиваться. Если что-то держится, то по делу, и показывать это не стыдно.',design:'Брутализм в графике и вебе: тяжёлые шрифты, жёсткие рамки, голая структура без глянца. Название пришло из архитектуры, где бетон оставляли как есть.',tip:'Грубость работает, пока текст читается. Проверь контраст и размер шрифта, а рамки и жёсткие тени используй как приём, а не как привычку.',nb:'sw'},
+ sw:{card:'Правосудие',no:'XI',st:'Швейцарский стиль',lead:'Ты ищешь порядок, в котором легко дышать. Любишь, когда у каждой вещи есть место и причина.',design:'Швейцарский стиль: модульная сетка, гротески, асимметричная композиция и много воздуха. Информация главная, украшения отдыхают.',tip:'Сетка нужна, чтобы один раз нарушить её осознанно. Выпусти один блок за линию и посмотри, что оживёт.',nb:'bh'},
+ rf:{card:'Звезда',no:'XVII',st:'Ретрофутуризм',lead:'Тебя тянет вперёд, но с любопытством к тому, как раньше это «вперёд» себе представляли.',design:'Ретрофутуризм: будущее глазами прошлого. Хром, градиенты заката, орбиты, сетки в перспективе.',tip:'Один смелый эффект на экран. Когда хром, свечение и градиент включены разом, глаз устаёт за три секунды.',nb:'nw'},
+ ad:{card:'Императрица',no:'III',st:'Арт-деко',lead:'Ты любишь, когда вещь сделана с шиком и точностью. Войти красиво и остаться надолго.',design:'Арт-деко: симметрия, золото, ступенчатые и веерные формы, геометрический орнамент. Роскошь, расчерченная линейкой.',tip:'В арт-деко всё держится на точности. Кривая симметрия видна сразу, так что включай направляющие и считай отступы.',nb:'sw'},
+ mm:{card:'Шут',no:'0',st:'Мемфис',lead:'Скука для тебя хуже ошибки. Ты первый предложишь странную идею, и обычно она заходит.',design:'Мемфис: появился в Милане на рубеже 1980-х. Яркие цвета, зигзаги, пятна и узоры вместо хорошего вкуса по учебнику.',tip:'В шумной композиции нужен один спокойный элемент, иначе всё сливается. Оставь воздух вокруг заголовка.',nb:'nw'},
+ nw:{card:'Колесо Фортуны',no:'X',st:'Новая волна',lead:'Ты собираешь своё из слоёв, звуков и наложений. Правила для тебя материал, а не забор.',design:'Новая волна в типографике: слои, наложения, эксперименты со шрифтом и растром. Выросла из швейцарской школы и пошла против неё.',tip:'Эксперимент оправдан, пока первую строку можно прочитать. Проверь заголовок на телефоне, не только на мониторе.',nb:'mm'},
+ bh:{card:'Маг',no:'I',st:'Баухаус',lead:'Ты разбираешь вещи на простые части и собираешь так, чтобы всё работало.',design:'Баухаус: круг, квадрат, треугольник, основные цвета, форма следует функции. Школа в Германии, работала с 1919 по 1933 год.',tip:'Начни с трёх фигур и одной задачи. Если фигура ничего не делает, убери её.',nb:'sw'},
+ jp:{card:'Отшельник',no:'IX',st:'Японский минимализм',lead:'Тебе нужно место, где слышно себя. Ты замечаешь то, мимо чего другие пробегают.',design:'Японский минимализм: пустота как материал (по-японски «ма»), природные текстуры, один акцент. Меньше, но не пусто.',tip:'Пустота работает, когда вокруг неё точность. Проверь отступы и выравнивание: вся магия там.',nb:'bh'}
+};
+/* текст вопроса, тип (0 слова, 1 четыре картинки, 2 восемь картинок), ответы [текст или ключ плитки, стиль] */
+var SQ_Q=[
+ {t:'Свободная суббота. Что выберешь?',v:0,o:[['Пойду на выставку, где всё огромное и слегка пугает','br'],['Разберу полки и разложу всё по местам','sw'],['Чай, плед и одна хорошая книга','jp'],['Соберу друзей, придумаем затею на вечер','mm']]},
+ {t:'Какой фильм зацепит с первых минут?',v:0,o:[['Космос, неон, будущее','rf'],['Нуар или «Великий Гэтсби», с шиком','ad'],['Что-то из 80-х: синтезаторы и пластик','nw'],['Тихое кино, где важны паузы и детали','jp']]},
+ {t:'Какой постер повесишь над рабочим столом?',v:1,o:[['sw','sw'],['ad','ad'],['mm','mm'],['jp','jp']]},
+ {t:'Когда берёшься за задачу, ты…',v:0,o:[['Расчерчиваю сетку и пишу правила','sw'],['Собираю из простых форм: круг, квадрат, треугольник','bh'],['Беру самое тяжёлое решение и потом оттачиваю','br'],['Убираю лишнее, пока не останется одно','jp']]},
+ {t:'Ты заходишь в новую компанию. Что происходит?',v:0,o:[['Захожу эффектно, меня запоминают','ad'],['Знакомлю всех со всеми и шучу','mm'],['Ставлю музыку и меняю настроение комнаты','nw'],['Приношу штуку из будущего и показываю всем','rf']]},
+ {t:'Какой плакат ближе сегодня?',v:1,o:[['br','br'],['rf','rf'],['bh','bh'],['nw','nw']]},
+ {t:'Что раздражает сильнее всего?',v:0,o:[['Хаос и отсутствие логики','sw'],['Скука и предсказуемость','mm'],['Красивость без смысла','br'],['Украшения, которые мешают пользоваться вещью','bh']]},
+ {t:'Какой подарок порадует?',v:0,o:[['Красивая вещь, которую хочется держать в руках годами','ad'],['Гаджет из будущего','rf'],['Предмет, где каждая деталь на месте','bh'],['Винил или кассетник, пахнущий прошлым','nw']]},
+ {t:'Последний. Что ближе глазу?',v:2,o:[['sw','sw'],['br','br'],['rf','rf'],['ad','ad'],['mm','mm'],['nw','nw'],['bh','bh'],['jp','jp']]}
+];
+var P={ink:'#2c0d02',cream:'#fffbf8',pink:'#b82e85',blue:'#1f73c4',sky:'#c0d8f0',dot:'#ffd3ec',lil:'#f8e4f4',gold:'#c9a15a',brown:'#3f2c21',mauve:'#aa868f',peach:'#edc1a4'};
+function svgT(b){return '<svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" aria-hidden="true">'+b+'</svg>'}
+var TILE={
+ sw:function(){return svgT('<rect width="100" height="100" fill="'+P.cream+'"/><g stroke="'+P.ink+'" stroke-opacity=".18" stroke-width=".6"><path d="M25 0V100M50 0V100M75 0V100M0 25H100M0 50H100M0 75H100"/></g><circle cx="50" cy="50" r="19" fill="'+P.pink+'"/><rect x="25" y="20" width="4" height="60" fill="'+P.ink+'"/><rect x="25" y="78" width="40" height="3" fill="'+P.ink+'"/>')},
+ br:function(){return svgT('<rect width="100" height="100" fill="'+P.sky+'"/><rect x="22" y="26" width="60" height="52" fill="'+P.ink+'"/><rect x="14" y="18" width="60" height="52" fill="'+P.cream+'" stroke="'+P.ink+'" stroke-width="4"/><rect x="24" y="30" width="30" height="8" fill="'+P.ink+'"/><rect x="24" y="44" width="40" height="4" fill="'+P.ink+'"/><rect x="24" y="52" width="22" height="4" fill="'+P.ink+'"/>')},
+ rf:function(){return svgT('<rect width="100" height="100" fill="'+P.ink+'"/><circle cx="50" cy="44" r="26" fill="'+P.pink+'"/><g fill="'+P.ink+'"><rect x="20" y="46" width="60" height="3"/><rect x="20" y="53" width="60" height="4"/><rect x="20" y="61" width="60" height="5"/></g><g stroke="'+P.sky+'" stroke-width="1" fill="none"><path d="M0 100L40 72M100 100L60 72M20 100L44 72M80 100L56 72M50 100V72M0 78H100M0 88H100"/></g>')},
+ ad:function(){return svgT('<rect width="100" height="100" fill="'+P.brown+'"/><g fill="none" stroke="'+P.gold+'" stroke-width="2"><path d="M50 90V40M50 90L20 40M50 90L80 40M50 90L5 52M50 90L95 52"/><path d="M20 90A30 30 0 0 1 80 90"/><path d="M32 90A18 18 0 0 1 68 90"/><path d="M8 20H92"/></g><path d="M50 12L56 20H44Z" fill="'+P.gold+'"/>')},
+ mm:function(){return svgT('<rect width="100" height="100" fill="'+P.dot+'"/><path d="M10 30l10-10 10 10 10-10 10 10" fill="none" stroke="'+P.ink+'" stroke-width="3"/><circle cx="72" cy="30" r="12" fill="'+P.blue+'"/><path d="M20 80L38 50L56 80Z" fill="'+P.sky+'" stroke="'+P.ink+'" stroke-width="2.5"/><g fill="'+P.ink+'"><circle cx="70" cy="68" r="2"/><circle cx="78" cy="68" r="2"/><circle cx="86" cy="68" r="2"/><circle cx="70" cy="76" r="2"/><circle cx="78" cy="76" r="2"/><circle cx="86" cy="76" r="2"/></g>')},
+ nw:function(){return svgT('<rect width="100" height="100" fill="'+P.cream+'"/><circle cx="38" cy="42" r="24" fill="'+P.pink+'" fill-opacity=".55"/><circle cx="58" cy="52" r="24" fill="'+P.blue+'" fill-opacity=".5"/><g fill="none" stroke="'+P.ink+'" stroke-width="1.6"><path d="M0 70Q25 55 50 70T100 70"/><path d="M0 78Q25 63 50 78T100 78"/><path d="M0 86Q25 71 50 86T100 86"/></g>')},
+ bh:function(){return svgT('<rect width="100" height="100" fill="'+P.cream+'"/><circle cx="30" cy="34" r="18" fill="'+P.blue+'"/><rect x="52" y="18" width="32" height="32" fill="'+P.pink+'"/><path d="M50 84L68 54L86 84Z" fill="'+P.ink+'"/><rect x="12" y="62" width="30" height="6" fill="'+P.ink+'"/>')},
+ jp:function(){return svgT('<rect width="100" height="100" fill="#f3ece4"/><path d="M62 30A24 24 0 1 0 74 54" fill="none" stroke="'+P.ink+'" stroke-width="5" stroke-linecap="round"/><circle cx="76" cy="30" r="3.5" fill="'+P.pink+'"/>')}
+};
+var GLYPH={
+ br:'<path d="M22 90V40h12V28h12V16h8v12h12v12h12v50z" fill="none" stroke="currentColor" stroke-width="3"/><circle cx="50" cy="56" r="7" fill="none" stroke="currentColor" stroke-width="3"/><path d="M60 4L50 22h8L48 38" fill="none" stroke="currentColor" stroke-width="3"/>',
+ sw:'<path d="M50 14V86M20 86H80M18 32H82M18 32L8 58H28ZM82 32L72 58H92Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>',
+ rf:'<path d="M50 8L58 38L90 38L64 56L74 88L50 68L26 88L36 56L10 38L42 38Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/><circle cx="50" cy="50" r="40" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 5"/>',
+ ad:'<path d="M50 88V40M50 88L24 44M50 88L76 44M50 88L10 58M50 88L90 58" fill="none" stroke="currentColor" stroke-width="3"/><path d="M14 88A36 36 0 0 1 86 88" fill="none" stroke="currentColor" stroke-width="3"/><path d="M50 8L58 22H42Z" fill="currentColor"/>',
+ mm:'<path d="M12 30l10-10 10 10 10-10 10 10 10-10 10 10" fill="none" stroke="currentColor" stroke-width="3"/><circle cx="70" cy="66" r="14" fill="none" stroke="currentColor" stroke-width="3"/><path d="M14 88L30 58L46 88Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>',
+ nw:'<circle cx="50" cy="50" r="34" fill="none" stroke="currentColor" stroke-width="3"/><circle cx="50" cy="50" r="6" fill="currentColor"/><path d="M50 16V84M16 50H84M26 26L74 74M74 26L26 74" stroke="currentColor" stroke-width="2"/>',
+ bh:'<circle cx="30" cy="34" r="16" fill="none" stroke="currentColor" stroke-width="3"/><rect x="52" y="18" width="30" height="30" fill="none" stroke="currentColor" stroke-width="3"/><path d="M50 86L68 56L86 86Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>',
+ jp:'<path d="M20 62Q20 28 52 24Q82 26 80 54Q78 78 50 80" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><path d="M20 90H80" stroke="currentColor" stroke-width="1.5"/>'
+};
+/* картинки готовых карт: когда они появятся, кладём в CARD_ART ключ → адрес; пока везде заглушка */
+var CARD_ART={};
+function faceHTML(k){
+  var s=STY[k];
+  if(CARD_ART[k])return '<div class="tfc"><img class="art" src="'+CARD_ART[k]+'" alt="Карта «'+s.card+'»"></div>';
+  return '<div class="tfc" role="img" aria-label="Карта «'+s.card+'»"><span class="no">'+s.no+'</span><span class="gl"><svg viewBox="0 0 100 100" aria-hidden="true">'+GLYPH[k]+'</svg></span><span class="nm">'+s.card+'</span></div>';
+}
+function backHTML(){return '<div class="tbk"><svg viewBox="0 0 100 100" aria-hidden="true">'+GLYPH.ad+'</svg><span class="px">dsu.</span></div>'}
+
+var Q={a:[],i:0,ord:[],busy:false,main:null,comp:null};
+function shuffle(n){var a=[],i,j,t;for(i=0;i<n;i++)a.push(i);for(i=n-1;i>0;i--){j=Math.floor(Math.random()*(i+1));t=a[i];a[i]=a[j];a[j]=t}return a}
+function styleSaved(){try{var v=JSON.parse(localStorage.getItem('dsu-style')||'null');return v&&STY[v.m]&&STY[v.c]?v:null}catch(e){return null}}
+function styleSave(m,c){try{localStorage.setItem('dsu-style',JSON.stringify({m:m,c:c}))}catch(e){}}
+function startStyle(){
+  if(!TRACK||TRACKS[TRACK].mods.indexOf('style')<0){want=(TRACK||'mini')+'-style';lockOther();go('locked');return}
+  if(!canEnter('style')){showClosed('style');return}
+  $('#sqMine').hidden=!styleSaved();
+  go('sintro');
+}
+function sqBegin(){
+  Q={a:[],i:0,ord:SQ_Q.map(function(q){return shuffle(q.o.length)}),busy:false,main:null,comp:null};
+  go('squiz');sqPaint();
+}
+function sqPaint(){
+  var q=SQ_Q[Q.i],o=$('#sqOpts'),h='',pr='';
+  Q.busy=false;
+  $('#sqCount').textContent=(Q.i+1)+' из '+SQ_Q.length;
+  for(var k=0;k<SQ_Q.length;k++)pr+='<i class="'+(k<Q.i?'done':(k===Q.i?'on':''))+'"></i>';
+  $('#sqProg').innerHTML=pr;
+  $('#sqQ').textContent=q.t;
+  $('#sqHint').hidden=q.v===0;$('#sqHint').textContent=q.v===0?'':'Не думай долго, выбери первое, что кольнуло.';
+  var prev=Q.a[Q.i];
+  if(q.v===0){
+    Q.ord[Q.i].forEach(function(ix){var op=q.o[ix];h+='<button class="sq-o'+(prev===op[1]?' sel':'')+'" type="button" data-s="'+op[1]+'">'+op[0]+'</button>'});
+    o.innerHTML='<div class="sq-opts">'+h+'</div>';
+  }else{
+    var L='АБВГДЕЖЗ';
+    Q.ord[Q.i].forEach(function(ix,n){var op=q.o[ix];h+='<button class="sq-t'+(prev===op[1]?' sel':'')+'" type="button" data-s="'+op[1]+'" aria-label="Вариант '+L.charAt(n)+'">'+TILE[op[0]]()+'</button>'});
+    o.innerHTML='<div class="sq-vis'+(q.v===2?' eight':'')+'">'+h+'</div>';
+  }
+  window.scrollTo(0,0);
+}
+$('#sqOpts').addEventListener('click',function(e){
+  var b=e.target.closest('[data-s]');if(!b||Q.busy)return;
+  Q.busy=true;haptic();
+  $$('#sqOpts .sel').forEach(function(x){x.classList.remove('sel')});
+  b.classList.add('sel');
+  Q.a[Q.i]=b.getAttribute('data-s');
+  setTimeout(function(){
+    if(Q.i<SQ_Q.length-1){Q.i++;sqPaint()}else sqFinish();
+  },reduce?0:260);
+});
+$('#sqBack').addEventListener('click',function(){
+  if(Q.i>0){Q.i--;sqPaint()}else go('sintro');
+});
+/* ничья: сначала смотрим на ответы по картинкам, последний вопрос главнее, потом на остальные с конца */
+function sqScore(a){
+  var c={},pri=[a[8],a[5],a[2],a[7],a[6],a[4],a[3],a[1],a[0]];
+  SK.forEach(function(k){c[k]=0});
+  a.forEach(function(k){if(c[k]!==undefined)c[k]++});
+  function pick(skip){
+    var best=-1,tied=[];
+    SK.forEach(function(k){if(k===skip)return;if(c[k]>best){best=c[k];tied=[k]}else if(c[k]===best)tied.push(k)});
+    for(var i=0;i<pri.length;i++)if(tied.indexOf(pri[i])>=0)return {k:pri[i],n:best};
+    return {k:tied[0],n:best};
+  }
+  var m=pick(null),s=pick(m.k);
+  return {m:m.k,c:s.n>0?s.k:STY[m.k].nb};
+}
+function sqFinish(){
+  var r=sqScore(Q.a);Q.main=r.m;Q.comp=r.c;
+  styleSave(r.m,r.c);remember('style');paintDone();
+  sqShow(r.m,r.c);
+}
+function sqShow(m,c){
+  var s=STY[m],cs=STY[c];
+  go('sres');
+  var card=$('#sqCard');card.classList.remove('flip');
+  card.innerHTML=backHTML()+faceHTML(m);
+  $('#sqDetail').hidden=true;$('#sqFlipHint').hidden=false;
+  $('#sqFlip').hidden=false;$('#sqShare').hidden=true;$('#sqAgain').hidden=true;$('#sqHome').hidden=true;
+  $('#sqKicker').textContent='Твоя карта: '+s.no+' '+s.card;
+  $('#sqTitle').innerHTML='Ты — <span class="mk-hl">'+s.st+'</span>';
+  $('#sqLead').textContent=s.lead;
+  $('#sqDesign').textContent=s.design;
+  $('#sqTip').textContent=s.tip;
+  $('#sqComp').innerHTML='<div class="tarot-mini">'+faceHTML(c)+'</div><div><p class="lab">Вторая карта</p><p class="h3" style="margin-top:4px">'+cs.card+' · '+cs.st+'</p><p class="small" style="margin-top:4px">Она рядом с главной. К ней тебя тянет, когда основная устаёт.</p></div>';
+  var done=mem().poster;
+  $('#sqNext').innerHTML=done?'<p class="lab">Дальше</p><p>Свой стиль ты уже знаешь. Теперь можно сыграть ещё раз и вытянуть другую карту.</p>':'<p class="lab">Дальше</p><p>Стиль видно по взгляду. А принципы, на которых всё держится, проверим в игре «Принципы дизайна».</p><button class="btn ghost sm" id="sqToPoster" type="button" style="align-self:flex-start;margin-top:8px">Сыграть в принципы</button>';
+  var tp=$('#sqToPoster');if(tp)tp.addEventListener('click',startPoster);
+}
+$('#sqFlip').addEventListener('click',function(){
+  $('#sqCard').classList.add('flip');haptic();
+  $('#sqFlip').hidden=true;$('#sqFlipHint').hidden=true;
+  setTimeout(function(){
+    $('#sqDetail').hidden=false;
+    $('#sqShare').hidden=false;$('#sqAgain').hidden=false;$('#sqHome').hidden=false;
+    if(Q.main&&!reduce)confetti(40);
+  },reduce?0:700);
+});
+$('#sqGo').addEventListener('click',sqBegin);
+$('#sqMine').addEventListener('click',function(){var v=styleSaved();if(v){Q.main=v.m;Q.comp=v.c;sqShow(v.m,v.c)}});
+$('#sqShare').addEventListener('click',function(){toast('В боте здесь сохранится картинка 1080×1920 для сторис')});
+$('#sqAgain').addEventListener('click',sqBegin);
+$('#sqHome').addEventListener('click',function(){go('home')});
+$('#g-style').addEventListener('click',function(){startStyle()});
 
 /* ---------- шрифты: примерочная-редактор ---------- */
 /* Правила ниже — учебные эвристики школы, а не законы типографики. Их стоит сверять со своим проектом. */
