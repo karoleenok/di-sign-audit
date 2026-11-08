@@ -517,6 +517,7 @@ details a,.src a{color:var(--blue)}
 .cmp-card img.art{width:100%;height:100%;object-fit:cover}
 .cmp-t{text-align:center;align-items:center;gap:var(--s2)}
 .cmp-t .lead{font-size:17px;line-height:26px;text-wrap:pretty}
+.shr-img{display:block;flex:none;height:min(52dvh,460px);aspect-ratio:9/16;max-width:100%;margin-inline:auto;object-fit:cover;border-radius:var(--r-l);border:1px solid var(--line);background:var(--pb)}
 .sq-two .tarot-mini{width:72px;aspect-ratio:2/3;border-radius:8px;overflow:hidden}
 .sq-two .tarot-mini .tfc{padding:var(--s2);position:relative;inset:auto;width:100%;height:100%;transform:none;box-shadow:inset 0 0 0 3px #f6dcd2,inset 0 0 0 4px var(--gold)}
 .sq-two .tarot-mini .tfc .no{font-size:12px;line-height:12px}
@@ -944,6 +945,19 @@ details a,.src a{color:var(--blue)}
     <div class="card sq-tip"><p class="lab">Что за стиль</p><p id="cmpDesign"></p></div>
     <div class="card sq-tip"><p class="lab">Что взять в работу</p><p id="cmpTip"></p></div>
     <button class="btn ghost" type="button" data-gclose>Закрыть</button>
+  </div>
+</div>
+<div class="gsh" id="shrSheet" hidden>
+  <button class="gsh-bg" type="button" data-gclose aria-label="Закрыть"></button>
+  <div class="gsh-p" role="dialog" aria-modal="true" aria-labelledby="shrTitle">
+    <button class="gsh-h" type="button" data-gclose aria-label="Закрыть"><i></i></button>
+    <div class="gsh-t cmp-t"><p class="lab px">story.</p><h2 class="h2" id="shrTitle">Твоя карта для сторис</h2></div>
+    <img class="shr-img" id="shrImg" alt="">
+    <div class="lnks">
+      <button class="btn primary" id="shrTg" type="button" hidden>Выложить в сторис Telegram</button>
+      <button class="btn ghost" id="shrSave" type="button">Сохранить для Instagram</button>
+      <button class="btn ghost" type="button" data-gclose>Закрыть</button>
+    </div>
   </div>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
@@ -1764,7 +1778,35 @@ $('#sqFlip').addEventListener('click',function(){
 });
 $('#sqGo').addEventListener('click',sqBegin);
 $('#sqMine').addEventListener('click',function(){var v=styleSaved();if(v){Q.main=v.m;Q.comp=v.c;sqShow(v.m,v.c)}});
-$('#sqShare').addEventListener('click',function(){toast('В боте здесь сохранится картинка 1080×1920 для сторис')});
+/* сторис: картинка 1080×1920 лежит в bot/app/gallery/story-<ключ стиля>.jpg; пока файла нет, показываем подсказку */
+var shrKey=null;
+function shrTg(){try{return window.Telegram&&window.Telegram.WebApp||null}catch(e){return null}}
+function shrOpen(k){
+  var u='/gallery/story-'+k+'.jpg';
+  fetch(u,{method:'HEAD'}).then(function(r){
+    if(!r.ok)throw 0;
+    shrKey=k;
+    var im=$('#shrImg');im.src=u;im.alt='Картинка для сторис: '+STY[k].st;
+    var w=shrTg();$('#shrTg').hidden=!(w&&w.initData&&typeof w.shareToStory==='function');
+    galLast=$('#sqShare');
+    $('#shrSheet').hidden=false;document.body.style.overflow='hidden';haptic();
+    $('#shrSheet .gsh-p').scrollTop=0;
+    setTimeout(function(){var c=$('#shrSheet .gsh-h');if(c)c.focus()},0);
+  }).catch(function(){toast('Картинка для сторис ещё готовится. Загляни позже')});
+}
+$('#sqShare').addEventListener('click',function(){if(Q.main)shrOpen(Q.main)});
+$('#shrTg').addEventListener('click',function(){
+  var w=shrTg();if(!w||!shrKey)return;
+  try{w.shareToStory(location.origin+'/gallery/story-'+shrKey+'.jpg',{text:'Какой ты стиль в дизайне? Пройди тест: https://t.me/di_sign_university_bot'});galClose()}catch(e){toast('Не получилось открыть сторис. Попробуй сохранить картинку')}
+});
+$('#shrSave').addEventListener('click',function(){
+  var w=shrTg(),abs=location.origin+'/gallery/story-'+shrKey+'.jpg';
+  try{
+    if(w&&w.initData&&typeof w.downloadFile==='function')w.downloadFile({url:abs,file_name:'dsu-'+shrKey+'.jpg'});
+    else if(w&&w.initData&&w.openLink)w.openLink(abs);
+    else window.open(abs,'_blank','noopener');
+  }catch(e){toast('Не получилось сохранить. Открой картинку и зажми её пальцем')}
+});
 $('#sqAgain').addEventListener('click',sqBegin);
 $('#sqHome').addEventListener('click',function(){go('home')});
 $('#g-style').addEventListener('click',function(){startStyle()});
