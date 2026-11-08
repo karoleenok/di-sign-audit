@@ -495,6 +495,7 @@ details a,.src a{color:var(--blue)}
 .tarot>*{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;border-radius:14px;overflow:hidden}
 .tarot>.tfc{transform:rotateY(180deg)}
 .tarot img.art{width:100%;height:100%;object-fit:cover}
+.tfc.ha{padding:0;border:0;background:#e9d9c3;box-shadow:0 12px 32px rgba(44,13,2,.25)}
 .tbk,.tfc{--gold:#c9a15a;--mauve:#aa868f;--peach:#edc1a4;--brown:#3f2c21;background:linear-gradient(160deg,#edc1a4 0%,#cfa3a3 55%,#aa868f 100%);border:2px solid var(--gold);box-shadow:inset 0 0 0 5px #f6dcd2,inset 0 0 0 6px var(--gold),0 10px 28px rgba(63,44,33,.22)}
 .tbk{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:var(--s3);color:var(--brown)}
 .tbk .px{font-size:22px;line-height:22px;color:var(--brown)}
@@ -517,6 +518,7 @@ details a,.src a{color:var(--blue)}
 .cmp-card img.art{width:100%;height:100%;object-fit:cover}
 .cmp-t{text-align:center;align-items:center;gap:var(--s2)}
 .cmp-t .lead{font-size:17px;line-height:26px;text-wrap:pretty}
+.shr-img{display:block;flex:none;height:min(52dvh,460px);aspect-ratio:9/16;max-width:100%;margin-inline:auto;object-fit:cover;border-radius:var(--r-l);border:1px solid var(--line);background:var(--pb)}
 .sq-two .tarot-mini{width:72px;aspect-ratio:2/3;border-radius:8px;overflow:hidden}
 .sq-two .tarot-mini .tfc{padding:var(--s2);position:relative;inset:auto;width:100%;height:100%;transform:none;box-shadow:inset 0 0 0 3px #f6dcd2,inset 0 0 0 4px var(--gold)}
 .sq-two .tarot-mini .tfc .no{font-size:12px;line-height:12px}
@@ -944,6 +946,19 @@ details a,.src a{color:var(--blue)}
     <div class="card sq-tip"><p class="lab">Что за стиль</p><p id="cmpDesign"></p></div>
     <div class="card sq-tip"><p class="lab">Что взять в работу</p><p id="cmpTip"></p></div>
     <button class="btn ghost" type="button" data-gclose>Закрыть</button>
+  </div>
+</div>
+<div class="gsh" id="shrSheet" hidden>
+  <button class="gsh-bg" type="button" data-gclose aria-label="Закрыть"></button>
+  <div class="gsh-p" role="dialog" aria-modal="true" aria-labelledby="shrTitle">
+    <button class="gsh-h" type="button" data-gclose aria-label="Закрыть"><i></i></button>
+    <div class="gsh-t cmp-t"><p class="lab px">story.</p><h2 class="h2" id="shrTitle">Твоя карта для сторис</h2></div>
+    <img class="shr-img" id="shrImg" alt="">
+    <div class="lnks">
+      <button class="btn primary" id="shrTg" type="button" hidden>Выложить в сторис Telegram</button>
+      <button class="btn ghost" id="shrSave" type="button">Сохранить для Instagram</button>
+      <button class="btn ghost" type="button" data-gclose>Закрыть</button>
+    </div>
   </div>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
@@ -1579,7 +1594,7 @@ var GLYPH={
  jp:'<path d="M20 62Q20 28 52 24Q82 26 80 54Q78 78 50 80" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><path d="M20 90H80" stroke="currentColor" stroke-width="1.5"/>'
 };
 /* картинки готовых карт: когда они появятся, кладём в CARD_ART ключ → адрес; пока везде заглушка */
-var CARD_ART={};
+var CARD_ART={br:'/gallery/card-br.webp',sw:'/gallery/card-sw.webp',rf:'/gallery/card-rf.webp',ad:'/gallery/card-ad.webp',mm:'/gallery/card-mm.webp',nw:'/gallery/card-nw.webp',bh:'/gallery/card-bh.webp',jp:'/gallery/card-jp.webp'};
 /* галерея примеров на экране результата. Данные лежат в bot/app/gallery/data.json (формат в bot/app/gallery/README.md),
    картинки рядом, отдаются с /gallery/<имя>.webp|jpg. Пока для стиля нет ни одной работы, блок скрыт. */
 var GAL=null,galReq=0;
@@ -1664,7 +1679,7 @@ $$('.gsh-p').forEach(function(p){var y0=null;
 });
 function faceHTML(k){
   var s=STY[k];
-  if(CARD_ART[k])return '<div class="tfc"><img class="art" src="'+CARD_ART[k]+'" alt="Карта «'+s.card+'»"></div>';
+  if(CARD_ART[k])return '<div class="tfc ha"><img class="art" src="'+CARD_ART[k]+'" alt="Карта «'+s.card+'»"></div>';
   return '<div class="tfc" role="img" aria-label="Карта «'+s.card+'»"><span class="no">'+s.no+'</span><span class="gl"><svg viewBox="0 0 100 100" aria-hidden="true">'+GLYPH[k]+'</svg></span><span class="nm">'+s.card+'</span></div>';
 }
 function backHTML(){return '<div class="tbk"><svg viewBox="0 0 100 100" aria-hidden="true">'+GLYPH.ad+'</svg><span class="px">dsu.</span></div>'}
@@ -1764,7 +1779,35 @@ $('#sqFlip').addEventListener('click',function(){
 });
 $('#sqGo').addEventListener('click',sqBegin);
 $('#sqMine').addEventListener('click',function(){var v=styleSaved();if(v){Q.main=v.m;Q.comp=v.c;sqShow(v.m,v.c)}});
-$('#sqShare').addEventListener('click',function(){toast('В боте здесь сохранится картинка 1080×1920 для сторис')});
+/* сторис: картинка 1080×1920 лежит в bot/app/gallery/story-<ключ стиля>.jpg; пока файла нет, показываем подсказку */
+var shrKey=null;
+function shrTg(){try{return window.Telegram&&window.Telegram.WebApp||null}catch(e){return null}}
+function shrOpen(k){
+  var u='/gallery/story-'+k+'.jpg';
+  fetch(u,{method:'HEAD'}).then(function(r){
+    if(!r.ok)throw 0;
+    shrKey=k;
+    var im=$('#shrImg');im.src=u;im.alt='Картинка для сторис: '+STY[k].st;
+    var w=shrTg();$('#shrTg').hidden=!(w&&w.initData&&typeof w.shareToStory==='function');
+    galLast=$('#sqShare');
+    $('#shrSheet').hidden=false;document.body.style.overflow='hidden';haptic();
+    $('#shrSheet .gsh-p').scrollTop=0;
+    setTimeout(function(){var c=$('#shrSheet .gsh-h');if(c)c.focus()},0);
+  }).catch(function(){toast('Картинка для сторис ещё готовится. Загляни позже')});
+}
+$('#sqShare').addEventListener('click',function(){if(Q.main)shrOpen(Q.main)});
+$('#shrTg').addEventListener('click',function(){
+  var w=shrTg();if(!w||!shrKey)return;
+  try{w.shareToStory(location.origin+'/gallery/story-'+shrKey+'.jpg',{text:'Какой ты стиль в дизайне? Пройди тест: https://t.me/di_sign_university_bot'});galClose()}catch(e){toast('Не получилось открыть сторис. Попробуй сохранить картинку')}
+});
+$('#shrSave').addEventListener('click',function(){
+  var w=shrTg(),abs=location.origin+'/gallery/story-'+shrKey+'.jpg';
+  try{
+    if(w&&w.initData&&typeof w.downloadFile==='function')w.downloadFile({url:abs,file_name:'dsu-'+shrKey+'.jpg'});
+    else if(w&&w.initData&&w.openLink)w.openLink(abs);
+    else window.open(abs,'_blank','noopener');
+  }catch(e){toast('Не получилось сохранить. Открой картинку и зажми её пальцем')}
+});
 $('#sqAgain').addEventListener('click',sqBegin);
 $('#sqHome').addEventListener('click',function(){go('home')});
 $('#g-style').addEventListener('click',function(){startStyle()});

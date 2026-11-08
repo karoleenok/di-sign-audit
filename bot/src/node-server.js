@@ -194,7 +194,9 @@ const server = http.createServer(async (req, res) => {
     { const ga = /^\/gallery\/([a-z0-9-]{1,40})\.(webp|jpg)$/.exec(url.pathname);
       if (ga) {
         let buf; try { buf = fs.readFileSync(new URL('../app/gallery/' + ga[1] + '.' + ga[2], import.meta.url)); } catch { return send(404, 'not found', 'text/plain; charset=utf-8'); }
-        res.writeHead(200, { 'content-type': ga[2] === 'webp' ? 'image/webp' : 'image/jpeg', 'cache-control': 'public, max-age=86400', 'content-length': buf.length });
+        // картинки для сторис Телеграм умеет предлагать скачать (downloadFile): нужны эти заголовки; для <img> они ничего не меняют
+        const st = ga[1].startsWith('story-') ? { 'content-disposition': `attachment; filename="dsu-${ga[1].slice(6)}.${ga[2]}"`, 'access-control-allow-origin': 'https://web.telegram.org' } : {};
+        res.writeHead(200, { 'content-type': ga[2] === 'webp' ? 'image/webp' : 'image/jpeg', 'cache-control': 'public, max-age=86400', 'content-length': buf.length, ...st });
         return res.end(buf);
       } }
     // шрифты упражнения со своего сервера (только файлы из bot/app/fonts), кэш на год
