@@ -10,6 +10,7 @@ import { checkInitData as __checkInit } from './panel-api.js';
 import { isAdmin as __isAdmin } from './admin.js';
 import { loadCfg as __loadCfg, saveCfgAndMenu as __saveCfg, viewFor as __viewFor, appTrack as __appTrack } from './appcfg.js';
 import __GATE from './workshop-gate.js';
+import { loadGallery as __galLoad, saveGallery as __galSave, applyOp as __galOp, parseImage as __galImg } from './gallery.js';
 import net from 'node:net';
 import dns from 'node:dns';
 // На этом сервере node 22 при «автоподборе IPv4/IPv6» зависал на 10 секунд при подключении к Cloudflare-мосту
@@ -185,18 +186,46 @@ const server = http.createServer(async (req, res) => {
       const f = new URL('../docs/' + url.pathname.slice(1) + '.html', import.meta.url);
       return send(200, fs.readFileSync(f, 'utf8'), 'text/html; charset=utf-8', { 'cache-control': 'public, max-age=300' });
     }
-    // список работ галереи: bot/app/gallery/data.json (нет файла или он сломан — отдаём пустой список, блок в аппке скрыт)
+    // список работ галереи: правит админ в аппке (таблица settings); пока там пусто — берём bot/app/gallery/data.json
+    const galDir = path.join(path.dirname(file), 'gallery');
+    const galSeed = () => { try { return JSON.parse(fs.readFileSync(new URL('../app/gallery/data.json', import.meta.url), 'utf8')); } catch { return {}; } };
     if (url.pathname === '/gallery/data.json') {
-      let txt = '{}'; try { const t = fs.readFileSync(new URL('../app/gallery/data.json', import.meta.url), 'utf8'); JSON.parse(t); txt = t; } catch {}
-      return send(200, txt, 'application/json; charset=utf-8', { 'cache-control': 'public, max-age=300' });
+      const d = await __galLoad(ctxFor(), galSeed());
+      return send(200, JSON.stringify(d), 'application/json; charset=utf-8', { 'cache-control': 'no-cache' });
     }
-    // картинки галереи на экране результата: только файлы из bot/app/gallery, имя строго a-z0-9-, кэш на сутки
+    // изменить список: только админ по подписи Telegram. Картинку приносит аппка (уже сжатая JPEG, base64)
+    if (url.pathname === '/api/app/gallery' && req.method === 'POST') {
+      const J = (code, o) => send(code, JSON.stringify(o), 'application/json; charset=utf-8', { 'cache-control': 'no-store' });
+      const __u = await __checkInit(String(req.headers['x-init-data'] || ''), env.BOT_TOKEN, Math.floor(Date.now() / 1000));
+      if (!__u) return J(401, { error: 'Открой аппку из бота' });
+      const __c = ctxFor();
+      if (!(await __isAdmin(__c, __u.id))) return J(403, { error: 'Только для админов' });
+      let body = ''; let big = false;
+      await new Promise((ok) => { req.on('data', (c) => { body += c; if (body.length > 1024 * 1024) { big = true; req.destroy(); } }); req.on('end', ok); req.on('close', ok); req.on('error', ok); });
+      if (big) return J(413, { error: 'Слишком большой запрос' });
+      let input; try { input = JSON.parse(body || '{}'); } catch { return J(400, { error: 'Не получилось прочитать данные' }); }
+      let name = null, saved = null;
+      if (input.op === 'add' && input.img) {
+        const im = __galImg(input.img);
+        if (im.error) return J(400, { error: im.error });
+        name = 'g-' + crypto.randomBytes(8).toString('hex') + '.' + im.ext;
+        saved = { dir: galDir, name, buf: im.buf };
+      }
+      const cur = await __galLoad(__c, galSeed());
+      const r = __galOp(cur, input, name);
+      if (r.error) return J(400, { error: r.error });
+      if (saved) { fs.mkdirSync(saved.dir, { recursive: true }); fs.writeFileSync(path.join(saved.dir, saved.name), saved.buf); }
+      await __galSave(__c, r.data);
+      if (r.drop && /^g-[a-f0-9]{16}\.(jpg|webp)$/.test(r.drop)) fs.rmSync(path.join(galDir, r.drop), { force: true }); // стираем только загруженные через аппку
+      return J(200, { ok: true, data: r.data });
+    }
+    // картинки галереи: сначала загруженные админом (папка gallery рядом с базой), потом bot/app/gallery. Имя строго a-z0-9-
     { const ga = /^\/gallery\/([a-z0-9-]{1,40})\.(webp|jpg)$/.exec(url.pathname);
       if (ga) {
-        let buf; try { buf = fs.readFileSync(new URL('../app/gallery/' + ga[1] + '.' + ga[2], import.meta.url)); } catch { return send(404, 'not found', 'text/plain; charset=utf-8'); }
+        let buf; try { buf = fs.readFileSync(path.join(galDir, ga[1] + '.' + ga[2])); } catch { try { buf = fs.readFileSync(new URL('../app/gallery/' + ga[1] + '.' + ga[2], import.meta.url)); } catch { return send(404, 'not found', 'text/plain; charset=utf-8'); } }
         // картинки для сторис Телеграм умеет предлагать скачать (downloadFile): нужны эти заголовки; для <img> они ничего не меняют
         const st = ga[1].startsWith('story-') ? { 'content-disposition': `attachment; filename="dsu-${ga[1].slice(6)}.${ga[2]}"`, 'access-control-allow-origin': 'https://web.telegram.org' } : {};
-        res.writeHead(200, { 'content-type': ga[2] === 'webp' ? 'image/webp' : 'image/jpeg', 'cache-control': 'public, max-age=86400', 'content-length': buf.length, ...st });
+        res.writeHead(200, { 'content-type': ga[2] === 'webp' ? 'image/webp' : 'image/jpeg', 'cache-control': 'public, max-age=86400', 'content-length': buf.length, 'x-content-type-options': 'nosniff', ...st });
         return res.end(buf);
       } }
     // шрифты упражнения со своего сервера (только файлы из bot/app/fonts), кэш на год

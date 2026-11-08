@@ -553,6 +553,21 @@ details a,.src a{color:var(--blue)}
 .gsh-p .gal-img img{object-fit:contain}
 .gsh-t{display:flex;flex-direction:column;gap:var(--s1);padding-inline:var(--s1)}
 @keyframes gshUp{from{transform:translateY(24px);opacity:0}to{transform:none;opacity:1}}
+/* админка примеров */
+.adm-dt select{min-height:44px;width:100%;border:1px solid rgba(44,13,2,.32);border-radius:var(--r-m);background:var(--cream);padding:0 var(--s3);font:400 16px/24px var(--f-text);color:var(--text)}
+.adm-dt input[type=file]{padding:var(--s2) var(--s3);height:auto;font:400 14px/20px var(--f-text)}
+.adm-dt input[type=file]::file-selector-button{margin-right:var(--s3);min-height:36px;padding:0 var(--s4);border:0;border-radius:999px;background:var(--ink);color:var(--cream);font:500 14px/1 var(--f-text);cursor:pointer}
+.gad-row{display:grid;grid-template-columns:56px minmax(0,1fr);gap:var(--s3);align-items:center}
+.gad-th{width:56px;aspect-ratio:4/5;border-radius:var(--r-s);overflow:hidden;display:block;background:var(--pb)}
+.gad-th img{width:100%;height:100%;object-fit:cover;display:block}
+.gad-row b{display:block;font:500 16px/22px var(--f-text);overflow-wrap:anywhere}
+.gad-row .small{overflow-wrap:anywhere}
+.gad-act{display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s3)}
+.gad-act button{min-height:44px;min-width:44px;padding:0 var(--s4);border-radius:999px;border:1px solid rgba(44,13,2,.32);background:transparent;font:500 14px/1 var(--f-text);color:var(--text);cursor:pointer}
+.gad-act button.dng{border-color:var(--pink)}
+.gad-act button:disabled{opacity:.4}
+.gad-pv{display:block;width:96px;aspect-ratio:4/5;border-radius:var(--r-m);overflow:hidden}
+.gad-pv img{width:100%;height:100%;object-fit:cover;display:block}
 @media (prefers-reduced-motion:reduce){.tarot{transition:none}.gsh-p{animation:none}.gal-c{transition:none}}
 @media (max-height:640px){.tarot{width:min(60vw,200px)}}
 </style>
@@ -656,7 +671,7 @@ details a,.src a{color:var(--blue)}
   </div>
   <div class="card" id="admCard" hidden style="display:flex;flex-direction:column;gap:12px">
     <p class="small">Ты админ: здесь выбираешь, когда открыть или закрыть игры.</p>
-    <button class="btn ghost sm" id="openAdm" type="button" style="align-self:flex-start">Расписание открытия</button>
+    <div style="display:flex;flex-wrap:wrap;gap:var(--s2)"><button class="btn ghost sm" id="openAdm" type="button">Расписание открытия</button><button class="btn ghost sm" id="openGad" type="button">Примеры работ</button></div>
   </div>
   <div class="card" style="display:flex;flex-direction:column;gap:12px">
     <p class="small" id="swNote">Только в прототипе: в боте этой кнопки нет, трек выбирается один раз.</p>
@@ -694,6 +709,33 @@ details a,.src a{color:var(--blue)}
   <div id="admList" class="adm-list"></div>
   <div class="status" id="admMsg" role="status" hidden></div>
   <div class="dock"><button class="btn primary" id="admSave" type="button">Сохранить</button></div>
+</section>
+
+<section id="s-gadm" class="screen" data-screen="gadm" hidden>
+  <header class="top">
+    <button class="back" type="button" data-back aria-label="Назад"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4L6 10l6 6"/></svg></button>
+    <span class="lab px">admin.</span><span></span>
+  </header>
+  <div class="hero">
+    <h1 class="h1">Примеры работ</h1>
+    <p class="small">Появятся на экране результата. Автор обязателен, картинка по желанию: без неё покажется цветная плитка.</p>
+  </div>
+  <div class="card adm-dt">
+    <label>Стиль<select id="gadStyle"></select></label>
+  </div>
+  <div id="gadList" class="adm-list"></div>
+  <form class="card adm-dt" id="gadForm" novalidate>
+    <p class="adm-t" id="gadFormT">Новая работа</p>
+    <label id="gadFileL">Картинка (JPG, PNG, WebP)<input type="file" id="gadFile" accept="image/jpeg,image/png,image/webp"></label>
+    <span class="gad-pv" id="gadPv" hidden></span>
+    <label>Автор *<input id="gadA" type="text" maxlength="80" autocomplete="off" placeholder="Имя автора или студии"></label>
+    <label>Название<input id="gadT" type="text" maxlength="120" autocomplete="off"></label>
+    <label>Год<input id="gadY" type="text" maxlength="20" inputmode="numeric" autocomplete="off"></label>
+    <label>Ссылка на источник (https)<input id="gadU" type="url" maxlength="500" autocomplete="off" placeholder="https://"></label>
+    <div class="status" id="gadMsg" role="status" hidden></div>
+    <button class="btn primary" id="gadSave" type="submit">Добавить работу</button>
+    <button class="btn ghost" id="gadCancel" type="button" hidden>Отмена</button>
+  </form>
 </section>
 
 <!-- заставка этапа -->
@@ -1030,7 +1072,7 @@ var TRACKS={
   mini:{name:'Мини-курс',sub:'Короткие игры и задания к постерам. Играй прямо в чате.',hello:'Здесь будут появляться полезные штучки по курсу: игры, постеры и задания.',mods:['poster','style'],soon:['Рандомайзер ТЗ от таксёнышей','Промпты для мокапов','Шаблон кейсов']},
   mat:{name:'Месяц материалов',sub:'Материалы по неделям: шрифты, Figma, портфолио, клиенты.',hello:'Здесь будут появляться полезные материалы: шрифты, Figma, портфолио, клиенты.',mods:['fonts'],soon:['Мокап-пак, сделанный ИИ','Калькулятор цены и КП','Красные флаги в брифе']}
 };
-var TRACK=null,SCREENS=['pick','audit','hello','home','intro','poster','result','sintro','squiz','sres','fonts','locked','adm'],cur='pick',want=null;
+var TRACK=null,SCREENS=['pick','audit','hello','home','intro','poster','result','sintro','squiz','sres','fonts','locked','adm','gadm'],cur='pick',want=null;
 function show(n){if(typeof galClose==='function')galClose();SCREENS.forEach(function(s){$('#s-'+s).hidden=s!==n});window.scrollTo(0,0)}
 function parse(h){var m=/^(mini|mat)(?:-(poster|fonts|style))?$/.exec(h||'');return m?{t:m[1],m:m[2]||null}:null}
 function hashOf(n){
@@ -1202,6 +1244,78 @@ $('#admSave').addEventListener('click',function(){
      APPCFG=x.j.view;paintLocks();adOpen();adMsg(true,'Расписание сохранено. Новые правила уже действуют.');
    }).catch(function(){adMsg(false,'Нет связи. Попробуй ещё раз.')})
    .then(function(){btn.disabled=false;btn.textContent='Сохранить'});
+});
+
+/* ---------- админка: примеры работ ---------- */
+var GA={style:'br',edit:-1,img:null,busy:false,del:-1};
+function gadTg(){var w=shrTg();return w&&w.initData?w:null}
+function gadMsg(ok,t){var m=$('#gadMsg');m.hidden=!t;if(!t)return;m.className='status '+(ok?'good':'warn');m.textContent='';var b=document.createElement('b');b.textContent=ok?'Готово. ':'Не вышло. ';m.appendChild(b);m.appendChild(document.createTextNode(t))}
+function gadReset(){GA.edit=-1;GA.img=null;['#gadA','#gadT','#gadY','#gadU'].forEach(function(q){$(q).value=''});$('#gadFile').value='';$('#gadPv').hidden=true;$('#gadPv').textContent='';
+  $('#gadFormT').textContent='Новая работа';$('#gadSave').textContent='Добавить работу';$('#gadCancel').hidden=true;$('#gadFileL').hidden=false}
+function gadList(){
+  var box=$('#gadList');box.textContent='';var list=(GAL&&GAL[GA.style])||[];
+  if(!list.length){var c=galEl('div','card');c.appendChild(galEl('p','small','Пока пусто. В этом стиле блок на экране результата скрыт.'));box.appendChild(c);return}
+  list.forEach(function(it,i){
+    var c=galEl('div','card'),row=galEl('div','gad-row'),th=galEl('span','gad-th');
+    if(it.i&&/^[a-z0-9-]{1,40}\.(webp|jpg)$/.test(it.i)){var im=new Image();im.alt='';im.src='/gallery/'+it.i;th.appendChild(im)}
+    var tx=galEl('div');tx.appendChild(galEl('b','',it.a));
+    var meta=[it.t,it.y].filter(Boolean).join(', ');if(meta)tx.appendChild(galEl('span','small',meta));
+    row.appendChild(th);row.appendChild(tx);c.appendChild(row);
+    var act=galEl('div','gad-act');
+    function bt(txt,fn,cls,label,dis){var b=galEl('button',cls||'',txt);b.type='button';if(label)b.setAttribute('aria-label',label);if(dis)b.disabled=true;b.addEventListener('click',fn);act.appendChild(b)}
+    bt('↑',function(){gadOp({op:'move',idx:i,dir:-1})},'','Выше',i===0);
+    bt('↓',function(){gadOp({op:'move',idx:i,dir:1})},'','Ниже',i===list.length-1);
+    bt('Править',function(){gadEdit(i)});
+    bt(GA.del===i?'Точно убрать?':'Убрать',function(){if(GA.del!==i){GA.del=i;gadList();return}GA.del=-1;gadOp({op:'del',idx:i})},'dng');
+    c.appendChild(act);box.appendChild(c);
+  });
+}
+function gadEdit(i){var it=((GAL&&GAL[GA.style])||[])[i];if(!it)return;GA.edit=i;GA.img=null;
+  $('#gadA').value=it.a||'';$('#gadT').value=it.t||'';$('#gadY').value=it.y||'';$('#gadU').value=it.u||'';
+  $('#gadFormT').textContent='Правка работы';$('#gadSave').textContent='Сохранить';$('#gadCancel').hidden=false;$('#gadFileL').hidden=true;$('#gadPv').hidden=true;gadMsg(true,'');
+  try{$('#gadForm').scrollIntoView({behavior:'smooth',block:'start'})}catch(e){}$('#gadA').focus()}
+function gadOp(body){
+  var w=gadTg();if(!w){gadMsg(false,'Открой аппку из бота, тогда сохранение заработает.');return Promise.resolve(false)}
+  if(GA.busy)return Promise.resolve(false);GA.busy=true;body.style=GA.style;
+  return fetch('/api/app/gallery',{method:'POST',headers:{'x-init-data':w.initData,'content-type':'application/json'},body:JSON.stringify(body)})
+    .then(function(r){return r.json().catch(function(){return {}}).then(function(j){return {ok:r.ok,j:j}})})
+    .then(function(x){GA.busy=false;if(!x.ok){gadMsg(false,x.j&&x.j.error?x.j.error:'Попробуй ещё раз.');return false}GAL=x.j.data||{};GA.del=-1;gadList();return true})
+    .catch(function(){GA.busy=false;gadMsg(false,'Нет связи. Попробуй ещё раз.');return false});
+}
+function gadOpen(){
+  var sel=$('#gadStyle');if(!sel.options.length)Object.keys(STY).forEach(function(k){var o=document.createElement('option');o.value=k;o.textContent=STY[k].st;sel.appendChild(o)});
+  sel.value=GA.style;gadReset();gadMsg(true,'');go('gadm');
+  fetch('/gallery/data.json',{cache:'no-store'}).then(function(r){return r.ok?r.json():{}}).catch(function(){return {}}).then(function(d){GAL=(d&&typeof d==='object'&&!Array.isArray(d))?d:{};gadList()});
+}
+/* картинку сжимаем в самой аппке: длинная сторона до 1000 px, JPEG. Заодно уходят метаданные снимка */
+function gadShrink(file){return new Promise(function(ok,no){
+  var u=URL.createObjectURL(file),im=new Image();
+  im.onload=function(){URL.revokeObjectURL(u);
+    var k=Math.min(1,1000/Math.max(im.naturalWidth,im.naturalHeight)),w=Math.max(1,Math.round(im.naturalWidth*k)),h=Math.max(1,Math.round(im.naturalHeight*k));
+    var c=document.createElement('canvas');c.width=w;c.height=h;var x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,w,h);x.drawImage(im,0,0,w,h);
+    var q=.86;(function step(){c.toBlob(function(b){if(!b){no();return}if(b.size>450*1024&&q>.5){q-=.12;step();return}
+      var fr=new FileReader();fr.onload=function(){ok({url:fr.result,pv:c.toDataURL('image/jpeg',.6)})};fr.onerror=no;fr.readAsDataURL(b)},'image/jpeg',q)})();
+  };
+  im.onerror=function(){URL.revokeObjectURL(u);no()};im.src=u;
+})}
+$('#openGad').addEventListener('click',gadOpen);
+$('#gadStyle').addEventListener('change',function(){GA.style=this.value;GA.del=-1;gadReset();gadMsg(true,'');gadList()});
+$('#gadCancel').addEventListener('click',function(){gadReset();gadMsg(true,'')});
+$('#gadFile').addEventListener('change',function(){
+  var f=this.files&&this.files[0];GA.img=null;$('#gadPv').hidden=true;if(!f)return;
+  if(!/^image\/(jpeg|png|webp)$/.test(f.type)){gadMsg(false,'Нужна картинка JPG, PNG или WebP.');this.value='';return}
+  gadMsg(true,'');gadShrink(f).then(function(r){GA.img=r.url;var pv=$('#gadPv');pv.textContent='';var im=new Image();im.alt='Предпросмотр';im.src=r.pv;pv.appendChild(im);pv.hidden=false})
+    .catch(function(){gadMsg(false,'Не получилось открыть картинку. Попробуй другую.')});
+});
+$('#gadForm').addEventListener('submit',function(e){
+  e.preventDefault();
+  var a=$('#gadA').value.trim(),u=$('#gadU').value.trim();
+  if(!a){gadMsg(false,'Впиши автора.');$('#gadA').focus();return}
+  if(u&&!/^(https:\/\/|(www\.)?t\.me\/)\S+$/i.test(u)){gadMsg(false,'Ссылка должна начинаться с https://');$('#gadU').focus();return}
+  var body={op:GA.edit>=0?'edit':'add',a:a,t:$('#gadT').value.trim(),y:$('#gadY').value.trim(),u:u};
+  if(GA.edit>=0)body.idx=GA.edit;else if(GA.img)body.img=GA.img;
+  var btn=$('#gadSave'),was=btn.textContent;btn.disabled=true;btn.textContent='Сохраняю…';
+  gadOp(body).then(function(ok){btn.disabled=false;btn.textContent=was;if(ok){var edit=GA.edit>=0;gadReset();gadMsg(true,edit?'Изменения сохранены.':'Работа добавлена. Она уже в тесте.')}});
 });
 
 /* ---------- цвет и контраст (формула WCAG) ---------- */
