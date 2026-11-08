@@ -514,7 +514,35 @@ details a,.src a{color:var(--blue)}
 .sq-two .tarot-mini .tfc .nm{display:none}
 .sq-two .tarot-mini img.art{width:100%;height:100%;object-fit:cover}
 .sq-tip{display:flex;flex-direction:column;gap:var(--s2)}
-@media (prefers-reduced-motion:reduce){.tarot{transition:none}}
+/* галерея примеров на экране результата: лента с карточками и шторка с подписью автора */
+.gal{display:flex;flex-direction:column;gap:var(--s4)}
+.gal-h{display:flex;flex-direction:column;align-items:center;text-align:center;gap:var(--s2)}
+.gal-rail{display:flex;gap:var(--s3);overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x mandatory;scrollbar-width:none;margin-inline:calc(var(--s4)*-1);padding-inline:var(--s4);scroll-padding-inline:var(--s4)}
+.gal-rail::-webkit-scrollbar{display:none}
+.gal-c{flex:0 0 clamp(220px,64vw,252px);min-width:0;scroll-snap-align:start;display:flex;flex-direction:column;gap:var(--s2);padding:0;border:0;background:transparent;text-align:left;color:inherit;cursor:pointer;transition:transform .12s ease}
+.gal-c:active{transform:scale(.98)}
+.gal-img{display:block;position:relative;aspect-ratio:4/5;border-radius:var(--r-l);border:1px solid var(--line);overflow:hidden;background:var(--pb)}
+.gal-img.t1{background:var(--pp)}
+.gal-img.t2{background:var(--pv)}
+.gal-img.t3{background:var(--sky2)}
+.gal-img img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.gal-n{position:absolute;left:var(--s4);top:var(--s3);font:400 40px/40px var(--f-pix);color:var(--ink)}
+.gal-go{position:absolute;right:var(--s3);top:var(--s3);width:32px;height:32px;border-radius:50%;background:var(--ink);color:var(--cream);display:grid;place-items:center}
+.gal-y{position:absolute;left:var(--s4);bottom:var(--s4);height:30px;padding:0 var(--s3);border-radius:999px;background:var(--cream);font:500 14px/1 var(--f-text);color:var(--ink);display:flex;align-items:center;transform:rotate(-1.4deg)}
+.gal-c:nth-child(even) .gal-y{transform:rotate(1.2deg)}
+.gal-cap{display:flex;flex-direction:column;padding-inline:var(--s1)}
+.gal-cap b{font:500 16px/22px var(--f-text);letter-spacing:-.01em;overflow-wrap:anywhere}
+.gal-cap .small{overflow-wrap:anywhere}
+.gsh{position:fixed;inset:0;z-index:60;display:flex;align-items:flex-end;justify-content:center}
+.gsh-bg{position:absolute;inset:0;border:0;padding:0;background:rgba(44,13,2,.45);cursor:pointer}
+.gsh-p{position:relative;width:100%;max-width:440px;max-height:92dvh;overflow-y:auto;overscroll-behavior:contain;background:var(--cream);border:1px solid var(--line);border-bottom:0;border-radius:var(--r-xl) var(--r-xl) 0 0;padding:0 var(--s4) max(var(--s5),env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:var(--s4);animation:gshUp .22s ease-out}
+.gsh-h{flex:none;height:28px;margin-inline:calc(var(--s4)*-1);border:0;background:transparent;cursor:pointer;display:grid;place-items:center}
+.gsh-h i{width:40px;height:4px;border-radius:2px;background:rgba(44,13,2,.2)}
+.gsh-p .gal-img{aspect-ratio:auto;height:min(44dvh,320px);flex:none}
+.gsh-p .gal-img img{object-fit:contain}
+.gsh-t{display:flex;flex-direction:column;gap:var(--s1);padding-inline:var(--s1)}
+@keyframes gshUp{from{transform:translateY(24px);opacity:0}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){.tarot{transition:none}.gsh-p{animation:none}.gal-c{transition:none}}
 @media (max-height:640px){.tarot{width:min(60vw,200px)}}
 </style>
 
@@ -785,6 +813,10 @@ details a,.src a{color:var(--blue)}
       </div>
       <div class="card sq-tip"><p class="lab">Что за стиль</p><p id="sqDesign"></p></div>
       <div class="card sq-tip"><p class="lab">Что взять в работу</p><p id="sqTip"></p></div>
+      <section class="gal" id="sqGal" hidden aria-labelledby="galTitle">
+        <div class="gal-h"><p class="lab px">examples.</p><h2 class="h2" id="galTitle"></h2><p class="small">Листай вбок. Тап по работе — автор и ссылка.</p></div>
+        <div class="gal-rail" id="galRail"></div>
+      </section>
       <div class="card sq-two" id="sqComp"></div>
       <div class="card sq-tip" id="sqNext"></div>
     </div>
@@ -874,6 +906,18 @@ details a,.src a{color:var(--blue)}
 </section>
 </main>
 
+<div class="gsh" id="galSheet" hidden>
+  <button class="gsh-bg" type="button" data-gclose aria-label="Закрыть"></button>
+  <div class="gsh-p" role="dialog" aria-modal="true" aria-labelledby="galAuthor">
+    <button class="gsh-h" type="button" data-gclose aria-label="Закрыть работу"><i></i></button>
+    <span class="gal-img" id="galBig"></span>
+    <div class="gsh-t"><h3 class="h3" id="galAuthor"></h3><p class="small" id="galMeta"></p></div>
+    <div class="lnks">
+      <a class="btn primary" id="galLink" target="_blank" rel="noopener noreferrer" hidden>Открыть источник ↗</a>
+      <button class="btn ghost" type="button" data-gclose>Закрыть</button>
+    </div>
+  </div>
+</div>
 <div id="toast" role="status" aria-live="polite"></div>
 <canvas id="fx" aria-hidden="true"></canvas>
 
@@ -944,7 +988,7 @@ var TRACKS={
   mat:{name:'Месяц материалов',sub:'Материалы по неделям: шрифты, Figma, портфолио, клиенты.',hello:'Здесь будут появляться полезные материалы: шрифты, Figma, портфолио, клиенты.',mods:['fonts'],soon:['Мокап-пак, сделанный ИИ','Калькулятор цены и КП','Красные флаги в брифе']}
 };
 var TRACK=null,SCREENS=['pick','audit','hello','home','intro','poster','result','sintro','squiz','sres','fonts','locked','adm'],cur='pick',want=null;
-function show(n){SCREENS.forEach(function(s){$('#s-'+s).hidden=s!==n});window.scrollTo(0,0)}
+function show(n){if(typeof galClose==='function')galClose();SCREENS.forEach(function(s){$('#s-'+s).hidden=s!==n});window.scrollTo(0,0)}
 function parse(h){var m=/^(mini|mat)(?:-(poster|fonts|style))?$/.exec(h||'');return m?{t:m[1],m:m[2]||null}:null}
 function hashOf(n){
   if(n==='pick'||!TRACK)return 'pick';
@@ -1508,6 +1552,62 @@ var GLYPH={
 };
 /* картинки готовых карт: когда они появятся, кладём в CARD_ART ключ → адрес; пока везде заглушка */
 var CARD_ART={};
+/* галерея примеров на экране результата. Формат: GAL.br=[{a:'Автор',t:'Название',y:'2023',u:'https://ссылка-на-первоисточник',i:'br-01.webp'}].
+   Нужен только a (автор). Картинки лежат в bot/app/gallery и отдаются с /gallery/<имя>.webp|jpg. Пока для стиля нет ни одной работы, блок скрыт. */
+var GAL={};
+var galLast=null,galItems=[];
+function galEl(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
+function galOk(u){return /^https:\/\/[^\s"'<>]+$/i.test(u||'')}
+function galImg(box,it,i){
+  box.className='gal-img t'+(i%4);box.textContent='';
+  if(/^[a-z0-9-]{1,40}\.(webp|jpg)$/.test(it.i||'')){
+    var im=document.createElement('img');im.src='/gallery/'+it.i;im.alt=it.a+(it.t?', '+it.t:'');im.loading='lazy';im.decoding='async';
+    im.addEventListener('error',function(){im.remove()});box.appendChild(im);
+  }
+  box.appendChild(galEl('span','gal-n',(i<9?'0':'')+(i+1)));
+  if(it.y)box.appendChild(galEl('span','gal-y',it.y));
+}
+function galPaint(k){
+  galItems=(GAL[k]||[]).filter(function(x){return x&&x.a});
+  var sec=$('#sqGal'),rail=$('#galRail');rail.textContent='';
+  sec.hidden=!galItems.length;if(!galItems.length)return;
+  $('#galTitle').textContent=STY[k].st+' в реальных работах';
+  galItems.forEach(function(it,i){
+    var b=galEl('button','gal-c');b.type='button';b.setAttribute('aria-label',it.a+', открыть работу');
+    var box=galEl('span');galImg(box,it,i);
+    var go=galEl('span','gal-go');go.setAttribute('aria-hidden','true');
+    go.innerHTML='<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 11.5L11.5 4.5M5.5 4.5H11.5V10.5"/></svg>';
+    box.appendChild(go);
+    var cap=galEl('span','gal-cap');cap.appendChild(galEl('b','',it.a));if(it.t)cap.appendChild(galEl('span','small',it.t));
+    b.appendChild(box);b.appendChild(cap);
+    b.addEventListener('click',function(){galOpen(i,b)});
+    rail.appendChild(b);
+  });
+  rail.scrollLeft=0;
+}
+function galOpen(i,from){
+  var it=galItems[i];if(!it)return;galLast=from||null;
+  galImg($('#galBig'),it,i);
+  $('#galAuthor').textContent=it.a;$('#galMeta').textContent=it.t||'';$('#galMeta').hidden=!it.t;
+  var a=$('#galLink');a.hidden=!galOk(it.u);if(!a.hidden)a.href=it.u;
+  $('#galSheet').hidden=false;document.body.style.overflow='hidden';haptic();
+  setTimeout(function(){var c=$('#galSheet .gsh-h');if(c)c.focus()},0);
+}
+function galClose(){
+  var sh=$('#galSheet');if(!sh||sh.hidden)return;
+  sh.hidden=true;document.body.style.overflow='';
+  if(galLast&&galLast.isConnected&&galLast.focus)galLast.focus();
+}
+$$('#galSheet [data-gclose]').forEach(function(b){b.addEventListener('click',galClose)});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')galClose()});
+$('#galLink').addEventListener('click',function(e){
+  var u=this.getAttribute('href');
+  try{var w=window.Telegram&&window.Telegram.WebApp;if(w&&w.initData&&w.openLink){e.preventDefault();w.openLink(u)}}catch(_){}
+});
+(function(){var p=$('#galSheet .gsh-p'),y0=null;
+  p.addEventListener('touchstart',function(e){y0=p.scrollTop<=0?e.touches[0].clientY:null},{passive:true});
+  p.addEventListener('touchend',function(e){if(y0!==null&&e.changedTouches[0].clientY-y0>70)galClose();y0=null},{passive:true});
+})();
 function faceHTML(k){
   var s=STY[k];
   if(CARD_ART[k])return '<div class="tfc"><img class="art" src="'+CARD_ART[k]+'" alt="Карта «'+s.card+'»"></div>';
@@ -1592,6 +1692,7 @@ function sqShow(m,c){
   $('#sqLead').textContent=s.lead;
   $('#sqDesign').textContent=s.design;
   $('#sqTip').textContent=s.tip;
+  galPaint(m);
   $('#sqComp').innerHTML='<div class="tarot-mini">'+faceHTML(c)+'</div><div><p class="lab">Вторая карта</p><p class="h3" style="margin-top:4px">'+cs.card+' · '+cs.st+'</p><p class="small" style="margin-top:4px">Она рядом с главной. К ней тебя тянет, когда основная устаёт.</p></div>';
   var done=mem().poster;
   $('#sqNext').innerHTML=done?'<p class="lab">Дальше</p><p>Свой стиль ты уже знаешь. Теперь можно сыграть ещё раз и вытянуть другую карту.</p>':'<p class="lab">Дальше</p><p>Стиль видно по взгляду. А принципы, на которых всё держится, проверим в игре «Принципы дизайна».</p><button class="btn ghost sm" id="sqToPoster" type="button" style="align-self:flex-start;margin-top:8px">Сыграть в принципы</button>';

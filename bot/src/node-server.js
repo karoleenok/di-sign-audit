@@ -185,6 +185,13 @@ const server = http.createServer(async (req, res) => {
       const f = new URL('../docs/' + url.pathname.slice(1) + '.html', import.meta.url);
       return send(200, fs.readFileSync(f, 'utf8'), 'text/html; charset=utf-8', { 'cache-control': 'public, max-age=300' });
     }
+    // картинки галереи на экране результата: только файлы из bot/app/gallery, имя строго a-z0-9-, кэш на сутки
+    { const ga = /^\/gallery\/([a-z0-9-]{1,40})\.(webp|jpg)$/.exec(url.pathname);
+      if (ga) {
+        let buf; try { buf = fs.readFileSync(new URL('../app/gallery/' + ga[1] + '.' + ga[2], import.meta.url)); } catch { return send(404, 'not found', 'text/plain; charset=utf-8'); }
+        res.writeHead(200, { 'content-type': ga[2] === 'webp' ? 'image/webp' : 'image/jpeg', 'cache-control': 'public, max-age=86400', 'content-length': buf.length });
+        return res.end(buf);
+      } }
     // шрифты упражнения со своего сервера (только файлы из bot/app/fonts), кэш на год
     { const fo = /^\/fonts\/([a-z0-9-]{3,40})\.woff$/.exec(url.pathname);
       if (fo) {
