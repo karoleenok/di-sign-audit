@@ -1580,9 +1580,18 @@ var GLYPH={
 };
 /* картинки готовых карт: когда они появятся, кладём в CARD_ART ключ → адрес; пока везде заглушка */
 var CARD_ART={};
-/* галерея примеров на экране результата. Формат: GAL.br=[{a:'Автор',t:'Название',y:'2023',u:'https://ссылка-на-первоисточник',i:'br-01.webp'}].
-   Нужен только a (автор). Картинки лежат в bot/app/gallery и отдаются с /gallery/<имя>.webp|jpg. Пока для стиля нет ни одной работы, блок скрыт. */
-var GAL={};
+/* галерея примеров на экране результата. Данные лежат в bot/app/gallery/data.json (формат в bot/app/gallery/README.md),
+   картинки рядом, отдаются с /gallery/<имя>.webp|jpg. Пока для стиля нет ни одной работы, блок скрыт. */
+var GAL=null,galReq=0;
+function galEnsure(k){
+  var n=++galReq;
+  if(GAL){galPaint(k);return}
+  $('#sqGal').hidden=true;
+  fetch('/gallery/data.json').then(function(r){return r.ok?r.json():{}}).catch(function(){return {}}).then(function(d){
+    GAL=(d&&typeof d==='object'&&!Array.isArray(d))?d:{};
+    if(n===galReq)galPaint(k);
+  });
+}
 var galLast=null,galItems=[];
 function galEl(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
 function galOk(u){return /^https:\/\/[^\s"'<>]+$/i.test(u||'')}
@@ -1737,7 +1746,7 @@ function sqShow(m,c){
   $('#sqLead').textContent=s.lead;
   $('#sqDesign').textContent=s.design;
   $('#sqTip').textContent=s.tip;
-  galPaint(m);
+  galEnsure(m);
   $('#sqComp').innerHTML='<div class="tarot-mini">'+faceHTML(c)+'</div><div><p class="lab">Вторая карта</p><p class="h3" style="margin-top:4px">'+cs.card+' · '+cs.st+'</p><p class="small" style="margin-top:4px">Она рядом с главной. К ней тебя тянет, когда основная устаёт.</p><p class="cmp-go">Посмотреть карту →</p></div>';
   cmpKey=c;
   var done=mem().poster;

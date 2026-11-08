@@ -185,6 +185,11 @@ const server = http.createServer(async (req, res) => {
       const f = new URL('../docs/' + url.pathname.slice(1) + '.html', import.meta.url);
       return send(200, fs.readFileSync(f, 'utf8'), 'text/html; charset=utf-8', { 'cache-control': 'public, max-age=300' });
     }
+    // список работ галереи: bot/app/gallery/data.json (нет файла или он сломан — отдаём пустой список, блок в аппке скрыт)
+    if (url.pathname === '/gallery/data.json') {
+      let txt = '{}'; try { const t = fs.readFileSync(new URL('../app/gallery/data.json', import.meta.url), 'utf8'); JSON.parse(t); txt = t; } catch {}
+      return send(200, txt, 'application/json; charset=utf-8', { 'cache-control': 'public, max-age=300' });
+    }
     // картинки галереи на экране результата: только файлы из bot/app/gallery, имя строго a-z0-9-, кэш на сутки
     { const ga = /^\/gallery\/([a-z0-9-]{1,40})\.(webp|jpg)$/.exec(url.pathname);
       if (ga) {
