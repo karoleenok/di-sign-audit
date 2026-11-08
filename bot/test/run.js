@@ -1224,6 +1224,8 @@ step('технические аккаунты: разбор ника/ID, доб�
   let cfg = await loadCfg(C());
   assert.equal(cfg.public, false, 'по умолчанию аппка только для админов');
   assert.equal(isOpen(cfg.items.poster, NOW), true, 'по умолчанию игры открыты');
+  assert.equal(isOpen(cfg.items.style, NOW), false, 'новая игра «стиль» по умолчанию закрыта');
+  assert.equal(isOpen(normalize({ items: { poster: { mode: 'open' } } }).items.style, NOW), false, 'в старом конфиге без неё она тоже закрыта');
   const T = NOW;
   let r = await saveCfg(C(), { public: true, items: { poster: { mode: 'sched', from: T + 3600, until: null }, fonts: { mode: 'closed' }, hack: { mode: 'open' } } });
   assert.ok(r.cfg, 'сохранилось');

@@ -2,7 +2,7 @@
 // Режимы игры: open — открыта, closed — закрыта, sched — открыть с даты (from) и закрыть к дате (until, можно не задавать).
 export const ITEMS = [
   { id: 'poster', name: 'Принципы дизайна', track: 'Мини-курс' },
-  { id: 'style', name: 'Какой ты стиль в дизайне', track: 'Мини-курс' },
+  { id: 'style', name: 'Какой ты стиль в дизайне', track: 'Мини-курс', off: true }, // новая игра стартует закрытой: видят только админы, пока не откроют в расписании
   { id: 'fonts', name: 'Шрифтовая примерочная', track: 'Месяц материалов' },
 ];
 const KEY = 'app_cfg';
@@ -47,7 +47,7 @@ export function normalizeSoon(v, fallback) {
 
 export function defaults() {
   const items = {};
-  for (const it of ITEMS) items[it.id] = { mode: 'open', from: null, until: null };
+  for (const it of ITEMS) items[it.id] = { mode: it.off ? 'closed' : 'open', from: null, until: null };
   return { public: false, items, soon: clone(SOON_DEFAULT), links: { mini: [], mat: [] } };
 }
 

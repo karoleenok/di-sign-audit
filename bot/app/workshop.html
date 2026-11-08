@@ -927,6 +927,8 @@ function paintLocks(){
     el.hidden=!lk;
     if(lk)el.textContent=lockText(id)+(APPCFG&&APPCFG.admin?' · тебе можно':'');
   });
+  /* закрытую без даты игру «стиль» обычные люди не видят вовсе, админам она открыта */
+  var gs=gi('style');$('#g-style').hidden=!!(gs&&!gs.open&&!gs.from&&!(APPCFG&&APPCFG.admin));
   $('#admCard').hidden=!(APPCFG&&APPCFG.admin);
 }
 function lockOther(){$('#lkPx').textContent='locked.';$('#lkH').innerHTML='Это <span class="mk-hl">другой трек</span>';$('#lkP').textContent='Тебе открыт только выбранный трек. Материал из соседнего здесь не откроется.'}
