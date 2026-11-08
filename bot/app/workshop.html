@@ -508,6 +508,15 @@ details a,.src a{color:var(--blue)}
 .sq-res .big{display:flex;flex-direction:column;gap:var(--s2);text-align:center;align-items:center}
 .sq-res .lead{font-size:17px;line-height:26px;text-wrap:pretty}
 .sq-two{display:grid;grid-template-columns:72px minmax(0,1fr);gap:var(--s4);align-items:center}
+.cmp{position:relative}
+.cmp-hit{position:absolute;inset:0;width:100%;border:0;padding:0;border-radius:var(--r-xl);background:transparent;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.cmp-hit:active{background:rgba(44,13,2,.04)}
+.cmp-go{margin-top:var(--s1);font:500 14px/20px var(--f-text);color:var(--blue)}
+.cmp-card{flex:none;width:min(52vw,200px);aspect-ratio:2/3;margin-inline:auto;border-radius:14px;overflow:hidden}
+.cmp-card .tfc{position:relative;inset:auto;width:100%;height:100%;transform:none}
+.cmp-card img.art{width:100%;height:100%;object-fit:cover}
+.cmp-t{text-align:center;align-items:center;gap:var(--s2)}
+.cmp-t .lead{font-size:17px;line-height:26px;text-wrap:pretty}
 .sq-two .tarot-mini{width:72px;aspect-ratio:2/3;border-radius:8px;overflow:hidden}
 .sq-two .tarot-mini .tfc{padding:var(--s2);position:relative;inset:auto;width:100%;height:100%;transform:none;box-shadow:inset 0 0 0 3px #f6dcd2,inset 0 0 0 4px var(--gold)}
 .sq-two .tarot-mini .tfc .no{font-size:12px;line-height:12px}
@@ -817,7 +826,11 @@ details a,.src a{color:var(--blue)}
         <div class="gal-h"><p class="lab px">examples.</p><h2 class="h2" id="galTitle"></h2><p class="small">Листай вбок. Тап по работе — автор и ссылка.</p></div>
         <div class="gal-rail" id="galRail"></div>
       </section>
-      <div class="card sq-two" id="sqComp"></div>
+      <div class="cmp">
+        <div class="card sq-two" id="sqComp"></div>
+        <button class="cmp-hit" id="cmpHit" type="button" aria-haspopup="dialog" aria-label="Посмотреть вторую карту"></button>
+      </div>
+
       <div class="card sq-tip" id="sqNext"></div>
     </div>
   </div>
@@ -916,6 +929,21 @@ details a,.src a{color:var(--blue)}
       <a class="btn primary" id="galLink" target="_blank" rel="noopener noreferrer" hidden>Открыть источник ↗</a>
       <button class="btn ghost" type="button" data-gclose>Закрыть</button>
     </div>
+  </div>
+</div>
+<div class="gsh" id="cmpSheet" hidden>
+  <button class="gsh-bg" type="button" data-gclose aria-label="Закрыть"></button>
+  <div class="gsh-p" role="dialog" aria-modal="true" aria-labelledby="cmpTitle">
+    <button class="gsh-h" type="button" data-gclose aria-label="Закрыть карту"><i></i></button>
+    <div class="cmp-card" id="cmpFace"></div>
+    <div class="gsh-t cmp-t">
+      <p class="lab" id="cmpKick"></p>
+      <h2 class="h2" id="cmpTitle"></h2>
+      <p class="lead" id="cmpLead"></p>
+    </div>
+    <div class="card sq-tip"><p class="lab">Что за стиль</p><p id="cmpDesign"></p></div>
+    <div class="card sq-tip"><p class="lab">Что взять в работу</p><p id="cmpTip"></p></div>
+    <button class="btn ghost" type="button" data-gclose>Закрыть</button>
   </div>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
@@ -1594,20 +1622,37 @@ function galOpen(i,from){
   setTimeout(function(){var c=$('#galSheet .gsh-h');if(c)c.focus()},0);
 }
 function galClose(){
-  var sh=$('#galSheet');if(!sh||sh.hidden)return;
-  sh.hidden=true;document.body.style.overflow='';
+  var any=false;
+  $$('.gsh').forEach(function(sh){if(!sh.hidden){sh.hidden=true;any=true}});
+  if(!any)return;
+  document.body.style.overflow='';
   if(galLast&&galLast.isConnected&&galLast.focus)galLast.focus();
 }
-$$('#galSheet [data-gclose]').forEach(function(b){b.addEventListener('click',galClose)});
+/* вторая карта: тап по карточке открывает шторку с описанием этого стиля */
+var cmpKey=null;
+function cmpOpen(k,from){
+  var s=STY[k];if(!s)return;galLast=from||null;
+  $('#cmpFace').innerHTML=faceHTML(k);
+  $('#cmpKick').textContent='Вторая карта: '+s.no+' '+s.card;
+  $('#cmpTitle').textContent=s.st;
+  $('#cmpLead').textContent=s.lead;
+  $('#cmpDesign').textContent=s.design;
+  $('#cmpTip').textContent=s.tip;
+  $('#cmpSheet').hidden=false;document.body.style.overflow='hidden';haptic();
+  $('#cmpSheet .gsh-p').scrollTop=0;
+  setTimeout(function(){var c=$('#cmpSheet .gsh-h');if(c)c.focus()},0);
+}
+$('#cmpHit').addEventListener('click',function(){cmpOpen(cmpKey,this)});
+$$('.gsh [data-gclose]').forEach(function(b){b.addEventListener('click',galClose)});
 document.addEventListener('keydown',function(e){if(e.key==='Escape')galClose()});
 $('#galLink').addEventListener('click',function(e){
   var u=this.getAttribute('href');
   try{var w=window.Telegram&&window.Telegram.WebApp;if(w&&w.initData&&w.openLink){e.preventDefault();w.openLink(u)}}catch(_){}
 });
-(function(){var p=$('#galSheet .gsh-p'),y0=null;
+$$('.gsh-p').forEach(function(p){var y0=null;
   p.addEventListener('touchstart',function(e){y0=p.scrollTop<=0?e.touches[0].clientY:null},{passive:true});
   p.addEventListener('touchend',function(e){if(y0!==null&&e.changedTouches[0].clientY-y0>70)galClose();y0=null},{passive:true});
-})();
+});
 function faceHTML(k){
   var s=STY[k];
   if(CARD_ART[k])return '<div class="tfc"><img class="art" src="'+CARD_ART[k]+'" alt="Карта «'+s.card+'»"></div>';
@@ -1693,7 +1738,8 @@ function sqShow(m,c){
   $('#sqDesign').textContent=s.design;
   $('#sqTip').textContent=s.tip;
   galPaint(m);
-  $('#sqComp').innerHTML='<div class="tarot-mini">'+faceHTML(c)+'</div><div><p class="lab">Вторая карта</p><p class="h3" style="margin-top:4px">'+cs.card+' · '+cs.st+'</p><p class="small" style="margin-top:4px">Она рядом с главной. К ней тебя тянет, когда основная устаёт.</p></div>';
+  $('#sqComp').innerHTML='<div class="tarot-mini">'+faceHTML(c)+'</div><div><p class="lab">Вторая карта</p><p class="h3" style="margin-top:4px">'+cs.card+' · '+cs.st+'</p><p class="small" style="margin-top:4px">Она рядом с главной. К ней тебя тянет, когда основная устаёт.</p><p class="cmp-go">Посмотреть карту →</p></div>';
+  cmpKey=c;
   var done=mem().poster;
   $('#sqNext').innerHTML=done?'<p class="lab">Дальше</p><p>Свой стиль ты уже знаешь. Теперь можно сыграть ещё раз и вытянуть другую карту.</p>':'<p class="lab">Дальше</p><p>Стиль видно по взгляду. А принципы, на которых всё держится, проверим в игре «Принципы дизайна».</p><button class="btn ghost sm" id="sqToPoster" type="button" style="align-self:flex-start;margin-top:8px">Сыграть в принципы</button>';
   var tp=$('#sqToPoster');if(tp)tp.addEventListener('click',startPoster);
