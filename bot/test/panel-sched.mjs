@@ -223,6 +223,20 @@ for (const w of [390, 320]) {
   assert.notDeepEqual(plAfter, plBefore, 'порядок сообщений в плеере поменялся');
   assert.deepEqual([...plAfter].sort(), [...plBefore].sort(), 'те же сообщения, другой порядок');
   assert.ok(await noscroll(page), 'нет горизонтального скролла в «Пройти путь»');
+  // тап по картинке в сообщении открывает крупный предпросмотр, не выбирая сообщение
+  await page.evaluate(() => { const m = document.querySelector('#stBox .m'); const d = document.createElement('div'); d.className = 'strip'; d.innerHTML = '<img alt="" data-fid="t1"><img alt="" data-fid="t2">'; m.prepend(d); d.querySelector('img').click(); });
+  await page.waitForSelector('.imgbox');
+  assert.match(await page.textContent('.imgbox .lbc'), /1 из 2|Загружаю|не загрузилась/, 'подпись предпросмотра');
+  await page.click('.imgbox .lbn'); await page.waitForTimeout(150);
+  assert.match(await page.textContent('.imgbox .lbc'), /2 из 2|Загружаю|не загрузилась/, 'листается дальше');
+  const lbBox = await page.locator('.imgbox .lbx').boundingBox();
+  assert.ok(lbBox.width >= 44 && lbBox.height >= 44, 'крестик не меньше 44 px');
+  assert.ok(await noscroll(page), 'предпросмотр без горизонтального скролла');
+  await page.keyboard.press('Escape'); await page.waitForTimeout(100);
+  assert.equal(await page.locator('.imgbox').count(), 0, 'Esc закрывает предпросмотр');
+  await page.evaluate(() => { const m = document.querySelector('#stBox .m'); const d = document.createElement('div'); d.className = 'strip'; d.innerHTML = '<img alt="" data-fid="t2">'; m.prepend(d); d.querySelector('img').click(); }); await page.waitForSelector('.imgbox');
+  await page.mouse.click(5, 300); await page.waitForTimeout(100);
+  assert.equal(await page.locator('.imgbox').count(), 0, 'тап по фону закрывает предпросмотр');
   // у постов ленты в плеере есть ручка «⋮⋮» для перетаскивания
   assert.ok(await page.locator('#stBox .sth').count() > 0, 'у постов ленты есть ручка перетаскивания');
   // перестановка слотами через /permute: день и время остаются на местах, меняются сами посты, один откат
