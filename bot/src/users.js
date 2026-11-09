@@ -100,6 +100,7 @@ async function logConsent(ctx, id, kind, granted) {
 export async function onStart(ctx, msg, payload) {
   const from = msg.from;
   const st = parseStart(payload);
+  let repeatAudit = false;
   // двойное нажатие «Старт» (или повтор от Telegram) за пару секунд — не дублируем
   const k = 'start:' + from.id + ':' + (payload || '');
   const fresh = await ctx.db.run(
@@ -113,6 +114,18 @@ export async function onStart(ctx, msg, payload) {
       [from.id, from.first_name || null, from.username || null, st.levelRaw, normLevel(st.levelRaw), st.zone, st.source, st.track, st.track ? ctx.now : null, ctx.now],
     );
   } else {
+    // Аудит проходят один раз: если человек уже в ленте, новая ссылка из теста ничего не перезаписывает
+    // (трек, зона, уровень и отсчёт дней остаются), а бот показывает плашку «аудит уже пройден».
+    if (u.zone && u.track && u.joined_at && (st.zone || st.levelRaw || st.track)) {
+      if (u.status === 'active') repeatAudit = true;
+      await logEvent(ctx, from.id, 'audit_repeat', { link: payload || null, track: u.track });
+      st.zone = null; st.levelRaw = null; st.track = null;
+    }
+    // человек уже в ленте и впервые проходит аудит с другим треком: новый трек начинается с первого дня
+    if (u.joined_at && st.track && u.track && st.track !== u.track) {
+      await ctx.db.run(`DELETE FROM deliveries WHERE tg_id = ? AND post_id IN (SELECT id FROM posts WHERE kind = 'drip' AND track = ?)`, [from.id, st.track]);
+      await logEvent(ctx, from.id, 'track_switch', { from: u.track, to: st.track, by: 'audit' });
+    }
     // пришёл ещё раз: обновим результат теста, если он новый
     if (st.zone || st.levelRaw || st.track) {
       await ctx.db.run(`UPDATE users SET zone = COALESCE(?, zone), level_raw = COALESCE(?, level_raw), level = COALESCE(?, level), source = COALESCE(?, source), track = COALESCE(?, track), track_at = CASE WHEN ? IS NOT NULL AND COALESCE(track, '') != ? THEN ? ELSE track_at END, username = COALESCE(?, username) WHERE tg_id = ?`,
@@ -127,6 +140,14 @@ export async function onStart(ctx, msg, payload) {
   await cleanAll(ctx, from.id);
   u = await getUser(ctx, from.id);
   const name = from.first_name || 'друг';
+  if (repeatAudit && u) {
+    // плашка «аудит уже пройден»: оставить или сменить трек (смена — через предупреждение)
+    await pauseFor(ctx, from.id, 'auditAgain');
+    await tech(ctx, from.id, say(ctx, from.id, 'auditAgain', { имя: name, трек: await trackName(ctx, u.track) }, {
+      reply_markup: kb([[{ text: await btn(ctx, 'auditKeepBtn'), callback_data: 'ag:keep' }], [{ text: await btn(ctx, 'auditAskBtn'), callback_data: 'ag:ask' }]]),
+    }));
+    return;
+  }
   // зона из теста запоминается только как отметка «прошёл тест» — посты и подарки по зонам не делим
   await pauseFor(ctx, from.id, st.zone ? 'helloTest' : 'hello');
   if (st.zone && u && u.track) {
@@ -136,6 +157,29 @@ export async function onStart(ctx, msg, payload) {
   }
   await tech(ctx, from.id, say(ctx, from.id, st.zone ? 'helloTest' : 'hello', { имя: name, трек: '' }, await openKb(ctx, u && u.track)));
   return nextStep(ctx, u);
+}
+
+// журнал действий человека (повторный аудит, смена трека): чтобы путь было видно целиком
+async function logEvent(ctx, id, kind, data) {
+  await ctx.db.run(`INSERT INTO user_events (tg_id, kind, data, at) VALUES (?, ?, ?, ?)`, [id, kind, JSON.stringify(data || {}), ctx.now]).catch(() => {});
+}
+
+// предупреждение перед сменой трека: показываем, что и как изменится
+async function askSwitch(ctx, u) {
+  const to = u.track === 'course' ? 'mat' : 'course';
+  await pauseFor(ctx, u.tg_id, 'auditSwitchWarn');
+  return tech(ctx, u.tg_id, say(ctx, u.tg_id, 'auditSwitchWarn', { новый: await trackName(ctx, to), старый: await trackName(ctx, u.track) }, {
+    reply_markup: kb([[{ text: await btn(ctx, 'auditSwitchGo'), callback_data: 'ag:go:' + to }], [{ text: await btn(ctx, 'auditSwitchBack'), callback_data: 'ag:back' }]]),
+  }));
+}
+
+// смена трека: старый перестаёт приходить, новый начинается с первого дня.
+// Заново уходят только посты ленты нового трека; посты «на дату» и подарки не повторяются
+async function switchTrack(ctx, u, to) {
+  await ctx.db.run(`UPDATE users SET track = ?, track_at = ? WHERE tg_id = ?`, [to, ctx.now, u.tg_id]);
+  await ctx.db.run(`DELETE FROM deliveries WHERE tg_id = ? AND post_id IN (SELECT id FROM posts WHERE kind = 'drip' AND track = ?)`, [u.tg_id, to]);
+  await logEvent(ctx, u.tg_id, 'track_switch', { from: u.track, to });
+  await userMenu(ctx, u.tg_id);
 }
 
 // как назвать выбранный трек в тексте («бесплатный мини-курс», «полезные материалы»): берём подписи кнопок выбора
@@ -655,12 +699,23 @@ export async function onUserCallback(ctx, cq) {
     await done();
     return nextStep(ctx, await getUser(ctx, id));
   }
+  if (d === 'ag:keep' || d === 'ag:back') { await answer('auditKept'); await done(); return; }
+  if (d === 'ag:ask') { await answer(); await done(); return askSwitch(ctx, u); }
+  if (d.startsWith('ag:go:')) {
+    await answer();
+    await done();
+    const to = d.slice(6) === 'course' ? 'course' : 'mat';
+    if (u.track === to) return; // повторное нажатие: уже переключено
+    await switchTrack(ctx, u, to);
+    return say(ctx, id, 'auditSwitched', { трек: await trackName(ctx, to) });
+  }
   if (d === 'tc:ok' || d === 'tc:chg') {
     await answer();
     let tr = u.track;
     if (d === 'tc:chg' && tr) {
       tr = tr === 'course' ? 'mat' : 'course';
-      await ctx.db.run(`UPDATE users SET track = ?, track_at = ? WHERE tg_id = ?`, [tr, ctx.now, id]);
+      if (u.joined_at) await switchTrack(ctx, u, tr); // уже в ленте: новый трек начинается с первого дня
+      else await ctx.db.run(`UPDATE users SET track = ?, track_at = ? WHERE tg_id = ?`, [tr, ctx.now, id]);
       await userMenu(ctx, id);
     }
     await done(d === 'tc:chg' ? 'trackChanged' : null, { трек: await trackName(ctx, tr || 'course') });
