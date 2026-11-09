@@ -259,6 +259,7 @@ textarea{min-height:120px;resize:vertical;line-height:1.45}
 .inbox{background:#f4c9f6;border-radius:16px;padding:10px 12px;margin:10px 0;display:flex;flex-direction:column;gap:8px}.inbox-h{display:flex;align-items:center}.inbox-r{background:var(--card);border-radius:12px;padding:8px 10px;display:flex;align-items:center;gap:8px}.inbox-r>span{flex:1}
 .btn.sm{padding:8px 12px;font-size:13px;min-height:40px;width:auto;flex:none}
 .pstage{margin-top:10px}
+.stg{display:flex;align-items:flex-start;gap:4px}.stcol{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px}.sth{flex:none;width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;color:var(--soft);font-size:18px;letter-spacing:-3px;cursor:grab;touch-action:none;user-select:none}.stg.ghost{opacity:.35}.stg.chosen .m{box-shadow:0 10px 30px rgba(44,13,2,.18)}
 .m.stsel{outline:2px solid var(--ink);outline-offset:2px}.stbar{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:10px 12px;margin:4px 0 8px}.stbar .r{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.stbar .chip{min-height:44px}
 .jump{display:block;margin:2px 0 8px auto;border:0;background:transparent;color:var(--soft);font-size:12px;cursor:pointer;min-height:32px}
 .flash{animation:flash 2.2s ease}@keyframes flash{0%,40%{box-shadow:0 0 0 3px #7B3F6E}100%{box-shadow:0 0 0 0 transparent}}
@@ -1306,11 +1307,12 @@ function studentHtml(o) {
     if (x.day != null && x.day !== last) { last = x.day; h += '<div class="stdiv">' + (x.day ? 'прошло дней: ' + x.day : 'сразу') + '</div>'; }
     if (x.when && x.when !== 'Сразу' && /выключен/.test(x.when)) h += '<div class="stdiv">' + esc(x.when.replace(/^.*?· /, '')) + '</div>';
     if (x.note) h += '<div class="stdiv">' + x.note + '</div>';
-    if (o.sel) h += '<div style="display:contents" data-stsel="' + i + '">';
+    const dr = !!o.sel && !!x.post && x.day != null;
+    if (o.sel) h += '<div class="stg" data-stsel="' + i + '"' + (dr ? ' data-pid="' + x.post.id + '"' : '') + '><div class="stcol">';
     if (x.post) { const p = x.post; h += '<div class="' + cls + '">' + mediaStrip(p, 3) + plainT(p.text) + '</div>' + (p.buttons.length ? '<div class="kbd">' + p.buttons.map((b) => '<span>' + esc(b) + '</span>').join('') + '</div>' : ''); }
     else h += '<div class="' + cls + '">' + plainT(x.text) + '</div>' + (x.btns.length ? '<div class="kbd">' + x.btns.map((b) => '<span>' + esc(b) + '</span>').join('') + '</div>' : '');
     h += '<button type="button" class="jump" data-jump="' + (x.post ? 'p:' + x.post.id : 'k:' + x.key) + '">↪ где это в пути</button>';
-    if (o.sel) { h += '</div>'; if (isSel) h += stBar(seq, i, dseq); }
+    if (o.sel) { h += '</div>' + (dr ? '<div class="sth" role="img" aria-label="перетащить, чтобы поменять порядок">⋮⋮</div>' : '') + '</div>'; if (isSel) h += stBar(seq, i, dseq); }
   }
   if (!n) h += '<div class="stdiv">нажми «Пройти путь» или «Дальше», чтобы увидеть первое сообщение</div>';
   if (n >= seq.length && (S.runSrc || 'site') !== 'audit') h += '<div class="stdiv">Дальше человек проходит аудит и возвращается в бота. Переключи вверху на «после аудита»: там программа и уроки.</div>';
@@ -2497,10 +2499,26 @@ function scStudent() {
   view.stSel = null;
   let tm = null;
   const stop = () => { if (tm) { clearInterval(tm); tm = null; } };
+  // перетащили: посты ленты меняются слотами (день и время остаются на местах), один откат
+  const applyOrder = async (order) => {
+    const seq = studentSeq(), n = Math.min(view.step || 0, seq.length);
+    const from = seq.slice(0, n).filter((x) => x.post && x.day != null).map((x) => x.post.id);
+    if (from.length !== order.length || from.every((id, i) => id === order[i])) { paint(false); return; }
+    const keepSrc = S.runSrc;
+    try { await api('/permute', { from, order }); haptic('medium'); S = await api('/state'); S.runSrc = keepSrc; render(); toast('Порядок сохранён. Отменить можно стрелкой ↶ вверху'); }
+    catch (err) { toast(err.message); }
+    paint(false);
+  };
   const paint = (scroll) => {
     const box = $('stBox'); if (!box) { stop(); return; }
     box.innerHTML = studentHtml({ sel: true });
     setTimeout(() => loadThumbs(box), 0);
+    const ph = box.querySelector('.phone');
+    if (ph && window.Sortable) Sortable.create(ph, {
+      handle: '.sth', draggable: '.stg[data-pid]', animation: 160, ghostClass: 'ghost', chosenClass: 'chosen', forceFallback: true, fallbackTolerance: 4, scroll: true, bubbleScroll: true,
+      onStart: () => stop(),
+      onEnd: () => applyOrder([...ph.querySelectorAll('.stg[data-pid]')].map((e) => +e.dataset.pid))
+    });
     if (scroll) { const nm = box.querySelector('.m.new'); if (nm && nm.scrollIntoView) nm.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
   };
   const play = () => {
@@ -2520,7 +2538,7 @@ function scStudent() {
       seg('data-rsrc', [['site', '🌱 просто зашёл в бота'], ['audit', '✅ после аудита']], src) + (src === 'audit' ? seg('data-ftrk', [['course', '🎓 мини-курс'], ['mat', '📚 материалы']], t) : '') +
       '<p class="small muted" style="margin:0 0 10px">' + (src === 'audit' ? 'Человек прошёл аудит и вернулся в бот: бот знает, что он выбрал. Дальше рассказ о программе и первый урок.' : 'Человек пришёл из соцсетей и аудит ещё не проходил: мини-курса и материалов у него нет. Он видит приветствие и выбирает: экскурсия, аудит или тарифы.') + '</p>' +
       '<div class="btns two" style="margin:0 0 10px"><button type="button" class="btn" id="stPlay">▶ Пройти путь</button><button type="button" class="btn ghost" id="stFull">Показать всё сразу</button></div>' +
-      '<p class="small muted" style="margin:0 0 8px">Нажми на сообщение: можно поменять порядок, выключить пост или открыть его.</p>' +
+      '<p class="small muted" style="margin:0 0 8px">Потяни за «⋮⋮», чтобы поменять порядок постов. Нажми на сообщение: стрелки, выключить пост или открыть его.</p>' +
       '<button type="button" class="chip" id="stAll" style="margin:0 0 10px">' + (view.stAll ? '✓ Показаны и выключенные посты' : 'Показать и выключенные посты') + '</button><div id="stBox">' + studentHtml({ sel: true }) + '</div>');
     $('stAll').onclick = () => { view.stAll = !view.stAll; view.step = 0; draw(); };
     $('stX').onclick = () => { stop(); closeSheet(); };
