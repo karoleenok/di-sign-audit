@@ -120,7 +120,7 @@ export async function onStart(ctx, msg, payload) {
     }
     if (u.status === 'stopped' || u.status === 'blocked') await ctx.db.run(`UPDATE users SET status = 'new' WHERE tg_id = ?`, [from.id]);
   }
-  await userMenu(ctx, from.id); // кнопка «Забрать материалы» у каждого, кто нажал «Старт» (если аппка включена для всех)
+  await userMenu(ctx, from.id); // кнопка «Бонусы» у каждого, кто нажал «Старт» (если аппка включена для всех)
   // убираем саму команду /start и старые служебные сообщения (прошлое приветствие, вопросы, предложение теста)
   await delMsg(ctx, from.id, msg.message_id);
   await setUState(ctx, from.id, null);

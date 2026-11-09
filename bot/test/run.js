@@ -1267,7 +1267,7 @@ step('расписание аппки: по умолчанию, открытие
   await saveCfg(C(), { public: true, items: {} });
   await userMenu(C(), 9001); await userMenu(C(), 9002);
   m = menu(n);
-  assert.ok(m.some((c) => c.body.chat_id === 9001 && c.body.menu_button.type === 'web_app' && c.body.menu_button.text === 'Забрать материалы'), 'аппка открыта: кнопка «Забрать материалы» есть');
+  assert.ok(m.some((c) => c.body.chat_id === 9001 && c.body.menu_button.type === 'web_app' && c.body.menu_button.text === 'Бонусы'), 'аппка открыта: кнопка «Бонусы» есть');
   assert.ok(m.some((c) => c.body.chat_id === 9002 && c.body.menu_button.type === 'web_app' && c.body.menu_button.text === 'Пройти аудит'), 'без выбранного трека кнопка «Пройти аудит»: аппка покажет аудит');
   assert.equal(appTrack('course'), 'mini'); assert.equal(appTrack('mat'), 'mat'); assert.equal(appTrack(null), null);
   // выбор трека в боте включает кнопку сразу
@@ -1292,7 +1292,7 @@ step('расписание аппки: по умолчанию, открытие
   assert.ok(!calls.slice(n1).some((c) => c.method === 'sendMessage' && JSON.stringify(c.body.reply_markup || {}).includes('Пройти аудит')), 'пока аппка закрыта, кнопки под приветствием нет');
   await D.run(`DELETE FROM users WHERE tg_id IN (9100, 9101)`);
 }
-step('«Старт»: «Забрать материалы» под приветствием и в меню');
+step('«Старт»: «Бонусы» под приветствием и в меню');
 step('кнопка «Игра»: админам всегда, людям при открытой аппке');
 
 {
