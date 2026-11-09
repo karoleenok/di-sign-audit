@@ -2116,6 +2116,7 @@ function renderSched() {
     '<button type="button" class="sc-chip' + (SEL ? ' on' : '') + '" id="scSel">' + (SEL ? 'Готово' : '☐ Выбрать') + '</button>' +
     '<button type="button" class="sc-chip' + (RE ? ' on' : '') + '" id="scRe">' + (RE ? 'Готово' : '↕ Порядок') + '</button></div>' : '') + scPlan() +
     '<div class="sc-flt">' + [['all', 'Все'], ['course', 'Мини-курс'], ['mat', 'Материалы']].map(([k, n]) => '<button type="button" data-sctrk="' + k + '" class="' + (T === k ? 'on' : '') + '">' + n + '</button>').join('') + '</div>' +
+    (T === 'all' ? '<p class="small muted" style="margin:0 0 12px">Выбери «Мини-курс» или «Материалы»: у дней появятся даты, части программы и пометки «нет поста».</p>' : '<p class="small muted" style="margin:0 0 12px">Даты в днях для первой волны. Остальным посты приходят по дням от входа.</p>') +
     (RE ? '<div class="note" style="margin:0 0 12px">Стрелки меняют пост местами с соседним: время остаётся на своих местах, меняются сами посты. Чтобы перенести в другой день, нажми «В день…».</div>' : '') +
     '<div class="sc-tl">' + mile('1', 'Человек нажал «Старт»', 'Бот здоровается и просит согласия.');
   h += '<div class="sc-it"><div class="sc-dot"><i></i></div><div class="sc-entry"><button type="button" class="h" id="scEntryT"><span><b style="font-size:17px">Вход в бота</b><br><span class="small muted">' + nSteps + ' сообщений, которые бот шлёт сам</span></span><span class="chip">' + (entryOpen ? 'Скрыть' : 'Показать') + '</span></button>' +
@@ -2124,13 +2125,33 @@ function renderSched() {
       '<button type="button" class="sc-chip" id="scEntryOld" style="margin-top:8px;min-height:44px">' + (view.scEntryOld ? 'Скрыть порядок и вставку постов' : 'Порядок шагов и вставка постов') + '</button>' + (view.scEntryOld ? entryBox() : '') + scaffoldHtml() + '</div>' : '') + '</div></div>';
   h += mile('2', 'Прошёл аудит и выбрал', 'Мини-курс или материалы. С этого момента идёт отсчёт времени.', true);
   const drip = S.posts.filter((p) => p.kind === 'drip' && keep(p)).sort((a, b) => offMin(a, ids) - offMin(b, ids) || a.pos - b.pos || a.id - b.id);
-  let last = null;
-  if (!drip.length) h += '<div class="sc-it"><div class="sc-dot"><i></i></div><p class="small muted" style="margin:0;padding-top:14px">В ленте пока нет постов. Нажми «＋ Пост».</p></div>';
-  drip.forEach((p, i) => {
-    const b = bucketDay(p, ids);
-    if (b !== last) { h += dia(scDay(b)); last = b; }
-    const prev = drip[i - 1], next = drip[i + 1];
-    h += dotCard(scCard(p, { re: RE, sel: SEL, dup: dupIds.has(p.id), picked: picked.includes(p.id), ind: p.mode === 'after', up: !!prev, dn: !!next }));
+  // дни ленты: у мини-курса и материалов к дню добавляем дату, часть программы и пометку «нет поста»
+  const PT = (T === 'course' || T === 'mat') ? PLAN[T] : null;
+  const lessonOf = {};
+  if (PT) PT.parts.forEach(([title, k, rws]) => rws.forEach(([ymd, name]) => { lessonOf[planDay(ymd, PT.start)] = { ymd, name, part: title }; }));
+  const wdOf = (ymd) => ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'][new Date(ymd + 'T12:00:00Z').getUTCDay()];
+  const pluralPosts = (n) => n + (n % 10 === 1 && n % 100 !== 11 ? ' пост' : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? ' поста' : ' постов');
+  const dayHead = (d, n) => {
+    const ls = lessonOf[d];
+    return scDay(d) + (ls ? ' · ' + wdOf(ls.ymd) + ', ' + ruDM(ls.ymd) : '') + (n > 1 ? ' · ' + pluralPosts(n) : '') +
+      (ls ? '<small style="display:block;text-transform:none;letter-spacing:0;font-weight:500;margin-top:2px">' + esc(ls.part) + ' · урок «' + esc(ls.name) + '»</small>' : '');
+  };
+  const byDay = {};
+  drip.forEach((p, i) => { const b = bucketDay(p, ids); (byDay[b] = byDay[b] || []).push([p, i]); });
+  const dayKeys = Array.from(new Set(Object.keys(byDay).map(Number).concat(Object.keys(lessonOf).map(Number)))).sort((a, b) => a - b);
+  if (!drip.length && !PT) h += '<div class="sc-it"><div class="sc-dot"><i></i></div><p class="small muted" style="margin:0;padding-top:14px">В ленте пока нет постов. Нажми «＋ Пост».</p></div>';
+  dayKeys.forEach((d) => {
+    const g = byDay[d] || [];
+    h += dia(dayHead(d, g.length));
+    if (!g.length) {
+      const ls = lessonOf[d];
+      h += dotCard('<div class="sc-card" role="button" tabindex="0" data-plday="' + d + '" data-pltr="' + T + '" data-plname="' + esc(ls.name) + '" style="border-style:dashed;background:transparent"><div class="sc-t">Поста на этот день нет</div><div class="sc-m">Урок есть в программе, а поста нет: в этот день человек ничего не получит. Нажми, чтобы добавить пост.</div></div>');
+      return;
+    }
+    g.forEach(([p, i]) => {
+      const prev = drip[i - 1], next = drip[i + 1];
+      h += dotCard(scCard(p, { re: RE, sel: SEL, dup: dupIds.has(p.id), picked: picked.includes(p.id), ind: p.mode === 'after', up: !!prev, dn: !!next }));
+    });
   });
   const dates = S.posts.filter((p) => p.kind === 'date' && keep(p)).sort((a, b) => (a.run_at || 9e12) - (b.run_at || 9e12));
   if (dates.length) { h += dia('В конкретные даты · аудит не нужен'); dates.forEach((p) => { h += dotCard(scCard(p, { dup: dupIds.has(p.id), sel: SEL, picked: picked.includes(p.id) })); }); }
@@ -2163,7 +2184,7 @@ function renderSched() {
   $('scLib').onclick = () => { haptic(); tab = 'lib'; render(); window.scrollTo(0, 0); };
   $('plT').onclick = () => { view.scPlan = view.scPlan === false; saveView(); renderSched(); };
   document.querySelectorAll('[data-plt]').forEach((b) => b.onclick = () => { view.scPlanT = b.dataset.plt; saveView(); renderSched(); });
-  document.querySelectorAll('[data-plday]').forEach((el) => el.onclick = () => planSlot(view.scPlanT === 'mat' ? 'mat' : 'course', +el.dataset.plday, el.dataset.plname));
+  document.querySelectorAll('[data-plday]').forEach((el) => el.onclick = () => planSlot(el.dataset.pltr || (view.scPlanT === 'mat' ? 'mat' : 'course'), +el.dataset.plday, el.dataset.plname));
   if ($('scRe')) $('scRe').onclick = () => { view.sReorder = !view.sReorder; saveView(); renderSched(); };
   document.querySelectorAll('[data-sctrk]').forEach((b) => b.onclick = () => { view.sTrack = b.dataset.sctrk; if (view.sTrack !== 'all') view.sReorder = false; saveView(); haptic(); renderSched(); });
   $('scEntryT').onclick = () => { view.scEntry = !entryOpen; saveView(); renderSched(); };

@@ -28,6 +28,15 @@ for (const w of [390, 320]) {
   assert.equal(await page.locator('.pl-r').count(), 11, 'мини-курс: 11 уроков в памятке');
   assert.match(await page.textContent('.pl'), /день 18/);
   assert.ok(await noscroll(page), 'нет горизонтального скролла с памяткой');
+  // в самой ленте у дней мини-курса есть дата и часть программы, а дни без поста помечены
+  await page.click('[data-sctrk="course"]'); await page.waitForSelector('.sc-day');
+  const tl = await page.textContent('.sc-tl');
+  assert.match(tl, /пт, 6 ноя/, 'у дня ленты видна дата');
+  assert.match(tl, /Часть 2 · уверенно сразу к делу/, 'у дня видна часть программы');
+  assert.ok(await page.locator('[data-plday][data-pltr="course"]').count() > 0, 'урок без поста показан в ленте');
+  assert.match(tl, /Поста на этот день нет/);
+  assert.ok(await noscroll(page), 'нет горизонтального скролла с датами в днях');
+  await page.click('[data-sctrk="all"]');
   if (w === 390) await page.screenshot({ path: OUT + '/sched-plan.png' });
   await page.click('[data-plt="mat"]'); await page.waitForSelector('.pl-r');
   assert.equal(await page.locator('.pl-r').count(), 9, 'материалы: 9 уроков');
