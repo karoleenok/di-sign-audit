@@ -112,6 +112,14 @@ img{display:block}
 .hello .hello-img img,.hello .hello-img.big img{position:absolute;inset:0;margin:auto;width:auto!important;height:auto!important;max-width:min(72vw,300px)!important;max-height:100%!important;object-fit:contain;aspect-ratio:auto;transform-origin:50% 90%;animation:floaty 4.2s ease-in-out infinite}
 @keyframes floaty{0%,100%{transform:translateY(0) rotate(-1.5deg)}50%{transform:translateY(-8px) rotate(1.5deg)}}
 @media (prefers-reduced-motion:reduce){.hello .hello-img img{animation:none}}
+
+.hello-card{flex:1 1 0;min-height:0;width:100%;container-type:size;display:flex;align-items:center;justify-content:center}
+.hc{position:relative;width:min(60vw,200px);width:min(72cqw,300px,64cqh);aspect-ratio:2/3;border-radius:var(--r-m);overflow:hidden;box-shadow:0 16px 28px -14px rgba(44,13,2,.45),0 2px 6px rgba(44,13,2,.12);animation:cardFloat 5s ease-in-out infinite;transform-origin:50% 60%}
+.hc img{display:block;width:100%;height:100%;object-fit:cover}
+.hc::after{content:"";position:absolute;inset:0;background:linear-gradient(105deg,transparent 38%,rgba(255,251,248,.32) 50%,transparent 62%);transform:translateX(-130%);animation:cardShine 5s ease-in-out infinite;pointer-events:none}
+@keyframes cardFloat{0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(-8px) rotate(1deg)}}
+@keyframes cardShine{0%,55%{transform:translateX(-130%)}85%,100%{transform:translateX(130%)}}
+@media (prefers-reduced-motion:reduce){.hc,.hc::after{animation:none}}
 @keyframes waddle{0%,100%{transform:translateX(-12px) rotate(-5deg)}25%{transform:translateX(0) rotate(0) translateY(-6px)}50%{transform:translateX(12px) rotate(5deg)}75%{transform:translateX(0) rotate(0) translateY(-6px)}}
 @media (max-height:720px){.hello .bell-ic{display:none}.hello .bell{padding:var(--s3) var(--s4)}}
 @media (max-height:620px){.hello .bell{display:none}}
@@ -534,6 +542,7 @@ details a,.src a{color:var(--blue)}
 .gal-rail::-webkit-scrollbar{display:none}
 .gal-c{flex:0 0 clamp(220px,64vw,252px);min-width:0;scroll-snap-align:start;display:flex;flex-direction:column;gap:var(--s2);padding:0;border:0;background:transparent;text-align:left;color:inherit;cursor:pointer;transition:transform .12s ease}
 .gal-c:active{transform:scale(.98)}
+.gal-h2{display:flex;flex-direction:column;gap:var(--s3)}
 .gal-img{display:block;position:relative;aspect-ratio:4/5;border-radius:var(--r-l);border:1px solid var(--line);overflow:hidden;background:var(--pb)}
 .gal-img.t1{background:var(--pp)}
 .gal-img.t2{background:var(--pv)}
@@ -546,6 +555,7 @@ details a,.src a{color:var(--blue)}
 .gal-cap{display:flex;flex-direction:column;padding-inline:var(--s1)}
 .gal-cap b{font:500 16px/22px var(--f-text);letter-spacing:-.01em;overflow-wrap:anywhere}
 .gal-cap .small{overflow-wrap:anywhere}
+#galSheet{z-index:61}
 .gsh{position:fixed;inset:0;z-index:60;display:flex;align-items:flex-end;justify-content:center}
 .gsh-bg{position:absolute;inset:0;border:0;padding:0;background:rgba(44,13,2,.45);cursor:pointer}
 .gsh-p{position:relative;width:100%;max-width:440px;max-height:92dvh;overflow-y:auto;overscroll-behavior:contain;background:var(--cream);border:1px solid var(--line);border-bottom:0;border-radius:var(--r-xl) var(--r-xl) 0 0;padding:0 var(--s4) max(var(--s5),env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:var(--s4);animation:gshUp .22s ease-out}
@@ -830,7 +840,7 @@ details a,.src a{color:var(--blue)}
     <h1 class="h1">Какой ты <span class="mk-hl">стиль</span> в дизайне?</h1>
     <p class="hello-sub">Девять вопросов про тебя, а не про дизайн. В конце тебе выпадет карта таро, и на ней будет такса.</p>
   </div>
-  <div class="hello-img"><img data-img="dog" alt=""></div>
+  <div class="hello-card"><div class="hc"><img src="/gallery/card-ad.webp" alt="Карта таро «Императрица» с таксой" decoding="async"></div></div>
   <div class="dock">
     <span class="small" style="text-align:center">9 вопросов · 2 минуты</span>
     <button class="btn primary" id="sqGo" type="button">Тянуть карту</button>
@@ -989,6 +999,10 @@ details a,.src a{color:var(--blue)}
     </div>
     <div class="card sq-tip"><p class="lab">Что за стиль</p><p id="cmpDesign"></p></div>
     <div class="card sq-tip"><p class="lab">Что взять в работу</p><p id="cmpTip"></p></div>
+    <section class="gal-h2" id="cmpGal" hidden>
+      <p class="lab" id="cmpGalT"></p>
+      <div class="gal-rail" id="cmpRail"></div>
+    </section>
     <button class="btn ghost" type="button" data-gclose>Закрыть</button>
   </div>
 </div>
@@ -1679,13 +1693,13 @@ var STY={
 var SQ_Q=[
  {t:'Свободная суббота. Что выберешь?',v:0,o:[['Пойду на выставку, где всё огромное и слегка пугает','br'],['Разберу полки и разложу всё по местам','sw'],['Чай, плед и одна хорошая книга','jp'],['Соберу друзей, придумаем затею на вечер','mm']]},
  {t:'Какой фильм зацепит с первых минут?',v:0,o:[['Космос, неон, будущее','rf'],['Нуар или «Великий Гэтсби», с шиком','ad'],['Что-то из 80-х: синтезаторы и пластик','nw'],['Тихое кино, где важны паузы и детали','jp']]},
- {t:'Какой постер повесишь над рабочим столом?',v:1,o:[['sw','sw'],['ad','ad'],['mm','mm'],['jp','jp']]},
+ {t:'Какой постер повесишь над рабочим столом?',v:1,im:{sw:'tile-sw-3',ad:'tile-ad-3',mm:'tile-mm-3',jp:'tile-jp-3'},o:[['sw','sw'],['ad','ad'],['mm','mm'],['jp','jp']]},
  {t:'Когда берёшься за задачу, ты…',v:0,o:[['Расчерчиваю сетку и пишу правила','sw'],['Собираю из простых форм: круг, квадрат, треугольник','bh'],['Беру самое тяжёлое решение и потом оттачиваю','br'],['Убираю лишнее, пока не останется одно','jp']]},
  {t:'Ты заходишь в новую компанию. Что происходит?',v:0,o:[['Захожу эффектно, меня запоминают','ad'],['Знакомлю всех со всеми и шучу','mm'],['Ставлю музыку и меняю настроение комнаты','nw'],['Приношу штуку из будущего и показываю всем','rf']]},
- {t:'Какой плакат ближе сегодня?',v:1,o:[['br','br'],['rf','rf'],['bh','bh'],['nw','nw']]},
+ {t:'Какой плакат ближе сегодня?',v:1,im:{br:'tile-br-2',rf:'tile-rf-2',bh:'tile-bh-1',nw:'tile-nw-1'},o:[['br','br'],['rf','rf'],['bh','bh'],['nw','nw']]},
  {t:'Что раздражает сильнее всего?',v:0,o:[['Хаос и отсутствие логики','sw'],['Скука и предсказуемость','mm'],['Красивость без смысла','br'],['Украшения, которые мешают пользоваться вещью','bh']]},
  {t:'Какой подарок порадует?',v:0,o:[['Красивая вещь, которую хочется держать в руках годами','ad'],['Гаджет из будущего','rf'],['Предмет, где каждая деталь на месте','bh'],['Винил или кассетник, пахнущий прошлым','nw']]},
- {t:'Последний. Что ближе глазу?',v:2,o:[['sw','sw'],['br','br'],['rf','rf'],['ad','ad'],['mm','mm'],['nw','nw'],['bh','bh'],['jp','jp']]}
+ {t:'Последний. Что ближе глазу?',v:2,im:{sw:'tile-sw-1',ad:'tile-ad-1',mm:'tile-mm-2',jp:'tile-jp-3',br:'tile-br-1',rf:'tile-rf-1',bh:'tile-bh-3',nw:'tile-nw-2'},o:[['sw','sw'],['br','br'],['rf','rf'],['ad','ad'],['mm','mm'],['nw','nw'],['bh','bh'],['jp','jp']]}
 ];
 var P={ink:'#2c0d02',cream:'#fffbf8',pink:'#b82e85',blue:'#1f73c4',sky:'#c0d8f0',dot:'#ffd3ec',lil:'#f8e4f4',gold:'#c9a15a',brown:'#3f2c21',mauve:'#aa868f',peach:'#edc1a4'};
 function svgT(b){return '<svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" aria-hidden="true">'+b+'</svg>'}
@@ -1714,14 +1728,17 @@ var CARD_ART={br:'/gallery/card-br.webp',sw:'/gallery/card-sw.webp',rf:'/gallery
 /* галерея примеров на экране результата. Данные лежат в bot/app/gallery/data.json (формат в bot/app/gallery/README.md),
    картинки рядом, отдаются с /gallery/<имя>.webp|jpg. Пока для стиля нет ни одной работы, блок скрыт. */
 var GAL=null,galReq=0;
+function galLoad(cb){
+  if(GAL)return cb();
+  fetch('/gallery/data.json').then(function(r){return r.ok?r.json():{}}).catch(function(){return {}}).then(function(d){
+    GAL=(d&&typeof d==='object'&&!Array.isArray(d))?d:{};cb();
+  });
+}
 function galEnsure(k){
   var n=++galReq;
   if(GAL){galPaint(k);return}
   $('#sqGal').hidden=true;
-  fetch('/gallery/data.json').then(function(r){return r.ok?r.json():{}}).catch(function(){return {}}).then(function(d){
-    GAL=(d&&typeof d==='object'&&!Array.isArray(d))?d:{};
-    if(n===galReq)galPaint(k);
-  });
+  galLoad(function(){if(n===galReq)galPaint(k)});
 }
 var galLast=null,galItems=[];
 function galEl(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
@@ -1735,12 +1752,11 @@ function galImg(box,it,i){
   box.appendChild(galEl('span','gal-n',(i<9?'0':'')+(i+1)));
   if(it.y)box.appendChild(galEl('span','gal-y',it.y));
 }
-function galPaint(k){
-  galItems=(GAL[k]||[]).filter(function(x){return x&&x.a});
-  var sec=$('#sqGal'),rail=$('#galRail');rail.textContent='';
-  sec.hidden=!galItems.length;if(!galItems.length)return;
-  $('#galTitle').textContent=STY[k].st+' в реальных работах';
-  galItems.forEach(function(it,i){
+function galRail(k,sec,rail){
+  var items=(GAL[k]||[]).filter(function(x){return x&&x.a});
+  rail.textContent='';sec.hidden=!items.length;
+  if(!items.length)return items;
+  items.forEach(function(it,i){
     var b=galEl('button','gal-c');b.type='button';b.setAttribute('aria-label',it.a+', открыть работу');
     var box=galEl('span');galImg(box,it,i);
     var go=galEl('span','gal-go');go.setAttribute('aria-hidden','true');
@@ -1748,13 +1764,18 @@ function galPaint(k){
     box.appendChild(go);
     var cap=galEl('span','gal-cap');cap.appendChild(galEl('b','',it.a));if(it.t)cap.appendChild(galEl('span','small',it.t));
     b.appendChild(box);b.appendChild(cap);
-    b.addEventListener('click',function(){galOpen(i,b)});
+    b.addEventListener('click',function(){galOpen(i,b,items)});
     rail.appendChild(b);
   });
   rail.scrollLeft=0;
+  return items;
 }
-function galOpen(i,from){
-  var it=galItems[i];if(!it)return;galLast=from||null;
+function galPaint(k){
+  galItems=galRail(k,$('#sqGal'),$('#galRail'));
+  if(galItems.length)$('#galTitle').textContent=STY[k].st+' в реальных работах';
+}
+function galOpen(i,from,list){
+  var it=(list||galItems)[i];if(!it)return;galLast=from||null;
   galImg($('#galBig'),it,i);
   $('#galAuthor').textContent=it.a;$('#galMeta').textContent=it.t||'';$('#galMeta').hidden=!it.t;
   var a=$('#galLink');a.hidden=!galOk(it.u);if(!a.hidden)a.href=it.u;
@@ -1762,22 +1783,33 @@ function galOpen(i,from){
   setTimeout(function(){var c=$('#galSheet .gsh-h');if(c)c.focus()},0);
 }
 function galClose(){
+  var g=$('#galSheet'),c=$('#cmpSheet');
+  if(!g.hidden&&!c.hidden){ /* работа открыта поверх второй карты: закрываем только её */
+    g.hidden=true;
+    if(galLast&&galLast.isConnected&&galLast.focus)galLast.focus();
+    return;
+  }
   var any=false;
   $$('.gsh').forEach(function(sh){if(!sh.hidden){sh.hidden=true;any=true}});
   if(!any)return;
   document.body.style.overflow='';
-  if(galLast&&galLast.isConnected&&galLast.focus)galLast.focus();
+  var f=cmpFrom&&cmpFrom.isConnected&&!c.hidden?null:galLast;
+  if(wasCmp&&cmpFrom&&cmpFrom.isConnected)f=cmpFrom;
+  wasCmp=false;
+  if(f&&f.isConnected&&f.focus)f.focus();
 }
 /* вторая карта: тап по карточке открывает шторку с описанием этого стиля */
-var cmpKey=null;
+var cmpKey=null,cmpFrom=null,wasCmp=false;
 function cmpOpen(k,from){
-  var s=STY[k];if(!s)return;galLast=from||null;
+  var s=STY[k];if(!s)return;galLast=from||null;cmpFrom=from||null;wasCmp=true;
   $('#cmpFace').innerHTML=faceHTML(k);
   $('#cmpKick').textContent='Вторая карта: '+s.no+' '+s.card;
   $('#cmpTitle').textContent=s.st;
   $('#cmpLead').textContent=s.lead;
   $('#cmpDesign').textContent=s.design;
   $('#cmpTip').textContent=s.tip;
+  $('#cmpGal').hidden=true;
+  galLoad(function(){if(cmpKey!==k)return;if(galRail(k,$('#cmpGal'),$('#cmpRail')).length)$('#cmpGalT').textContent=s.st+' в реальных работах'});
   $('#cmpSheet').hidden=false;document.body.style.overflow='hidden';haptic();
   $('#cmpSheet .gsh-p').scrollTop=0;
   setTimeout(function(){var c=$('#cmpSheet .gsh-h');if(c)c.focus()},0);
@@ -1816,7 +1848,6 @@ function sqBegin(){
 }
 /* настоящие постеры вместо рисованных плиток, без подписей. [первое появление, финальный вопрос]; файлы лежат в /gallery.
    Все файлы 600×750 (4:5), без подписей. Если для стиля имени нет, остаётся рисованная плитка. */
-var TILE_IMG={sw:['tile-sw-1','tile-sw-3'],ad:['tile-ad-1','tile-ad-2'],mm:['tile-mm-1','tile-mm-3'],jp:['tile-jp-1','tile-jp-2'],br:['tile-br-1','tile-br-2'],rf:['tile-rf-1','tile-rf-2'],bh:['tile-bh-1','tile-bh-3'],nw:['tile-nw-1','tile-nw-2']};
 function sqPaint(){
   var q=SQ_Q[Q.i],o=$('#sqOpts'),h='',pr='';
   Q.busy=false;
@@ -1831,7 +1862,7 @@ function sqPaint(){
     o.innerHTML='<div class="sq-opts">'+h+'</div>';
   }else{
     var L='АБВГДЕЖЗ';
-    Q.ord[Q.i].forEach(function(ix,n){var op=q.o[ix],pi=TILE_IMG[op[0]],pf=pi&&pi[q.v===2?1:0];h+='<button class="sq-t'+(pf?' real':'')+(prev===op[1]?' sel':'')+'" type="button" data-s="'+op[1]+'" aria-label="Вариант '+L.charAt(n)+'">'+(pf?'<img src="/gallery/'+pf+'.webp" alt="" decoding="async">':TILE[op[0]]())+'</button>'});
+    Q.ord[Q.i].forEach(function(ix,n){var op=q.o[ix],pf=q.im&&q.im[op[0]];h+='<button class="sq-t'+(pf?' real':'')+(prev===op[1]?' sel':'')+'" type="button" data-s="'+op[1]+'" aria-label="Вариант '+L.charAt(n)+'">'+(pf?'<img src="/gallery/'+pf+'.webp" alt="" decoding="async">':TILE[op[0]]())+'</button>'});
     o.innerHTML='<div class="sq-vis'+(q.v===2?' eight':'')+(h.indexOf(' real')>=0?' has-real':'')+'">'+h+'</div>';
   }
   window.scrollTo(0,0);
