@@ -1,24 +1,28 @@
 #!/usr/bin/env bash
-# Включить автообновление бота с GitHub (раз в 3 минуты). Запустить один раз.
+# Включает автообновление (можно запускать сколько угодно раз). Делает root на сервере.
 set -euo pipefail
-cat > /etc/systemd/system/di-sign-autoupdate.service <<'UNIT'
+APP=/opt/di-sign-bot
+cat > /etc/systemd/system/di-sign-autoupdate.service <<EOT
 [Unit]
-Description=Di Sign bot autoupdate from GitHub
+Description=Di Sign bot: подтянуть новую версию из GitHub
+After=network-online.target
+
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/env bash /opt/di-sign-bot/bot/deploy/autoupdate.sh
-UNIT
-cat > /etc/systemd/system/di-sign-autoupdate.timer <<'UNIT'
+ExecStart=/usr/bin/env bash $APP/bot/deploy/autoupdate.sh
+EOT
+cat > /etc/systemd/system/di-sign-autoupdate.timer <<EOT
 [Unit]
-Description=Di Sign bot autoupdate every 3 minutes
+Description=Di Sign bot: проверка обновлений раз в минуту
+
 [Timer]
-OnActiveSec=1min
-OnBootSec=2min
-OnUnitActiveSec=3min
+OnBootSec=1min
+OnUnitActiveSec=1min
+AccuracySec=10s
+
 [Install]
 WantedBy=timers.target
-UNIT
+EOT
 systemctl daemon-reload
 systemctl enable --now di-sign-autoupdate.timer
-systemctl is-active di-sign-autoupdate.timer
-echo "автообновление включено"
+echo "Автообновление включено. Журнал: journalctl -t di-sign-autoupdate"
