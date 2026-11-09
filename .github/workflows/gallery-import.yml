@@ -1,0 +1,20 @@
+name: gallery-import
+on:
+  push:
+    branches: [gallery-import-2]
+    paths: [".github/scripts/gallery_import.py"]
+permissions:
+  contents: write
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install pillow
+      - run: python .github/scripts/gallery_import.py
+      - run: |
+          git config user.name "gallery-import"
+          git config user.email "gallery-import@users.noreply.github.com"
+          git add bot/app/gallery
+          git commit -m "Галерея: картинки и data.json для jp, rf, mm" || exit 0
+          git push
