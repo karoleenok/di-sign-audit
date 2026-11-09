@@ -143,7 +143,7 @@ export async function handlePanelApi(ctx, request, url) {
 }
 
 // какие запросы можно отменить (меняют посты, тексты, порядок, документы)
-const UNDO_RX = /^\/(swap|bulk|post\/new|post\/\d+|post\/\d+\/(move|copy|restore)|msg\/[A-Za-z_]+|flow|cohort|slot|docs|reorder|path\/scaffold)$/;
+const UNDO_RX = /^\/(swap|permute|bulk|post\/new|post\/\d+|post\/\d+\/(move|copy|restore)|msg\/[A-Za-z_]+|flow|cohort|slot|docs|reorder|path\/scaffold)$/;
 const SNAP_KEYS = `key LIKE 'msg:%' OR key LIKE 'msgx:%' OR key LIKE 'flow:%' OR key LIKE 'doc:%' OR key LIKE 'cohort:%'`;
 async function takeSnap(ctx) {
   return JSON.stringify({ posts: await ctx.db.all(`SELECT * FROM posts`), settings: await ctx.db.all(`SELECT key, value FROM settings WHERE ${SNAP_KEYS}`) });
@@ -158,7 +158,7 @@ async function undoLabel(ctx, path, body) {
   if (m) return (body.status === 'archived' ? 'в архив «' : body.status ? 'статус «' : body.rows ? 'кнопки «' : 'правка «') + await nm(+m[1]) + '»';
   m = /^\/msg\/([A-Za-z_]+)$/.exec(path);
   if (m) { const i = msgInfo(m[1]); return 'текст «' + (i ? i.title : m[1]).slice(0, 40) + '»'; }
-  if (path === '/swap') return 'порядок постов';
+  if (path === '/swap' || path === '/permute') return 'порядок постов';
   if (path === '/bulk') return ({ active: 'включить', paused: 'на паузу', archived: 'в архив', copy: 'дублировать' }[body.action] || 'действие') + ': постов ' + ((body.ids || []).length);
   return path === '/path/scaffold' ? 'новый путь из соцсетей' : path === '/flow' ? 'порядок шагов входа' : path === '/docs' ? 'документы' : path === '/cohort' ? 'дата старта потока' : path === '/slot' ? 'порядок и паузы постов дня' : 'перенос поста';
 }
@@ -212,6 +212,34 @@ async function panelRest(ctx, request, url, user, path, body) {
   }
 
   // поменять два поста местами: время и способ остаются на своих местах, меняются сами посты
+  // перестановка нескольких постов ленты за раз (перетаскивание в «Пройти путь»): посты меняются «слотами», как в /swap
+  if (path === '/permute' && request.method === 'POST') {
+    const toIds = (a) => (Array.isArray(a) ? a : []).map((x) => parseInt(x, 10));
+    const from = toIds(body.from), order = toIds(body.order);
+    if (from.length < 2 || from.length > 200 || from.length !== order.length || new Set(from).size !== from.length || !order.every((id) => from.includes(id))) return json({ error: 'Неверный порядок' }, 400);
+    const rows = {};
+    for (const id of from) {
+      const r = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [id]);
+      if (!r) return json({ error: 'Пост не найден' }, 404);
+      if (r.kind !== 'drip') return json({ error: 'Местами меняются только посты ленты' }, 400);
+      rows[id] = r;
+    }
+    const moved = from.filter((id, i) => order[i] !== id);
+    if (!moved.length) return json({ ok: true, n: 0 });
+    for (const id of moved) if (rows[id].after_id && moved.includes(rows[id].after_id)) return json({ error: 'Эти посты идут цепочкой (один после другого). Измени время у одного из них.' }, 400);
+    const cols = ['mode', 'day', 'send_time', 'delay_min', 'at_time', 'after_id', 'pos'];
+    const set = (id, src) => ctx.db.run(`UPDATE posts SET ${cols.map((c) => c + ' = ?').join(', ')} WHERE id = ?`, [...cols.map((c) => src[c]), id]);
+    for (let i = 0; i < from.length; i++) if (order[i] !== from[i]) await set(order[i], rows[from[i]]);
+    // не даём получиться кругу «после»: если он вышел, возвращаем всё как было
+    for (const id of moved) {
+      let cur = await ctx.db.first(`SELECT id, mode, after_id FROM posts WHERE id = ?`, [id]);
+      for (let i = 0; cur && cur.mode === 'after' && cur.after_id && i < 60; i++) {
+        if (cur.after_id === id) { for (const m of moved) await set(m, rows[m]); return json({ error: 'Получился бы круг из «после поста». Измени время вручную.' }, 400); }
+        cur = await ctx.db.first(`SELECT id, mode, after_id FROM posts WHERE id = ?`, [cur.after_id]);
+      }
+    }
+    return json({ ok: true, n: moved.length });
+  }
   if (path === '/swap' && request.method === 'POST') {
     const A = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [parseInt(body.a, 10)]);
     const B = await ctx.db.first(`SELECT * FROM posts WHERE id = ?`, [parseInt(body.b, 10)]);

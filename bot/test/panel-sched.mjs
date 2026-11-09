@@ -223,6 +223,31 @@ for (const w of [390, 320]) {
   assert.notDeepEqual(plAfter, plBefore, 'порядок сообщений в плеере поменялся');
   assert.deepEqual([...plAfter].sort(), [...plBefore].sort(), 'те же сообщения, другой порядок');
   assert.ok(await noscroll(page), 'нет горизонтального скролла в «Пройти путь»');
+  // у постов ленты в плеере есть ручка «⋮⋮» для перетаскивания
+  assert.ok(await page.locator('#stBox .sth').count() > 0, 'у постов ленты есть ручка перетаскивания');
+  // перестановка слотами через /permute: день и время остаются на местах, меняются сами посты, один откат
+  {
+    const call = (path, body) => page.evaluate(async ([pth, b, init]) => { const r = await fetch('/api/panel' + pth, { method: 'POST', headers: { 'x-init-data': init, 'content-type': 'application/json' }, body: JSON.stringify(b) }); return { st: r.status, d: await r.json().catch(() => ({})) }; }, [path, body, INIT]);
+    const mk = async (day, time, txt) => {
+      await db.run(`INSERT INTO posts (kind, audience, track, day, send_time, status, text, created_by, created_at, mode, delay_min) VALUES ('drip', 'all', 'course', ?, ?, 'active', ?, 1, ?, 'day', 0)`, [day, time, txt, Math.floor(Date.now() / 1000)]);
+      return (await db.first(`SELECT id FROM posts WHERE text = ? ORDER BY id DESC LIMIT 1`, [txt])).id;
+    };
+    const A = await mk(40, '10:00', 'Перестановка А'), B = await mk(41, '12:00', 'Перестановка Б'), C = await mk(42, '14:00', 'Перестановка В');
+    const slot = async (id) => db.first(`SELECT day, send_time, mode FROM posts WHERE id = ?`, [id]);
+    const undoBefore = ((await db.first(`SELECT MAX(id) AS m FROM undo_log`)) || {}).m || 0;
+    const r1 = await call('/permute', { from: [A, B, C], order: [C, A, B] });
+    assert.equal(r1.st, 200, 'permute: ' + JSON.stringify(r1.d));
+    assert.deepEqual([await slot(C), await slot(A), await slot(B)].map((x) => x.day + ' ' + x.send_time), ['40 10:00', '41 12:00', '42 14:00'], 'слоты переехали вместе с порядком');
+    const lastUndo = await db.first(`SELECT id, label FROM undo_log ORDER BY id DESC LIMIT 1`);
+    assert.equal(lastUndo.id, undoBefore + 1, 'вся перестановка откатывается одним шагом');
+    assert.equal(lastUndo.label, 'порядок постов');
+    assert.equal((await call('/permute', { from: [A, B], order: [A, 99999] })).st, 400, 'чужие id не принимаются');
+    assert.equal((await call('/permute', { from: [A], order: [A] })).st, 400, 'одного поста мало');
+    // цепочка «после поста» не переставляется
+    const D = await mk(43, '11:00', 'Цепочка Д'); await db.run(`UPDATE posts SET mode = 'after', after_id = ? WHERE id = ?`, [A, D]);
+    assert.equal((await call('/permute', { from: [A, D], order: [D, A] })).st, 400, 'пост «после» другого не меняется с ним местами');
+    await db.run(`DELETE FROM posts WHERE id IN (?, ?, ?, ?)`, [A, B, C, D]);
+  }
   await page.click('#sheet .sx');
   // «Как ученик» показывает и посты на конкретные даты
   const RUN = Math.floor(Date.now() / 1000) + 5 * 86400;
