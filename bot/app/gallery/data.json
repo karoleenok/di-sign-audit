@@ -1,1 +1,139 @@
-{}
+{
+ "jp": [
+  {
+   "a": "Ikko Tanaka",
+   "t": "Афиша театра Но",
+   "u": "https://commons.wikimedia.org/wiki/File:Tanaka_1.jpg",
+   "i": "jp-01.webp"
+  },
+  {
+   "a": "Ikko Tanaka",
+   "t": "Афиша театра Но",
+   "u": "https://commons.wikimedia.org/wiki/File:Ikko_tanaka_noh.jpg",
+   "i": "jp-02.webp"
+  },
+  {
+   "a": "Ikko Tanaka",
+   "u": "https://commons.wikimedia.org/wiki/File:Ikko_Tanaka_3.jpg",
+   "i": "jp-03.webp"
+  },
+  {
+   "a": "Ikko Tanaka",
+   "u": "https://commons.wikimedia.org/wiki/File:Ikko_Tanaka_4.jpg",
+   "i": "jp-04.webp"
+  },
+  {
+   "a": "Ikko Tanaka",
+   "u": "https://commons.wikimedia.org/wiki/File:Ikko_Tanaka_5.jpg",
+   "i": "jp-05.webp"
+  },
+  {
+   "a": "Kamisaka Sekka",
+   "t": "Momoyogusa",
+   "y": "1909–1910",
+   "u": "https://commons.wikimedia.org/wiki/File:Momoyagusa1-Kamisaka_Sekka-BMA.jpg",
+   "i": "jp-06.webp"
+  },
+  {
+   "a": "Kamisaka Sekka",
+   "t": "Momoyogusa",
+   "y": "1909–1910",
+   "u": "https://commons.wikimedia.org/wiki/File:Momoyagusa2-Kamisaka_Sekka-BMA.jpg",
+   "i": "jp-07.webp"
+  }
+ ],
+ "rf": [
+  {
+   "a": "NASA/JPL-Caltech",
+   "t": "Visions of the Future: Mars",
+   "u": "https://commons.wikimedia.org/wiki/File:JPL_Visions_of_the_Future,_Mars.jpg",
+   "i": "rf-01.webp"
+  },
+  {
+   "a": "NASA/JPL-Caltech",
+   "t": "Visions of the Future: Venus",
+   "u": "https://commons.wikimedia.org/wiki/File:JPL_Visions_of_the_Future,_Venus.jpg",
+   "i": "rf-02.webp"
+  },
+  {
+   "a": "NASA/JPL-Caltech",
+   "t": "Visions of the Future: Europa",
+   "u": "https://commons.wikimedia.org/wiki/File:JPL_Visions_of_the_Future,_Europa.jpg",
+   "i": "rf-03.webp"
+  },
+  {
+   "a": "NASA/JPL-Caltech",
+   "t": "Visions of the Future: Enceladus",
+   "u": "https://commons.wikimedia.org/wiki/File:JPL_Visions_of_the_Future,_Enceladus.jpg",
+   "i": "rf-04.webp"
+  },
+  {
+   "a": "NASA/JPL-Caltech",
+   "t": "Visions of the Future: Earth",
+   "u": "https://commons.wikimedia.org/wiki/File:JPL_Visions_of_the_Future,_Earth.jpg",
+   "i": "rf-05.webp"
+  },
+  {
+   "a": "NASA/JPL-Caltech",
+   "t": "Visions of the Future: Grand Tour",
+   "u": "https://commons.wikimedia.org/wiki/File:JPL_Visions_of_the_Future,_Grand_Tour.jpg",
+   "i": "rf-06.webp"
+  },
+  {
+   "a": "NASA/JPL-Caltech",
+   "t": "Visions of the Future: HD 40307 g",
+   "u": "https://commons.wikimedia.org/wiki/File:JPL_Visions_of_the_Future,_HD_40307g.jpg",
+   "i": "rf-07.webp"
+  }
+ ],
+ "mm": [
+  {
+   "a": "Nathalie Du Pasquier",
+   "t": "Стол Madras",
+   "y": "1986",
+   "u": "https://commons.wikimedia.org/wiki/File:Memphis_-_MADRAS_table_by_Natalie_Du_Pasquier_1986.jpg",
+   "i": "mm-01.webp"
+  },
+  {
+   "a": "Nathalie Du Pasquier",
+   "t": "Ковёр",
+   "y": "1985",
+   "u": "https://commons.wikimedia.org/wiki/File:Memphis_carpet_by_Nathalier_Du_Pasquier_1985.jpg",
+   "i": "mm-02.webp"
+  },
+  {
+   "a": "Nathalie Du Pasquier",
+   "t": "Emerald",
+   "u": "https://commons.wikimedia.org/wiki/File:Memphis_Emerald_by_Nathalie_Du_Pasquier_-_31064843947.jpg",
+   "i": "mm-03.webp"
+  },
+  {
+   "a": "Ettore Sottsass",
+   "t": "Стол Tartar",
+   "y": "1985",
+   "u": "https://commons.wikimedia.org/wiki/File:Ettore_sottsass_per_memphis,_tavolo_tartar,_1985.JPG",
+   "i": "mm-04.webp"
+  },
+  {
+   "a": "Ettore Sottsass",
+   "t": "Ваза Euphrates",
+   "y": "1983",
+   "u": "https://commons.wikimedia.org/wiki/File:Ettore_sottsass_per_porcellana_san_marco_le_nove_e_memphis_srl.,_vaso_euphrates,_1983.jpg",
+   "i": "mm-05.webp"
+  },
+  {
+   "a": "Ettore Sottsass",
+   "t": "Стул «Miss, don't you like caviar»",
+   "y": "1987",
+   "u": "https://commons.wikimedia.org/wiki/File:Ettore_sottsass,_sedia_'miss,_don't_you_like_caviar,_1987.jpg",
+   "i": "mm-06.webp"
+  },
+  {
+   "a": "Ettore Sottsass",
+   "t": "Кресло Mandarin, прототип",
+   "y": "ок. 1986",
+   "u": "https://commons.wikimedia.org/wiki/File:Ettore_sottsass,_prototipo_della_poltrona_mandarin,_1986_ca.jpg",
+   "i": "mm-07.webp"
+  }
+ ]
+}
