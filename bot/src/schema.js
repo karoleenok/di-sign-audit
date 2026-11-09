@@ -151,6 +151,14 @@ export const MIGRATIONS = [
   [`UPDATE posts SET delay_min = 0 WHERE kind = 'drip' AND (mode IS NULL OR mode = 'day')`],
   // v10: когда человек выбрал трек (прошёл аудит или нажал в боте): уроки мини-курса и материалов считаются от этого момента, а не от первого входа из соцсетей
   [`ALTER TABLE users ADD COLUMN track_at INTEGER`],
+  // v11: журнал действий человека (повторный аудит, смена трека), чтобы путь ученика было видно целиком
+  [
+    `CREATE TABLE IF NOT EXISTS user_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tg_id INTEGER NOT NULL, kind TEXT NOT NULL, data TEXT, at INTEGER NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_user_events_tg ON user_events(tg_id, at)`,
+  ],
 ];
 
 // Обновить базу при первом запуске после выкладки новой версии (один раз на процесс)

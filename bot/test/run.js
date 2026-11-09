@@ -1369,4 +1369,40 @@ step('панель: расписание игр и кнопка «Игра» в 
 }
 step('панель: «Что уйдёт на этой неделе»');
 
+// повторный аудит: выбор закреплён; смена трека только через предупреждение, новый трек начинается заново
+{
+  const D = C().db, uid = 9301;
+  const ins = (kind, track, text) => D.run(`INSERT INTO posts (kind, audience, status, text, track, mode, day, send_time, created_at) VALUES (?, 'all', 'active', ?, ?, 'day', 1, '11:00', ?)`, [kind, text, track, NOW - 86400]);
+  await ins('drip', 'mat', 'МАТ-ЛЕНТА'); await ins('date', 'mat', 'МАТ-ДАТА');
+  const ids = (await D.all(`SELECT id, kind FROM posts WHERE text IN ('МАТ-ЛЕНТА', 'МАТ-ДАТА')`));
+  const dripId = ids.find((x) => x.kind === 'drip').id, dateId = ids.find((x) => x.kind === 'date').id;
+  // человек уже в ленте на мини-курсе, один пост материалов у него уже был
+  await D.run(`INSERT INTO users (tg_id, first_name, level_raw, level, zone, track, track_at, status, consent_pd_at, consent_ads_at, joined_at, sched_at, created_at) VALUES (?, 'U', 'start', 'start', 'P', 'course', ?, 'active', ?, ?, ?, ?, ?)`, [uid, NOW - 5 * 86400, NOW, NOW, NOW - 5 * 86400, NOW - 5 * 86400, NOW]);
+  await D.run(`INSERT INTO deliveries (post_id, tg_id, sent_at, ok) VALUES (?, ?, ?, 1), (?, ?, ?, 1)`, [dripId, uid, NOW - 86400, dateId, uid, NOW - 86400]);
+  const before = await D.first(`SELECT track, track_at, zone, level_raw FROM users WHERE tg_id = ?`, [uid]);
+  await msg(uid, '/start audit_B_pro_month');
+  assert.match(lastText(uid), /аудит уже пройден/, 'вместо приветствия плашка «аудит уже пройден»');
+  assert.deepEqual(await D.first(`SELECT track, track_at, zone, level_raw FROM users WHERE tg_id = ?`, [uid]), before, 'повторный аудит ничего не перезаписал');
+  assert.equal((await D.all(`SELECT 1 FROM user_events WHERE tg_id = ? AND kind = 'audit_repeat'`, [uid])).length, 1, 'повторный заход записан в журнал');
+  await cb(uid, 'ag:keep');
+  assert.equal((await D.first(`SELECT track FROM users WHERE tg_id = ?`, [uid])).track, 'course', '«остаюсь» ничего не меняет');
+  await cb(uid, 'ag:ask');
+  assert.match(lastText(uid), /Точно переходим/, 'перед сменой показано предупреждение');
+  assert.match(lastText(uid), /начнётся с самого начала/, 'в предупреждении сказано, что всё придёт заново');
+  await cb(uid, 'ag:go:mat');
+  const after = await D.first(`SELECT track, track_at FROM users WHERE tg_id = ?`, [uid]);
+  assert.equal(after.track, 'mat', 'трек сменился после подтверждения'); assert.equal(after.track_at, NOW, 'отсчёт нового трека начался заново');
+  assert.equal((await D.all(`SELECT 1 FROM deliveries WHERE tg_id = ? AND post_id = ?`, [uid, dripId])).length, 0, 'посты ленты нового трека придут заново');
+  assert.equal((await D.all(`SELECT 1 FROM deliveries WHERE tg_id = ? AND post_id = ?`, [uid, dateId])).length, 1, 'пост «на дату» заново не уходит');
+  assert.match(lastText(uid), /Теперь тебе приходит/, 'после смены есть подтверждение');
+  await cb(uid, 'ag:go:mat');
+  assert.equal((await D.all(`SELECT 1 FROM user_events WHERE tg_id = ? AND kind = 'track_switch'`, [uid])).length, 1, 'двойное нажатие не меняет дважды');
+  // кто ещё не в ленте, может поменять выбор повторным аудитом
+  await D.run(`INSERT INTO users (tg_id, first_name, level_raw, level, zone, track, track_at, status, created_at) VALUES (9302, 'U', 'start', 'start', 'P', 'course', ?, 'new', ?)`, [NOW, NOW]);
+  await msg(9302, '/start audit_P_start_month');
+  assert.equal((await D.first(`SELECT track FROM users WHERE tg_id = 9302`)).track, 'mat', 'до входа в ленту выбор ещё можно обновить');
+  await D.run(`DELETE FROM users WHERE tg_id IN (9301, 9302)`);
+}
+step('повторный аудит: плашка, закреплённый трек, смена через предупреждение');
+
 console.log('\nВсе сценарии прошли. Запросов к фейковому Telegram:', calls.length);
