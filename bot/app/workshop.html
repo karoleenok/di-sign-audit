@@ -1815,8 +1815,8 @@ function sqBegin(){
   go('squiz');sqPaint();
 }
 /* настоящие постеры вместо рисованных плиток, без подписей. [первое появление, финальный вопрос]; файлы лежат в /gallery.
-   Если для стиля имени нет, остаётся рисованная плитка. */
-var TILE_IMG={sw:['sw-05','sw-04'],ad:['ad-06','ad-01'],mm:['mm-02','mm-03'],jp:['jp-02','jp-04'],br:['br-01','br-07'],rf:['rf-01','rf-03'],bh:['bh-01','bh-03']};
+   Все файлы 600×750 (4:5), без подписей. Если для стиля имени нет, остаётся рисованная плитка. */
+var TILE_IMG={sw:['tile-sw-1','tile-sw-3'],ad:['tile-ad-1','tile-ad-2'],mm:['tile-mm-1','tile-mm-3'],jp:['tile-jp-1','tile-jp-2'],br:['tile-br-1','tile-br-2'],rf:['tile-rf-1','tile-rf-2'],bh:['tile-bh-1','tile-bh-3'],nw:['tile-nw-1','tile-nw-2']};
 function sqPaint(){
   var q=SQ_Q[Q.i],o=$('#sqOpts'),h='',pr='';
   Q.busy=false;
