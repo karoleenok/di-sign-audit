@@ -653,7 +653,7 @@ details a,.src a{color:var(--blue)}
       </div>
       <img data-img="magnifier" alt="">
     </button>
-    <button class="game" id="g-style" type="button" data-track="mini">
+    <button class="game" id="g-style" type="button" data-track="mini mat">
       <div>
         <p class="px sm">game 02.</p>
         <h2 class="h2">Какой ты стиль в дизайне</h2>
@@ -1073,7 +1073,7 @@ function paintLocks(){
     if(lk)el.textContent=lockText(id)+(APPCFG&&APPCFG.admin?' · тебе можно':'');
   });
   /* закрытую без даты игру «стиль» обычные люди не видят вовсе, админам она открыта */
-  var gs=gi('style');$('#g-style').hidden=!!(gs&&!gs.open&&!gs.from&&!(APPCFG&&APPCFG.admin));
+  var gs=gi('style');$('#g-style').hidden=!!(gs&&!gs.open&&!gs.from&&!(APPCFG&&APPCFG.admin))||!inTrack($('#g-style'));
   $('#admCard').hidden=!(APPCFG&&APPCFG.admin);
 }
 function lockOther(){$('#lkPx').textContent='locked.';$('#lkH').innerHTML='Это <span class="mk-hl">другой трек</span>';$('#lkP').textContent='Тебе открыт только выбранный трек. Материал из соседнего здесь не откроется.'}
@@ -1086,8 +1086,9 @@ function showClosed(id){
 }
 var TRACKS={
   mini:{name:'Мини-курс',sub:'Короткие игры и задания к постерам. Играй прямо в чате.',hello:'Здесь будут появляться полезные штучки по курсу: игры, постеры и задания.',mods:['poster','style'],soon:['Рандомайзер ТЗ от таксёнышей','Промпты для мокапов','Шаблон кейсов']},
-  mat:{name:'Месяц материалов',sub:'Материалы по неделям: шрифты, Figma, портфолио, клиенты.',hello:'Здесь будут появляться полезные материалы: шрифты, Figma, портфолио, клиенты.',mods:['fonts'],soon:['Мокап-пак, сделанный ИИ','Калькулятор цены и КП','Красные флаги в брифе']}
+  mat:{name:'Месяц материалов',sub:'Материалы по неделям: шрифты, Figma, портфолио, клиенты.',hello:'Здесь будут появляться полезные материалы: шрифты, Figma, портфолио, клиенты.',mods:['fonts','style'],soon:['Мокап-пак, сделанный ИИ','Калькулятор цены и КП','Красные флаги в брифе']}
 };
+function inTrack(e){return(' '+e.getAttribute('data-track')+' ').indexOf(' '+TRACK+' ')>=0}
 var TRACK=null,SCREENS=['pick','audit','hello','home','intro','poster','result','sintro','squiz','sres','fonts','locked','adm','gadm'],cur='pick',want=null;
 function show(n){if(typeof galClose==='function')galClose();SCREENS.forEach(function(s){$('#s-'+s).hidden=s!==n});window.scrollTo(0,0)}
 function parse(h){var m=/^(mini|mat)(?:-(poster|fonts|style))?$/.exec(h||'');return m?{t:m[1],m:m[2]||null}:null}
@@ -1104,7 +1105,8 @@ function paintHome(){
   var t=TRACKS[TRACK];
   $('#hTitle').innerHTML='<span class="mk-hl">'+t.name+'</span>';
   $('#hSub').textContent=t.sub;
-  $$('[data-track]').forEach(function(e){e.hidden=e.getAttribute('data-track')!==TRACK});
+  $$('[data-track]').forEach(function(e){e.hidden=!inTrack(e)});
+  $('#g-style').style.order=TRACK==='mat'?'2':'';
   var sl=(APPCFG&&APPCFG.soon&&APPCFG.soon[TRACK])||t.soon.map(function(x){return {t:x,d:null}}),ul=$('#soonList');
   ul.textContent='';
   var wl=$('#weekList'),wk=[],rest=[],now=new Date(),T0=Date.UTC.apply(null,new Date(now).toLocaleDateString('sv-SE',{timeZone:'Europe/Moscow'}).split('-').map(function(v,i){return i==1?v-1:+v}));
@@ -1146,7 +1148,7 @@ function enterHome(){
   if(!helloSeen()){
     var t=TRACKS[TRACK];$('#heSub').textContent=t.hello;
     $('#heBell').textContent='Оставь уведомления бота включёнными, и мы напишем, когда появится что-то новое.';
-    $$('#s-hello [data-track]').forEach(function(e){e.hidden=e.getAttribute('data-track')!==TRACK});
+    $$('#s-hello [data-track]').forEach(function(e){e.hidden=!inTrack(e)});
     cur='hello';show('hello');return;
   }
   cur='home';show('home');
@@ -1905,7 +1907,7 @@ function sqShow(m,c){
   var card=$('#sqCard');card.classList.remove('flip');
   card.innerHTML=backHTML()+faceHTML(m);
   $('#sqDetail').hidden=true;$('#sqFlipHint').hidden=false;
-  $('#sqFlip').hidden=false;$('#sqShare').hidden=true;$('#sqAgain').hidden=true;$('#sqHome').hidden=true;
+  $('#sqFlip').hidden=false;$('#sqShare').hidden=true;$('#sqAgain').hidden=true;$('#sqHome').hidden=true;$('#sqHome').textContent=TRACK==='mat'?'К материалам':'К мини-курсу';
   $('#sqKicker').textContent='Твоя карта: '+s.no+' '+s.card;
   $('#sqTitle').innerHTML='Ты — <span class="mk-hl">'+s.st+'</span>';
   $('#sqLead').textContent=s.lead;
