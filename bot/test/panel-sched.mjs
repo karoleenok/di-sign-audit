@@ -201,6 +201,29 @@ for (const w of [390, 320]) {
   assert.match(await page.textContent('#sheet'), /бот глазами ученика/i);
   assert.ok(await noscroll(page), 'нет горизонтального скролла в «Как ученик»');
   await page.click('#sheet .sx');
+  // «Пройти путь»: одна кнопка, сообщения приходят сами; тап по сообщению: порядок меняется и в расписании
+  await page.click('#scStud'); await page.waitForSelector('#stPlay');
+  await page.click('#sheet [data-rsrc="audit"]'); await page.click('#sheet [data-ftrk="mat"]');
+  await page.click('#stPlay'); await page.waitForTimeout(1800);
+  const plEarly = await page.locator('#stBox .m').count();
+  assert.ok(plEarly >= 1 && plEarly <= 4, 'сообщения приходят по одному, сами: ' + plEarly);
+  await page.click('#stFull');
+  const plFull = await page.locator('#stBox .m').count();
+  assert.ok(plFull > plEarly, '«Показать всё сразу» показывает весь путь');
+  const plBefore = await page.locator("#stBox .m").allTextContents();
+  let plMoved = false;
+  for (const el of await page.locator('#stBox [data-stsel]').all()) {
+    await el.locator('.m').click({ position: { x: 8, y: 8 } });
+    if (await page.locator('#stBox [data-sta^="mv:"]:not([disabled])').count()) { plMoved = true; break; }
+  }
+  assert.ok(plMoved, 'у поста ленты по тапу есть стрелки порядка');
+  assert.ok(await page.locator('#stBox [data-sta^="op:"]').count(), 'у поста есть «Открыть пост»');
+  await page.locator('#stBox [data-sta^="mv:"]:not([disabled])').first().click(); await page.waitForTimeout(700);
+  const plAfter = await page.locator("#stBox .m").allTextContents();
+  assert.notDeepEqual(plAfter, plBefore, 'порядок сообщений в плеере поменялся');
+  assert.deepEqual([...plAfter].sort(), [...plBefore].sort(), 'те же сообщения, другой порядок');
+  assert.ok(await noscroll(page), 'нет горизонтального скролла в «Пройти путь»');
+  await page.click('#sheet .sx');
   // «Как ученик» показывает и посты на конкретные даты
   const RUN = Math.floor(Date.now() / 1000) + 5 * 86400;
   await db.run(`INSERT INTO posts (kind, audience, track, day, send_time, status, text, created_by, created_at, mode, delay_min, run_at) VALUES ('date', 'all', 'all', 0, '11:00', 'active', ?, 1, ?, 'day', 0, ?)`, [`Анонс эфира в конкретную дату ${w}`, RUN, RUN]);

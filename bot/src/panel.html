@@ -259,6 +259,7 @@ textarea{min-height:120px;resize:vertical;line-height:1.45}
 .inbox{background:#f4c9f6;border-radius:16px;padding:10px 12px;margin:10px 0;display:flex;flex-direction:column;gap:8px}.inbox-h{display:flex;align-items:center}.inbox-r{background:var(--card);border-radius:12px;padding:8px 10px;display:flex;align-items:center;gap:8px}.inbox-r>span{flex:1}
 .btn.sm{padding:8px 12px;font-size:13px;min-height:40px;width:auto;flex:none}
 .pstage{margin-top:10px}
+.m.stsel{outline:2px solid var(--ink);outline-offset:2px}.stbar{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:10px 12px;margin:4px 0 8px}.stbar .r{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.stbar .chip{min-height:44px}
 .jump{display:block;margin:2px 0 8px auto;border:0;background:transparent;color:var(--soft);font-size:12px;cursor:pointer;min-height:32px}
 .flash{animation:flash 2.2s ease}@keyframes flash{0%,40%{box-shadow:0 0 0 3px #7B3F6E}100%{box-shadow:0 0 0 0 transparent}}
 body.selmode .card[data-id],body.selmode .fn[data-id]{position:relative;outline:1.5px dashed var(--faint);outline-offset:2px;cursor:pointer}
@@ -1284,19 +1285,34 @@ function studentSeq() {
   seq.length = 0; out.forEach((x) => seq.push(x));
   return seq;
 }
-function studentHtml() {
+function stBar(seq, i, dseq) {
+  const x = seq[i], k = dseq.indexOf(i);
+  const prev = k > 0 ? seq[dseq[k - 1]].post : null, next = k >= 0 && k < dseq.length - 1 ? seq[dseq[k + 1]].post : null;
+  let b = '<div class="stbar"><b>' + esc(x.post ? postName(x.post).slice(0, 70) : 'Служебный шаг') + '</b>';
+  if (x.post) {
+    if (x.day != null) b += '<div class="r"><button type="button" class="chip" data-sta="mv:' + x.post.id + ':' + (prev ? prev.id : 0) + '"' + (prev ? '' : ' disabled') + '>↑ Раньше</button><button type="button" class="chip" data-sta="mv:' + x.post.id + ':' + (next ? next.id : 0) + '"' + (next ? '' : ' disabled') + '>↓ Позже</button></div>';
+    b += '<div class="r"><button type="button" class="chip" data-sta="tg:' + x.post.id + '">' + (x.post.status === 'active' ? 'Выключить' : 'Включить') + '</button><button type="button" class="chip" data-sta="op:' + x.post.id + '">Открыть пост</button></div>' +
+      '<p class="small muted" style="margin:6px 0 0">' + (x.day != null ? 'Порядок меняется и в расписании: это те же данные.' : 'Этот пост стоит не в ленте по дням, порядок здесь не меняется.') + '</p>';
+  } else b += '<div class="r"><button type="button" class="chip" data-sta="ok:' + x.key + '">Открыть шаг</button></div><p class="small muted" style="margin:6px 0 0">Выключить шаг можно в блоке «Вход в бота» в расписании.</p>';
+  return b + '</div>';
+}
+function studentHtml(o) {
+  o = o || {};
   const seq = studentSeq(), n = Math.min(view.step || 0, seq.length);
+  const dseq = seq.map((x, i) => i).filter((i) => seq[i].post && seq[i].day != null);
   let h = '<div class="phone"><div class="hd">бот глазами ученика</div>', last = -1;
   for (let i = 0; i < n; i++) {
-    const x = seq[i], cls = 'm' + (i === n - 1 ? ' new' : '');
+    const x = seq[i], isSel = !!o.sel && view.stSel === i, cls = 'm' + (i === n - 1 ? ' new' : '') + (isSel ? ' stsel' : '');
     if (x.day != null && x.day !== last) { last = x.day; h += '<div class="stdiv">' + (x.day ? 'прошло дней: ' + x.day : 'сразу') + '</div>'; }
     if (x.when && x.when !== 'Сразу' && /выключен/.test(x.when)) h += '<div class="stdiv">' + esc(x.when.replace(/^.*?· /, '')) + '</div>';
     if (x.note) h += '<div class="stdiv">' + x.note + '</div>';
+    if (o.sel) h += '<div style="display:contents" data-stsel="' + i + '">';
     if (x.post) { const p = x.post; h += '<div class="' + cls + '">' + mediaStrip(p, 3) + plainT(p.text) + '</div>' + (p.buttons.length ? '<div class="kbd">' + p.buttons.map((b) => '<span>' + esc(b) + '</span>').join('') + '</div>' : ''); }
     else h += '<div class="' + cls + '">' + plainT(x.text) + '</div>' + (x.btns.length ? '<div class="kbd">' + x.btns.map((b) => '<span>' + esc(b) + '</span>').join('') + '</div>' : '');
     h += '<button type="button" class="jump" data-jump="' + (x.post ? 'p:' + x.post.id : 'k:' + x.key) + '">↪ где это в пути</button>';
+    if (o.sel) { h += '</div>'; if (isSel) h += stBar(seq, i, dseq); }
   }
-  if (!n) h += '<div class="stdiv">нажми «Дальше», чтобы увидеть первое сообщение</div>';
+  if (!n) h += '<div class="stdiv">нажми «Пройти путь» или «Дальше», чтобы увидеть первое сообщение</div>';
   if (n >= seq.length && (S.runSrc || 'site') !== 'audit') h += '<div class="stdiv">Дальше человек проходит аудит и возвращается в бота. Переключи вверху на «после аудита»: там программа и уроки.</div>';
   return h + '</div><div class="btns two"><button class="btn ghost" type="button" data-strest="1">Сначала</button><button class="btn" type="button" data-stnext="1">' + (n >= seq.length ? 'Конец пути' : 'Дальше ▸ ' + n + '/' + seq.length) + '</button></div>';
 }
@@ -2109,10 +2125,10 @@ function renderSched() {
     (inboxN ? '<button type="button" class="sc-chip blue" id="scInbox">✉️ Новые из бота · ' + inboxN + '</button>' : '') +
     (dups.length ? '<button type="button" class="sc-chip" id="scDup" style="background:#f9dada;border-color:transparent;color:#8a1c1c">⚠ Дубли · ' + dups.length + '</button>' : '') +
     (noGo ? '<button type="button" class="sc-chip warm" id="scNo">Не уйдут · ' + noGo + '</button>' : '') +
+    '<button type="button" class="sc-chip" id="scStud" style="background:var(--pill);border-color:transparent;font-weight:700">▶ Пройти путь</button>' +
     '<button type="button" class="sc-chip" id="scLib">📚 Все посты · ' + S.posts.length + '</button>' +
     '<button type="button" class="sc-chip' + (view.scMore === true || SEL || RE ? ' on' : '') + '" id="scMore" aria-expanded="' + (view.scMore === true || SEL || RE) + '">' + (view.scMore === true || SEL || RE ? 'Меньше ▴' : 'Ещё ▾') + '</button></div>' +
     (view.scMore === true || SEL || RE ? '<div class="sc-chips" style="margin-top:0"><button type="button" class="sc-chip" id="scCheck">Проверить</button>' +
-    '<button type="button" class="sc-chip" id="scStud">👀 Как ученик</button>' +
     '<button type="button" class="sc-chip' + (SEL ? ' on' : '') + '" id="scSel">' + (SEL ? 'Готово' : '☐ Выбрать') + '</button>' +
     '<button type="button" class="sc-chip' + (RE ? ' on' : '') + '" id="scRe">' + (RE ? 'Готово' : '↕ Порядок') + '</button></div>' : '') + scPlan() +
     '<div class="sc-flt">' + [['all', 'Все'], ['course', 'Мини-курс'], ['mat', 'Материалы']].map(([k, n]) => '<button type="button" data-sctrk="' + k + '" class="' + (T === k ? 'on' : '') + '">' + n + '</button>').join('') + '</div>' +
@@ -2478,18 +2494,58 @@ function scDayMove(id) {
 function scStudent() {
   if (!view.track || view.track === 'all') view.track = 'mat';
   if (view.step == null) view.step = 0;
+  view.stSel = null;
+  let tm = null;
+  const stop = () => { if (tm) { clearInterval(tm); tm = null; } };
+  const paint = (scroll) => {
+    const box = $('stBox'); if (!box) { stop(); return; }
+    box.innerHTML = studentHtml({ sel: true });
+    setTimeout(() => loadThumbs(box), 0);
+    if (scroll) { const nm = box.querySelector('.m.new'); if (nm && nm.scrollIntoView) nm.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+  };
+  const play = () => {
+    stop(); view.step = 0; view.stSel = null; paint(false);
+    tm = setInterval(() => {
+      if (!$('stBox')) { stop(); return; }
+      view.step = (view.step || 0) + 1;
+      if (view.step >= studentSeq().length) stop();
+      paint(true);
+    }, 750);
+  };
   const draw = () => {
+    stop();
     const src = S.runSrc || 'site', t = view.track;
     const seg = (attr, opts, cur) => '<div class="seg sm" style="margin:0 0 8px">' + opts.map(([k, n]) => '<button type="button" ' + attr + '="' + k + '" class="' + (cur === k ? 'on' : '') + '">' + n + '</button>').join('') + '</div>';
-    sheet('<div class="shd"><span class="pill">Как ученик</span><button type="button" class="sx" id="stX" aria-label="закрыть">✕</button></div><h2>Бот глазами <i>ученика</i></h2>' +
-      seg('data-rsrc', [['site', '🌱 из соцсетей'], ['audit', '✅ после аудита']], src) + (src === 'audit' ? seg('data-ftrk', [['course', '🎓 мини-курс'], ['mat', '📚 материалы']], t) : '') + '<p class="small muted" style="margin:0 0 10px">' + (src === 'audit' ? 'Человек прошёл аудит и вернулся в бот: бот знает, что он выбрал. Дальше рассказ о программе и первый урок.' : 'Человек пришёл из соцсетей и аудит ещё не проходил: мини-курса и материалов у него нет. Он видит приветствие и выбирает: экскурсия, аудит или тарифы.') + '</p><button type="button" class="chip" id="stAll" style="margin:0 0 10px">' + (view.stAll ? '✓ Показаны и выключенные посты' : 'Показать и выключенные посты') + '</button>' + studentHtml());
+    sheet('<div class="shd"><span class="pill">Пройти путь</span><button type="button" class="sx" id="stX" aria-label="закрыть">✕</button></div><h2>Бот глазами <i>ученика</i></h2>' +
+      seg('data-rsrc', [['site', '🌱 просто зашёл в бота'], ['audit', '✅ после аудита']], src) + (src === 'audit' ? seg('data-ftrk', [['course', '🎓 мини-курс'], ['mat', '📚 материалы']], t) : '') +
+      '<p class="small muted" style="margin:0 0 10px">' + (src === 'audit' ? 'Человек прошёл аудит и вернулся в бот: бот знает, что он выбрал. Дальше рассказ о программе и первый урок.' : 'Человек пришёл из соцсетей и аудит ещё не проходил: мини-курса и материалов у него нет. Он видит приветствие и выбирает: экскурсия, аудит или тарифы.') + '</p>' +
+      '<div class="btns two" style="margin:0 0 10px"><button type="button" class="btn" id="stPlay">▶ Пройти путь</button><button type="button" class="btn ghost" id="stFull">Показать всё сразу</button></div>' +
+      '<p class="small muted" style="margin:0 0 8px">Нажми на сообщение: можно поменять порядок, выключить пост или открыть его.</p>' +
+      '<button type="button" class="chip" id="stAll" style="margin:0 0 10px">' + (view.stAll ? '✓ Показаны и выключенные посты' : 'Показать и выключенные посты') + '</button><div id="stBox">' + studentHtml({ sel: true }) + '</div>');
     $('stAll').onclick = () => { view.stAll = !view.stAll; view.step = 0; draw(); };
-    $('stX').onclick = closeSheet;
+    $('stX').onclick = () => { stop(); closeSheet(); };
+    $('stPlay').onclick = () => { haptic(); play(); };
+    $('stFull').onclick = () => { stop(); view.step = studentSeq().length; paint(false); };
     document.querySelectorAll('#sheet [data-rsrc]').forEach((b) => b.onclick = () => { S.runSrc = b.dataset.rsrc; view.step = 0; draw(); });
     document.querySelectorAll('#sheet [data-ftrk]').forEach((b) => b.onclick = () => { view.track = b.dataset.ftrk; view.step = 0; draw(); });
-    document.querySelectorAll('#sheet [data-stnext]').forEach((b) => b.onclick = () => { view.step = (view.step || 0) + 1; draw(); });
-    document.querySelectorAll('#sheet [data-strest]').forEach((b) => b.onclick = () => { view.step = 0; draw(); });
-    document.querySelectorAll('#sheet [data-jump]').forEach((b) => b.onclick = () => { const [k, v] = b.dataset.jump.split(':'); closeSheet(); if (k === 'p') openPost(+v); else openMsg(({ helloTest: 'hello', schedMat: 'schedCourse' }[v]) || v); });
+    $('stBox').onclick = async (e) => {
+      const a = e.target.closest('[data-sta]');
+      if (a) {
+        const [k, x, y] = a.dataset.sta.split(':');
+        const keepSrc = S.runSrc; // после перезагрузки данных выбор «из соцсетей / после аудита» не должен сбрасываться
+        if (k === 'mv') { if (!+y) return; stop(); try { await api('/swap', { a: +x, b: +y }); haptic('medium'); S = await api('/state'); S.runSrc = keepSrc; render(); paint(false); } catch (err) { toast(err.message); } return; }
+        if (k === 'tg') { stop(); await scToggle(+x); S.runSrc = keepSrc; paint(false); return; }
+        if (k === 'op') { closeSheet(); stop(); openPost(+x); return; }
+        if (k === 'ok') { closeSheet(); stop(); openMsg(({ helloTest: 'hello', schedMat: 'schedCourse' }[x]) || x); return; }
+        return;
+      }
+      const j = e.target.closest('[data-jump]');
+      if (j) { const [k, v] = j.dataset.jump.split(':'); stop(); closeSheet(); if (k === 'p') openPost(+v); else openMsg(({ helloTest: 'hello', schedMat: 'schedCourse' }[v]) || v); return; }
+      if (e.target.closest('[data-stnext]')) { view.step = (view.step || 0) + 1; paint(true); return; }
+      if (e.target.closest('[data-strest]')) { stop(); view.step = 0; view.stSel = null; paint(false); return; }
+      const sl = e.target.closest('[data-stsel]');
+      if (sl) { stop(); const i = +sl.dataset.stsel; view.stSel = view.stSel === i ? null : i; paint(false); }
+    };
     setTimeout(() => loadThumbs($('sheet')), 0);
   };
   draw();
