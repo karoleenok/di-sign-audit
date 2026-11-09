@@ -482,6 +482,8 @@ details a,.src a{color:var(--blue)}
 .sq-t{padding:0;border-radius:var(--r-l);border:1.5px solid var(--line);background:var(--card);cursor:pointer;aspect-ratio:1;overflow:hidden;display:block;width:100%;transition:transform .12s ease,border-color .15s ease}
 .sq-vis.eight .sq-t{aspect-ratio:4/3}
 .sq-t svg{display:block;width:100%;height:100%}
+.sq-t img{display:block;width:100%;height:100%;object-fit:cover}
+.sq-vis.has-real .sq-t,.sq-vis.eight.has-real .sq-t{aspect-ratio:4/5}
 .sq-t:active{transform:scale(.98)}
 .sq-t.sel{border-color:var(--blue);box-shadow:0 0 0 2px var(--blue)}
 .sq-start{align-items:center;text-align:center;gap:var(--s5)}
@@ -1812,6 +1814,9 @@ function sqBegin(){
   Q={a:[],i:0,ord:SQ_Q.map(function(q){return shuffle(q.o.length)}),busy:false,main:null,comp:null};
   go('squiz');sqPaint();
 }
+/* настоящие постеры вместо рисованных плиток, без подписей. [первое появление, финальный вопрос]; файлы лежат в /gallery.
+   Если для стиля имени нет, остаётся рисованная плитка. */
+var TILE_IMG={sw:['sw-05','sw-04'],ad:['ad-06','ad-01'],mm:['mm-02','mm-03'],jp:['jp-02','jp-04'],br:['br-01','br-07'],rf:['rf-01','rf-03'],bh:['bh-01','bh-03']};
 function sqPaint(){
   var q=SQ_Q[Q.i],o=$('#sqOpts'),h='',pr='';
   Q.busy=false;
@@ -1826,8 +1831,8 @@ function sqPaint(){
     o.innerHTML='<div class="sq-opts">'+h+'</div>';
   }else{
     var L='АБВГДЕЖЗ';
-    Q.ord[Q.i].forEach(function(ix,n){var op=q.o[ix];h+='<button class="sq-t'+(prev===op[1]?' sel':'')+'" type="button" data-s="'+op[1]+'" aria-label="Вариант '+L.charAt(n)+'">'+TILE[op[0]]()+'</button>'});
-    o.innerHTML='<div class="sq-vis'+(q.v===2?' eight':'')+'">'+h+'</div>';
+    Q.ord[Q.i].forEach(function(ix,n){var op=q.o[ix],pi=TILE_IMG[op[0]],pf=pi&&pi[q.v===2?1:0];h+='<button class="sq-t'+(pf?' real':'')+(prev===op[1]?' sel':'')+'" type="button" data-s="'+op[1]+'" aria-label="Вариант '+L.charAt(n)+'">'+(pf?'<img src="/gallery/'+pf+'.webp" alt="" decoding="async">':TILE[op[0]]())+'</button>'});
+    o.innerHTML='<div class="sq-vis'+(q.v===2?' eight':'')+(h.indexOf(' real')>=0?' has-real':'')+'">'+h+'</div>';
   }
   window.scrollTo(0,0);
 }
