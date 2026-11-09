@@ -17,6 +17,11 @@ for (const w of [390, 320]) {
   await page.goto('http://localhost:8791/admin');
   await page.waitForSelector('.sc-tl');
   // ряд кнопок компактный: «Проверить», «Как ученик», «Выбрать», «Порядок» прячутся под «Ещё»
+  // из админки «Ещё» с тремя кнопками убрано: по умолчанию их нет
+  for (const id of ['#scMore', '#scRe', '#scSel', '#scCheck']) assert.equal(await page.locator(id).count(), 0, id + ' спрятана');
+  // для проверки самих функций включаем их обратно через view.scTools
+  await page.evaluate(() => localStorage.setItem('panelView', JSON.stringify({ scTools: true })));
+  await page.reload(); await page.waitForSelector('.sc-tl');
   assert.equal(await page.locator('#scRe').count(), 0, 'редкие кнопки свёрнуты');
   await page.click('#scMore'); await page.waitForSelector('#scRe');
   // вкладки новые

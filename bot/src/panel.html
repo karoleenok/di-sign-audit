@@ -2139,7 +2139,9 @@ function scPlan() {
 }
 function renderSched() {
   { const b = document.getElementById('scBar'); if (b) b.remove(); }
-  const ids = byIdMap(), T = view.sTrack || 'all', RE = !!view.sReorder, SEL = !!view.sSel;
+  // «Ещё» (Проверить / Выбрать / Порядок) спрятано из админки; вернуть: view.scTools = true в panelView
+  const TOOLS = view.scTools === true;
+  const ids = byIdMap(), T = view.sTrack || 'all', RE = TOOLS && !!view.sReorder, SEL = TOOLS && !!view.sSel;
   const picked = (view.sPick = view.sPick || []);
   const keep = (p) => T === 'all' || p.track === 'all' || p.track === T;
   const inboxN = S.posts.filter((p) => p.inbox).length;
@@ -2157,8 +2159,8 @@ function renderSched() {
     (noGo ? '<button type="button" class="sc-chip warm" id="scNo">Не уйдут · ' + noGo + '</button>' : '') +
     '<button type="button" class="sc-chip" id="scStud" style="background:var(--pill);border-color:transparent;font-weight:700">▶ Пройти путь</button>' +
     '<button type="button" class="sc-chip" id="scLib">📚 Все посты · ' + S.posts.length + '</button>' +
-    '<button type="button" class="sc-chip' + (view.scMore === true || SEL || RE ? ' on' : '') + '" id="scMore" aria-expanded="' + (view.scMore === true || SEL || RE) + '">' + (view.scMore === true || SEL || RE ? 'Меньше ▴' : 'Ещё ▾') + '</button></div>' +
-    (view.scMore === true || SEL || RE ? '<div class="sc-chips" style="margin-top:0"><button type="button" class="sc-chip" id="scCheck">Проверить</button>' +
+    (TOOLS ? '<button type="button" class="sc-chip' + (view.scMore === true || SEL || RE ? ' on' : '') + '" id="scMore" aria-expanded="' + (view.scMore === true || SEL || RE) + '">' + (view.scMore === true || SEL || RE ? 'Меньше ▴' : 'Ещё ▾') + '</button>' : '') + '</div>' +
+    (TOOLS && (view.scMore === true || SEL || RE) ? '<div class="sc-chips" style="margin-top:0"><button type="button" class="sc-chip" id="scCheck">Проверить</button>' +
     '<button type="button" class="sc-chip' + (SEL ? ' on' : '') + '" id="scSel">' + (SEL ? 'Готово' : '☐ Выбрать') + '</button>' +
     '<button type="button" class="sc-chip' + (RE ? ' on' : '') + '" id="scRe">' + (RE ? 'Готово' : '↕ Порядок') + '</button></div>' : '') + scPlan() +
     '<div class="sc-flt">' + [['all', 'Все'], ['course', 'Мини-курс'], ['mat', 'Материалы']].map(([k, n]) => '<button type="button" data-sctrk="' + k + '" class="' + (T === k ? 'on' : '') + '">' + n + '</button>').join('') + '</div>' +
@@ -2226,7 +2228,7 @@ function renderSched() {
   if ($('scNo')) $('scNo').onclick = () => { haptic(); scNotGoing(); };
   if ($('scDup')) $('scDup').onclick = () => { haptic(); scDupSheet(); };
   if ($('scCheck')) $('scCheck').onclick = () => { haptic(); scCheck(); };
-  $('scMore').onclick = () => { view.scMore = view.scMore !== true; saveView(); haptic(); renderSched(); };
+  if ($('scMore')) $('scMore').onclick = () => { view.scMore = view.scMore !== true; saveView(); haptic(); renderSched(); };
   $('scLib').onclick = () => { haptic(); tab = 'lib'; render(); window.scrollTo(0, 0); };
   $('plT').onclick = () => { view.scPlan = view.scPlan === false; saveView(); renderSched(); };
   document.querySelectorAll('[data-plt]').forEach((b) => b.onclick = () => { view.scPlanT = b.dataset.plt; saveView(); renderSched(); });
