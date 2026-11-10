@@ -17,7 +17,6 @@ export const WATCH_HTML = `<!doctype html><html lang="ru"><head><meta charset="u
   <div class="player" id="player">
     <div class="stage" id="stage">
       <div id="yt"></div>
-      <div class="mark" id="mark" aria-hidden="true"></div>
       <div class="state" id="state" role="status" aria-live="polite">
         <div class="spin" id="spin" aria-hidden="true"></div>
         <p class="st-t" id="stT">Открываю урок…</p>
@@ -38,7 +37,7 @@ export const WATCH_HTML = `<!doctype html><html lang="ru"><head><meta charset="u
     <h2>Главы</h2>
     <ol id="chList"></ol>
   </section>
-  <p class="foot">Урок только для учеников Di Sign University. Пересылать и записывать нельзя: на видео стоит твоё имя.</p>
+  <p class="foot">Урок только для учеников Di Sign University. Пересылать и записывать нельзя.</p>
 </main>
 <script src="/watch.js?v=${WATCH_VER}"></script>
 </body></html>`;
@@ -59,7 +58,6 @@ h2{margin:0 0 var(--s3);font-size:18px;line-height:24px;font-weight:600;color:va
 .player{position:sticky;top:0;z-index:5;background:var(--bg);padding:var(--s1) 0 var(--s2)}
 .stage{position:relative;aspect-ratio:16/9;background:var(--stage);border-radius:var(--r-m);overflow:hidden}
 .stage iframe,.stage #yt{position:absolute;inset:0;width:100%;height:100%;border:0}
-.mark{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;max-width:70%;padding:0 var(--s2);font-size:clamp(11px,3.2vw,14px);line-height:1.3;font-weight:600;color:rgba(255,255,255,.4);text-shadow:0 1px 3px rgba(0,0,0,.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;user-select:none;-webkit-user-select:none;transition:left 1.2s ease,top 1.2s ease}
 .state{position:absolute;inset:0;z-index:3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--s2);padding:var(--s4);text-align:center;background:var(--stage);color:#fff}
 .state .st-t{margin:0;font-size:16px;line-height:22px;font-weight:600}
 .state .st-d{margin:0;max-width:34ch;font-size:14px;line-height:20px;color:rgba(255,255,255,.78)}
@@ -89,7 +87,7 @@ h2{margin:0 0 var(--s3);font-size:18px;line-height:24px;font-weight:600;color:va
 .foot{margin:var(--s5) 0 0;font-size:13px;line-height:18px;color:var(--soft)}
 @media (hover:hover){.ch:hover{background:var(--lilac)}}
 @media (min-width:600px){.wrap{padding-top:var(--s5)}.player{position:static}}
-@media (prefers-reduced-motion:reduce){.mark{transition:none}.spin{animation-duration:2.4s}}
+@media (prefers-reduced-motion:reduce){.spin{animation-duration:2.4s}}
 `;
 
 export const WATCH_JS = `(function(){
@@ -114,14 +112,6 @@ function vpn(){fail('YouTube не отвечает','Видео лежит на 
 
 function api(path,body,keep){
   return fetch(path,{method:'POST',keepalive:!!keep,headers:{'content-type':'application/json','x-init-data':tg.initData},body:JSON.stringify(body)});
-}
-
-/* водяной знак: имя и id ученика, плавно переезжает по кадру (не закрывает управление плеера внизу и название сверху) */
-function startMark(){
-  var el=$('mark');var nm=(D.name||'').split(/\s+/)[0].slice(0,18);el.textContent=(nm?nm+' · ':'')+'id '+D.uid;
-  var spots=[[26,40],[72,42],[50,56],[28,64],[74,62],[50,38]],i=Math.floor(Math.random()*spots.length);
-  function go(){var p=spots[i],jx=(Math.random()*8-4),jy=(Math.random()*6-3);el.style.left=(p[0]+jx)+'%';el.style.top=(p[1]+jy)+'%';var n;do{n=Math.floor(Math.random()*spots.length)}while(n===i);i=n}
-  go();setInterval(go,14000);
 }
 
 /* главы */
@@ -153,7 +143,7 @@ function save(force){
   api('/api/watch/progress',{p:+m[1],b:m[2],s:Math.floor(s),d:Math.floor(d||0)},true).catch(function(){});
 }
 
-/* полный экран: свой, чтобы водяной знак не пропадал (у YouTube он бы ушёл) */
+/* полный экран: свой, чтобы он одинаково работал в Телеграме на айфоне и андроиде */
 function fullOn(){stage.classList.add('full');$('xBtn').hidden=false;
   try{if(stage.requestFullscreen)stage.requestFullscreen().catch(function(){});else if(stage.webkitRequestFullscreen)stage.webkitRequestFullscreen()}catch(e){}}
 function fullOff(){stage.classList.remove('full');$('xBtn').hidden=true;
@@ -219,7 +209,7 @@ else{
     return r.json();
   }).then(function(d){
     if(!d)return;D=d;$('ttl').textContent=d.title;document.title=d.title+' · Di Sign University';
-    drawChapters();startMark();state('load','Загружаю видео…','');loadYT();
+    drawChapters();state('load','Загружаю видео…','');loadYT();
   }).catch(function(){fail('Нет связи','Проверь интернет и нажми «Повторить».',true)});
 }
 })();

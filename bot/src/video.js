@@ -98,7 +98,7 @@ export async function loadWatch(ctx, { user, admin, pid, bid }) {
     code: 200,
     data: {
       id: a.b.video.id, ch: a.b.video.ch || [], title: lessonTitle(a.post),
-      name: String(user.first_name || '').slice(0, 40), uid: user.id, admin: !!admin,
+      admin: !!admin,
       resume: pr ? pr.sec : 0, dur: pr ? pr.dur : 0,
     },
   };

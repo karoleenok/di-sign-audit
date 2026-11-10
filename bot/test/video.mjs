@@ -80,7 +80,7 @@ assert.equal((await loadWatch(ctx, { user: U(1), admin: true, pid: 9, bid: '0-0'
 assert.equal((await loadWatch(ctx, { user: U(1), admin: true, pid: 10, bid: '0-0' })).data.title, 'Урок');
 assert.equal((await loadWatch(ctx, { user: U(1), admin: true, pid: 7, bid: '0-0' })).data.title, 'Урок 1');
 r = await loadWatch(ctx, { user: U(2), admin: false, pid: 7, bid: '0-0' });
-assert.equal(r.code, 200, 'ученик, которому пост пришёл'); assert.equal(r.data.name, 'Имя2'); assert.equal(r.data.uid, 2); assert.equal(r.data.resume, 0);
+assert.equal(r.code, 200, 'ученик, которому пост пришёл'); assert.equal(r.data.resume, 0); assert.ok(!('name' in r.data) && !('uid' in r.data), 'имя и id человека странице не отдаём');
 assert.equal((await loadWatch(ctx, { user: U(3), admin: false, pid: 7, bid: '0-0' })).code, 403, 'отправка не удалась — доступа нет');
 assert.equal((await loadWatch(ctx, { user: U(9), admin: false, pid: 7, bid: '0-0' })).code, 403, 'чужой человек');
 assert.equal((await loadWatch(ctx, { user: U(1), admin: true, pid: 8, bid: '0-0' })).code, 404, 'в посте нет видео');
