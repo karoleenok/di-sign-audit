@@ -46,7 +46,6 @@ export const WATCH_HTML = `<!doctype html><html lang="ru"><head><meta charset="u
 export const WATCH_CSS = `@font-face{font-family:'Inter Tight';font-weight:100 900;font-style:normal;src:url(/fonts/inter-tight.woff) format('woff');font-display:swap}
 :root{--bg:#fffbf8;--card:#fff;--ink:#2c0d02;--text:#1c0408;--soft:rgba(28,4,8,.68);--line:rgba(44,13,2,.14);--blue:#1f73c4;--pink:#b82e85;--lilac:#f8e4f4;--outline:#66b8ff;--stage:#1c0408;
   --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;--r-s:8px;--r-m:16px;--f:'Inter Tight',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color-scheme:light}
-:root[data-theme=dark]{--bg:#1c0f0b;--card:#261813;--ink:#fff4ee;--text:#fff4ee;--soft:rgba(255,244,238,.72);--line:rgba(255,244,238,.18);--blue:#8cc2f4;--pink:#f08ad0;--lilac:#3a2233;color-scheme:dark}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--text);font:400 16px/24px var(--f);-webkit-font-smoothing:antialiased;min-height:100dvh}
@@ -102,9 +101,8 @@ var D=null,player=null,ready=false,timers={},lastSave=0,lastSec=0,wantResume=0;
 var stage=$('stage');
 
 function fmt(s){s=Math.max(0,Math.floor(s||0));var h=Math.floor(s/3600),mi=Math.floor(s%3600/60),r=s%60;return (h?h+':'+(mi<10?'0':'')+mi:String(mi))+':'+(r<10?'0':'')+r}
-function setTheme(){var d=tg&&tg.colorScheme==='dark'||(!tg&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches);
-  document.documentElement.setAttribute('data-theme',d?'dark':'light');
-  try{var c=d?'#1c0f0b':'#fffbf8';tg&&tg.setHeaderColor&&tg.setHeaderColor(c);tg&&tg.setBackgroundColor&&tg.setBackgroundColor(c)}catch(e){}}
+/* страница всегда светлая, как весь бренд, даже если в Телеграме тёмная тема: красим и шапку самого Телеграма */
+function setTheme(){try{var c='#fffbf8';tg&&tg.setHeaderColor&&tg.setHeaderColor(c);tg&&tg.setBackgroundColor&&tg.setBackgroundColor(c);tg&&tg.setBottomBarColor&&tg.setBottomBarColor(c)}catch(e){}}
 function state(kind,title,text,btn){
   var s=$('state');s.hidden=false;s.className='state'+(kind==='err'?' err':'');
   $('stT').textContent=title;$('stD').textContent=text||'';
@@ -120,8 +118,8 @@ function api(path,body,keep){
 
 /* водяной знак: имя и id ученика, плавно переезжает по кадру (не закрывает управление плеера внизу и название сверху) */
 function startMark(){
-  var el=$('mark');el.textContent=(D.name?D.name+' · ':'')+'id '+D.uid;
-  var spots=[[24,26],[72,30],[50,50],[28,64],[74,62],[50,24]],i=Math.floor(Math.random()*spots.length);
+  var el=$('mark');var nm=(D.name||'').split(/\s+/)[0].slice(0,18);el.textContent=(nm?nm+' · ':'')+'id '+D.uid;
+  var spots=[[26,40],[72,42],[50,56],[28,64],[74,62],[50,38]],i=Math.floor(Math.random()*spots.length);
   function go(){var p=spots[i],jx=(Math.random()*8-4),jy=(Math.random()*6-3);el.style.left=(p[0]+jx)+'%';el.style.top=(p[1]+jy)+'%';var n;do{n=Math.floor(Math.random()*spots.length)}while(n===i);i=n}
   go();setInterval(go,14000);
 }

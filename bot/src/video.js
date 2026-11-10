@@ -69,7 +69,7 @@ async function access(ctx, { user, admin, pid, bid }) {
   const m = /^(\d+)-(\d+)$/.exec(String(bid || ''));
   const id = Number(pid);
   if (!m || !Number.isInteger(id) || id <= 0) return { code: 404, error: 'Урок не найден' };
-  const post = await ctx.db.first(`SELECT id, title, buttons FROM posts WHERE id = ?`, [id]);
+  const post = await ctx.db.first(`SELECT id, title, text, buttons FROM posts WHERE id = ?`, [id]);
   const b = post && (j(post.buttons, [])[+m[1]] || [])[+m[2]];
   if (!b || !b.video || !ID.test(String(b.video.id || ''))) return { code: 404, error: 'Урок не найден' };
   if (!admin) {
@@ -77,6 +77,12 @@ async function access(ctx, { user, admin, pid, bid }) {
     if (!d) return { code: 403, error: 'Не получилось проверить доступ. Закрой урок и открой его из бота ещё раз через минуту.' };
   }
   return { post, b, id, bid: `${+m[1]}-${+m[2]}` };
+}
+
+// название урока на странице: заголовок поста, иначе первая строка его текста, иначе «Урок»
+function lessonTitle(post) {
+  const t = String(post.title || '').trim() || String(post.text || '').split(/\r?\n/).map((x) => x.trim()).find(Boolean) || '';
+  return t.slice(0, 80) || 'Урок';
 }
 
 // открыть урок: отдаём ID видео, главы и место, где человек остановился. ID не лежит ни в сообщении, ни в странице — только здесь
@@ -91,7 +97,7 @@ export async function loadWatch(ctx, { user, admin, pid, bid }) {
   return {
     code: 200,
     data: {
-      id: a.b.video.id, ch: a.b.video.ch || [], title: a.post.title || a.b.text || 'Урок',
+      id: a.b.video.id, ch: a.b.video.ch || [], title: lessonTitle(a.post),
       name: String(user.first_name || '').slice(0, 40), uid: user.id, admin: !!admin,
       resume: pr ? pr.sec : 0, dur: pr ? pr.dur : 0,
     },

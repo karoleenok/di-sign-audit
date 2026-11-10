@@ -73,6 +73,12 @@ assert.match((await cleanButtons(ctx, [[{ text: 'Смотреть', video: { url
 // доступ
 let r = await loadWatch(ctx, { user: U(1), admin: true, pid: 7, bid: '0-0' });
 assert.equal(r.code, 200); assert.equal(r.data.id, VID); assert.equal(r.data.admin, true);
+// название: заголовок поста; без заголовка — первая строка текста; совсем пусто — «Урок»
+await db.run(`INSERT INTO posts (id, title, kind, status, created_at, text, buttons) VALUES (9, '', 'drip', 'active', 0, ?, ?)`, ['\n  Вторая неделя: сетка и отступы\nдальше длинный текст', JSON.stringify([[btn]])]);
+await db.run(`INSERT INTO posts (id, title, kind, status, created_at, text, buttons) VALUES (10, NULL, 'drip', 'active', 0, NULL, ?)`, [JSON.stringify([[btn]])]);
+assert.equal((await loadWatch(ctx, { user: U(1), admin: true, pid: 9, bid: '0-0' })).data.title, 'Вторая неделя: сетка и отступы');
+assert.equal((await loadWatch(ctx, { user: U(1), admin: true, pid: 10, bid: '0-0' })).data.title, 'Урок');
+assert.equal((await loadWatch(ctx, { user: U(1), admin: true, pid: 7, bid: '0-0' })).data.title, 'Урок 1');
 r = await loadWatch(ctx, { user: U(2), admin: false, pid: 7, bid: '0-0' });
 assert.equal(r.code, 200, 'ученик, которому пост пришёл'); assert.equal(r.data.name, 'Имя2'); assert.equal(r.data.uid, 2); assert.equal(r.data.resume, 0);
 assert.equal((await loadWatch(ctx, { user: U(3), admin: false, pid: 7, bid: '0-0' })).code, 403, 'отправка не удалась — доступа нет');
