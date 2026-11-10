@@ -125,6 +125,28 @@ await page.click('#bClear'); await page.click('#bSave'); await page.waitForTimeo
 assert.equal((await db.first(`SELECT buttons FROM posts WHERE title = 'Скрипты ответов'`)).buttons, null);
 step('кнопка «Видео»: ссылка и главы, проверка, сохранение и возврат в поля');
 
+// 5б-3. видеоуроки в аппке: вкладка «Игра»
+await page.click('#tabs button[data-t="game"]');
+await page.waitForSelector('[data-vadd="mini"]');
+await page.click('[data-vadd="mini"]');
+await page.fill('[data-v="mini"][data-i="0"][data-k="t"]', 'Урок 1. Аудит');
+await page.fill('[data-v="mini"][data-i="0"][data-k="u"]', 'https://vimeo.com/1');
+await page.click('#gSave'); await page.waitForTimeout(500);
+assert.match(await page.textContent('#gMsg'), /YouTube/, 'чужая ссылка не сохраняется, ошибка видна');
+await page.fill('[data-v="mini"][data-i="0"][data-k="u"]', 'https://youtu.be/-abc_DEF123');
+await page.fill('[data-v="mini"][data-i="0"][data-k="c"]', '0:00 Старт\n5:00 Дальше');
+await page.screenshot({ path: OUT + '/panel-10c-game-video.png', fullPage: true });
+await page.click('#gSave'); await page.waitForTimeout(700);
+const gv = JSON.parse((await db.first(`SELECT value FROM settings WHERE key = 'app_cfg'`)).value).videos.mini;
+assert.equal(gv.length, 1); assert.equal(gv[0].y, '-abc_DEF123'); assert.equal(gv[0].ch.length, 2);
+await page.waitForSelector('[data-v="mini"][data-k="u"]');
+assert.equal(await page.inputValue('[data-v="mini"][data-i="0"][data-k="u"]'), 'https://youtu.be/-abc_DEF123', 'ссылка вернулась в поле');
+assert.equal(await page.inputValue('[data-v="mini"][data-i="0"][data-k="c"]'), '0:00 Старт\n5:00 Дальше', 'главы вернулись в поля');
+await page.click('[data-vdel="mini:0"]'); await page.click('#gSave'); await page.waitForTimeout(700);
+assert.equal(JSON.parse((await db.first(`SELECT value FROM settings WHERE key = 'app_cfg'`)).value).videos.mini.length, 0, 'урок убран');
+await page.click('#tabs button[data-t="path"]'); await page.waitForSelector('.card');
+step('видеоуроки аппки: добавление, проверка ссылки, возврат в поля, удаление');
+
 // 5в. когда отправлять: «после поста»
 await page.locator('.card', { hasText: 'Контент-план' }).locator('.ttl').click();
 await page.waitForSelector('.sheet.on'); await page.waitForTimeout(300);

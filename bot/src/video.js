@@ -119,3 +119,24 @@ export async function saveWatch(ctx, { user, admin, pid, bid, sec, dur }) {
     [user.id, a.id, a.bid, s, max, d, ctx.now]);
   return { code: 200, data: { ok: true } };
 }
+
+// ---------- видеоуроки внутри аппки (раздел мини-курса и месяц материалов) ----------
+// Права проверяет watch-route.js (подпись Telegram, трек человека, «показывать всем»), сюда приходит найденный урок { id, t, y, ch }.
+// Место просмотра лежит в той же таблице, post_id = -1 (мини-курс) или -2 (материалы), btn = id урока.
+const TRACK_PID = { mini: -1, mat: -2 };
+export async function loadAppWatch(ctx, { user, admin, k, vid }) {
+  const pr = await ctx.db.first(`SELECT sec, dur FROM watch_progress WHERE tg_id = ? AND post_id = ? AND btn = ?`, [user.id, TRACK_PID[k], vid.id]);
+  return { code: 200, data: { id: vid.y, ch: vid.ch || [], title: vid.t, admin: !!admin, resume: pr ? pr.sec : 0, dur: pr ? pr.dur : 0 } };
+}
+export async function saveAppWatch(ctx, { user, k, vid, sec, dur }) {
+  let s = Math.floor(Number(sec)), d = Math.floor(Number(dur));
+  if (!Number.isFinite(s) || s < 0 || s > 86400) return { code: 400, error: 'Неверное время' };
+  if (!Number.isFinite(d) || d < 0 || d > 86400) d = 0;
+  const max = s;
+  if (d && s >= d - 20) s = 0;
+  await ctx.db.run(
+    `INSERT INTO watch_progress (tg_id, post_id, btn, sec, max_sec, dur, at) VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(tg_id, post_id, btn) DO UPDATE SET sec = excluded.sec, max_sec = MAX(max_sec, excluded.max_sec), dur = CASE WHEN excluded.dur > 0 THEN excluded.dur ELSE dur END, at = excluded.at`,
+    [user.id, TRACK_PID[k], vid.id, s, max, d, ctx.now]);
+  return { code: 200, data: { ok: true } };
+}

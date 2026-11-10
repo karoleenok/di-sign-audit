@@ -87,6 +87,13 @@ img{display:block}
 .game:active{transform:scale(.985)}
 .game .meta{display:flex;gap:var(--s2);flex-wrap:wrap;margin-top:var(--s3)}
 .game img{width:104px;height:104px;object-fit:contain}
+.vids{display:flex;flex-direction:column;gap:var(--s3)}
+.vid{display:grid;grid-template-columns:48px minmax(0,1fr);gap:var(--s3);align-items:center;text-align:left;width:100%;min-height:72px;cursor:pointer;background:var(--card);border:1px solid var(--line);border-radius:var(--r-xl);padding:var(--s4);color:var(--ink);-webkit-tap-highlight-color:transparent}
+.vid:active{transform:scale(.985)}
+.vid-ic{width:48px;height:48px;border-radius:50%;background:var(--lilac);display:grid;place-items:center;color:var(--ink)}
+.vid-ic svg{width:18px;height:18px;margin-left:2px}
+.vid-t{display:block;font:600 17px/22px var(--f-text);overflow-wrap:anywhere}
+.vid-s{display:block;margin-top:2px;font:400 14px/20px var(--f-text);color:var(--ink-soft)}
 .soon{display:flex;flex-direction:column;gap:var(--s2)}
 .soon li{list-style:none;display:flex;justify-content:space-between;gap:var(--s3);align-items:center;padding:var(--s3) var(--s4);border:1px dashed var(--line);border-radius:var(--r-l);color:var(--ink-soft);font-size:14px;line-height:20px}
 .hello{gap:var(--s5)}
@@ -673,6 +680,10 @@ details a,.src a{color:var(--blue)}
       <img data-img="notebook" alt="">
     </button>
   </div>
+  <div id="vidBox" hidden>
+    <p class="lab" style="margin-bottom:8px">Видеоуроки</p>
+    <div class="vids" id="vidList"></div>
+  </div>
   <div id="linksBox" class="lnks" hidden></div>
   <div id="weekBox" hidden>
     <p class="lab" style="margin-bottom:8px">Что уйдёт на этой неделе</p>
@@ -1128,6 +1139,19 @@ function paintHome(){
   $('#weekBox').hidden=!wk.length;
   $('#soonLab').textContent=wk.length?'Ещё в ноябре':'Дальше в ноябре';
   ul.parentNode.hidden=!rest.length;
+  var vs=(APPCFG&&APPCFG.videos&&APPCFG.videos[TRACK])||[],vl=$('#vidList');
+  vl.textContent='';
+  vs.forEach(function(v){
+    if(!v||!/^[a-z0-9]{6}$/.test(v.id||''))return;
+    var b=document.createElement('button');b.type='button';b.className='vid';
+    var ic=document.createElement('span');ic.className='vid-ic';ic.setAttribute('aria-hidden','true');ic.innerHTML='<svg viewBox="0 0 18 18"><path d="M3 1.5v15L16 9z" fill="currentColor"/></svg>';
+    var tx=document.createElement('span'),t=document.createElement('span'),s=document.createElement('span');
+    t.className='vid-t';t.textContent=v.t;s.className='vid-s';s.textContent='Видеоурок'+(v.n?' · '+v.n+' '+(v.n%10===1&&v.n%100!==11?'глава':(v.n%10>=2&&v.n%10<=4&&(v.n%100<10||v.n%100>=20)?'главы':'глав')):'');
+    tx.appendChild(t);tx.appendChild(s);b.appendChild(ic);b.appendChild(tx);
+    b.addEventListener('click',function(){location.href='/watch/a/'+TRACK+'/'+v.id});
+    vl.appendChild(b);
+  });
+  $('#vidBox').hidden=!vl.children.length;
   var lk=(APPCFG&&APPCFG.links&&APPCFG.links[TRACK])||[],lb=$('#linksBox');
   lb.textContent='';
   lk.forEach(function(x){

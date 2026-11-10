@@ -1,3 +1,6 @@
+import { randomBytes } from 'node:crypto';
+import { parseYouTubeId, parseChapters } from './video.js';
+
 // Расписание открытия игр в мини-аппке. Лежит в таблице settings (ключ app_cfg), отдельная миграция не нужна.
 // Режимы игры: open — открыта, closed — закрыта, sched — открыть с даты (from) и закрыть к дате (until, можно не задавать).
 export const ITEMS = [
@@ -28,6 +31,58 @@ export function normalizeLinks(v, fallback) {
   }
   return out;
 }
+// Видеоуроки аппки: по треку, до 12 штук. В базе: { id, t, y (ID YouTube), ch: [{t, title}] }
+export const MAX_VIDEOS = 12;
+const VID_ID = /^[a-z0-9]{6}$/;
+const newVid = () => { const a = 'abcdefghijklmnopqrstuvwxyz0123456789'; const b = randomBytes(6); let s = ''; for (const x of b) s += a[x % 36]; return s; };
+// из базы: молча чиним, что можно
+export function normalizeVideos(v) {
+  const out = { mini: [], mat: [] };
+  const src = v && typeof v === 'object' ? v : {};
+  for (const k of ['mini', 'mat']) {
+    if (!Array.isArray(src[k])) continue;
+    const seen = new Set();
+    for (const x of src[k]) {
+      if (out[k].length >= MAX_VIDEOS) break;
+      const y = parseYouTubeId(x && x.y);
+      const t = String((x && x.t) || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+      if (!y || !t || !VID_ID.test(String(x.id || '')) || seen.has(x.id)) continue;
+      seen.add(x.id);
+      const ch = (Array.isArray(x.ch) ? x.ch : []).filter((c) => c && Number.isFinite(+c.t) && String(c.title || '').trim()).slice(0, 40).map((c) => ({ t: Math.max(0, Math.floor(+c.t)), title: String(c.title).trim().slice(0, 80) }));
+      out[k].push({ id: x.id, t, y, ch });
+    }
+  }
+  return out;
+}
+// из панели: { id?, t, url, ch: «текст» }. Ошибку возвращаем человеку, а не выбрасываем строку молча
+export function cleanVideos(v) {
+  const out = { mini: [], mat: [] };
+  const src = v && typeof v === 'object' ? v : {};
+  const names = { mini: 'Мини-курс', mat: 'Месяц материалов' };
+  for (const k of ['mini', 'mat']) {
+    const list = Array.isArray(src[k]) ? src[k] : [];
+    if (list.length > MAX_VIDEOS) return { error: `${names[k]}: видеоуроков до ${MAX_VIDEOS}` };
+    const used = new Set();
+    for (const x of list) {
+      const t = String((x && x.t) || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+      if (!t) return { error: `${names[k]}: у видеоурока нет названия` };
+      const y = parseYouTubeId(x.url || x.y);
+      if (!y) return { error: `«${t}»: не получилось понять ссылку на YouTube. Вставь ссылку вида youtu.be/… или youtube.com/watch?v=…` };
+      let ch = [];
+      if (Array.isArray(x.ch)) ch = x.ch.filter((c) => c && Number.isFinite(+c.t) && String(c.title || '').trim()).slice(0, 40).map((c) => ({ t: Math.max(0, Math.floor(+c.t)), title: String(c.title).trim().slice(0, 80) }));
+      else if (typeof x.ch === 'string' && x.ch.trim()) {
+        const r = parseChapters(x.ch);
+        if (r.error) return { error: `«${t}»: ${r.error}` };
+        ch = r.ch;
+      }
+      let id = VID_ID.test(String(x.id || '')) && !used.has(x.id) ? x.id : newVid();
+      while (used.has(id)) id = newVid();
+      used.add(id);
+      out[k].push({ id, t, y, ch });
+    }
+  }
+  return { videos: out };
+}
 const clone = (o) => JSON.parse(JSON.stringify(o));
 const validDay = (s) => {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || ''));
@@ -48,7 +103,7 @@ export function normalizeSoon(v, fallback) {
 export function defaults() {
   const items = {};
   for (const it of ITEMS) items[it.id] = { mode: it.off ? 'closed' : 'open', from: null, until: null };
-  return { public: false, items, soon: clone(SOON_DEFAULT), links: { mini: [], mat: [] } };
+  return { public: false, items, soon: clone(SOON_DEFAULT), links: { mini: [], mat: [] }, videos: { mini: [], mat: [] } };
 }
 
 const ts = (v) => {
@@ -64,6 +119,7 @@ export function normalize(raw) {
   d.public = src.public === true;
   d.soon = normalizeSoon(src.soon, d.soon);
   d.links = normalizeLinks(src.links, d.links);
+  d.videos = normalizeVideos(src.videos);
   const items = src.items && typeof src.items === 'object' ? src.items : {};
   for (const it of ITEMS) {
     const r = items[it.id];
@@ -103,7 +159,9 @@ export async function loadCfg(ctx) {
 export async function saveCfg(ctx, input) {
   // что не прислали, то не трогаем: ползунок «показывать всем» шлёт только public, расписание шлёт public и items
   const cur = await loadCfg(ctx), inp = input && typeof input === 'object' ? input : {};
-  const cfg = normalize({ public: inp.public === undefined ? cur.public : inp.public, items: inp.items === undefined ? cur.items : inp.items, soon: inp.soon === undefined ? cur.soon : inp.soon, links: inp.links === undefined ? cur.links : inp.links });
+  let videos = cur.videos;
+  if (inp.videos !== undefined) { const r = cleanVideos(inp.videos); if (r.error) return { error: r.error }; videos = r.videos; }
+  const cfg = normalize({ public: inp.public === undefined ? cur.public : inp.public, items: inp.items === undefined ? cur.items : inp.items, soon: inp.soon === undefined ? cur.soon : inp.soon, links: inp.links === undefined ? cur.links : inp.links, videos });
   const err = validate(cfg);
   if (err) return { error: err };
   await ctx.db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [KEY, JSON.stringify(cfg)]);
@@ -120,7 +178,10 @@ export function viewFor(cfg, now, admin) {
       ? { open, mode: r.mode, from: r.from, until: r.until, name: it.name, track: it.track }
       : { open, from: r.mode === 'sched' && !open && r.from && now < r.from ? r.from : null };
   }
-  return { admin: !!admin, now, public: cfg.public, items, soon: cfg.soon, links: cfg.links };
+  // ID видео отдаём только админу (для редактора): ученику хватает id урока, названия и числа глав
+  const videos = {};
+  for (const k of ['mini', 'mat']) videos[k] = cfg.videos[k].map((v) => (admin ? { id: v.id, t: v.t, y: v.y, ch: v.ch, n: v.ch.length } : { id: v.id, t: v.t, n: v.ch.length }));
+  return { admin: !!admin, now, public: cfg.public, items, soon: cfg.soon, links: cfg.links, videos };
 }
 
 // ---------- кнопка «Игра» у человека рядом со строкой ввода ----------

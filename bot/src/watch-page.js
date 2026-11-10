@@ -2,7 +2,7 @@
 // Сама страница пустая и одинаковая для всех: ID видео приходит с сервера только после проверки подписи Telegram и доступа.
 // Скрипт и стили отдаются отдельными файлами (/watch.js, /watch.css), чтобы в защите страницы не было 'unsafe-inline'.
 
-export const WATCH_VER = '1';
+export const WATCH_VER = '2';
 
 export const WATCH_HTML = `<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -12,7 +12,7 @@ export const WATCH_HTML = `<!doctype html><html lang="ru"><head><meta charset="u
 <link rel="stylesheet" href="/watch.css?v=${WATCH_VER}"></head>
 <body>
 <main class="wrap">
-  <header class="top"><span class="pill">Di Sign University</span></header>
+  <header class="top"><span class="pill">Di Sign University</span><a class="back" id="back" href="/app" hidden>← К урокам</a></header>
   <h1 id="ttl">Открываю урок…</h1>
   <div class="player" id="player">
     <div class="stage" id="stage">
@@ -50,7 +50,8 @@ html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--text);font:400 16px/24px var(--f);-webkit-font-smoothing:antialiased;min-height:100dvh}
 [hidden]{display:none!important}
 .wrap{max-width:720px;margin:0 auto;padding:var(--s4) max(var(--s4),env(safe-area-inset-right)) calc(var(--s6) + env(safe-area-inset-bottom)) max(var(--s4),env(safe-area-inset-left))}
-.top{margin:0 0 var(--s3)}
+.top{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);margin:0 0 var(--s3)}
+.back{display:inline-flex;align-items:center;min-height:44px;padding:0 var(--s2);color:var(--blue);font-size:15px;line-height:20px;font-weight:600;text-decoration:none}
 .pill{display:inline-block;padding:var(--s1) var(--s3);border-radius:999px;background:var(--lilac);color:var(--ink);font-size:13px;line-height:20px;font-weight:600;letter-spacing:.01em}
 h1{margin:0 0 var(--s4);font-size:clamp(24px,6.5vw,32px);line-height:1.15;font-weight:600;letter-spacing:-.01em;color:var(--ink);text-wrap:balance;overflow-wrap:anywhere}
 h2{margin:0 0 var(--s3);font-size:18px;line-height:24px;font-weight:600;color:var(--ink)}
@@ -95,6 +96,11 @@ export const WATCH_JS = `(function(){
 var tg=window.Telegram&&window.Telegram.WebApp;
 var $=function(i){return document.getElementById(i)};
 var m=/^\\/watch\\/(\\d+)\\/(\\d+-\\d+)\\/?$/.exec(location.pathname);
+/* урок из аппки: /watch/a/<mini|mat>/<id>. Тело запроса {k,v} вместо {p,b} */
+var am=/^\\/watch\\/a\\/(mini|mat)\\/([a-z0-9]{6})\\/?$/.exec(location.pathname);
+var KEY=am?{k:am[1],v:am[2]}:m?{p:+m[1],b:m[2]}:null;
+function withKey(o){for(var i in KEY)o[i]=KEY[i];return o}
+if(am)$('back').hidden=false;
 var D=null,player=null,ready=false,timers={},lastSave=0,lastSec=0,wantResume=0;
 var stage=$('stage');
 
@@ -140,7 +146,7 @@ function save(force){
   var now=Date.now();if(!force&&now-lastSave<14000)return;
   var s=0,d=0;try{s=player.getCurrentTime();d=player.getDuration()}catch(e){return}
   if(!(s>=0))return;lastSave=now;lastSec=s;
-  api('/api/watch/progress',{p:+m[1],b:m[2],s:Math.floor(s),d:Math.floor(d||0)},true).catch(function(){});
+  api('/api/watch/progress',withKey({s:Math.floor(s),d:Math.floor(d||0)}),true).catch(function(){});
 }
 
 /* полный экран: свой, чтобы он одинаково работал в Телеграме на айфоне и андроиде */
@@ -199,10 +205,10 @@ window.addEventListener('pagehide',function(){save(true)});
 /* старт */
 setTheme();
 if(tg){try{tg.ready();tg.expand();tg.disableVerticalSwipes&&tg.disableVerticalSwipes();tg.onEvent&&tg.onEvent('themeChanged',setTheme)}catch(e){}}
-if(!m||!tg||!tg.initData){$('ttl').textContent='Урок';fail('Открой урок из бота','Нажми кнопку «Смотреть урок» под постом в чате с ботом.',false)}
+if(!KEY||!tg||!tg.initData){$('ttl').textContent='Урок';fail('Открой урок из бота',am?'Открой аппку из бота и выбери урок в списке.':'Нажми кнопку «Смотреть урок» под постом в чате с ботом.',false)}
 else{
   state('load','Открываю урок…','');
-  api('/api/watch/load',{p:+m[1],b:m[2]}).then(function(r){
+  api('/api/watch/load',withKey({})).then(function(r){
     if(r.status===401){fail('Открой урок из бота','Нажми кнопку «Смотреть урок» под постом в чате с ботом.',false);return null}
     if(r.status===403||r.status===404){return r.text().then(function(t){fail(r.status===404?'Урок не найден':'Пока нельзя открыть',t,false);return null})}
     if(!r.ok){fail('Не получилось открыть','Попробуй ещё раз.',true);return null}

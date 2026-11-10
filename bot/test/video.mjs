@@ -8,6 +8,7 @@ import { parseYouTubeId, parseChapters, cleanVideo, fmtClock, chaptersText, load
 import { keyboard } from '../src/posts.js';
 import { cleanButtons } from '../src/panel-api.js';
 import { watchRoute, WATCH_CSP } from '../src/watch-route.js';
+import { saveCfg, loadCfg, viewFor, cleanVideos, normalizeVideos } from '../src/appcfg.js';
 import { WATCH_HTML, WATCH_JS, WATCH_CSS } from '../src/watch-page.js';
 
 const VID = '-abc_DEF123'; // ID с дефисом в начале и подчёркиванием: такие бывают
@@ -163,6 +164,54 @@ assert.equal((await post('/api/watch/progress', { p: 7, b: '0-0', s: 42, d: 600 
 assert.equal((await db.first(`SELECT sec FROM watch_progress WHERE tg_id = 2`)).sec, 42);
 try { const big = await post('/api/watch/load', { p: 7, b: '0-0', junk: 'x'.repeat(5000) }, good); assert.notEqual(big.status, 200, 'слишком большой запрос не принимаем'); } catch { /* сервер оборвал соединение — тоже верно */ }
 assert.equal((await fetch(base + '/watch.js')).status, 200, 'после большого запроса сервер жив');
+
+// ---- видеоуроки внутри аппки ----
+{
+  const cv1 = cleanVideos({ mini: [{ t: '  Урок   1 ', url: 'https://youtu.be/' + VID, ch: '0:00 Старт\n5:00 Дальше' }], mat: [] });
+  assert.ok(!cv1.error); const v0 = cv1.videos.mini[0];
+  assert.match(v0.id, /^[a-z0-9]{6}$/); assert.equal(v0.t, 'Урок 1'); assert.equal(v0.y, VID); assert.equal(v0.ch.length, 2);
+  assert.ok(cleanVideos({ mini: [{ t: 'А', url: 'нет' }] }).error, 'плохая ссылка не пропадает молча');
+  assert.ok(cleanVideos({ mini: [{ t: '', url: 'https://youtu.be/' + VID }] }).error, 'без названия');
+  assert.ok(cleanVideos({ mini: [{ t: 'А', url: VID, ch: 'ерунда' }] }).error, 'плохие главы');
+  assert.ok(cleanVideos({ mat: Array.from({ length: 13 }, () => ({ t: 'А', url: VID })) }).error, 'больше 12');
+  assert.equal(cleanVideos({ mini: [{ id: 'abc123', t: 'А', url: VID }, { id: 'abc123', t: 'Б', url: VID }] }).videos.mini.map((x) => x.id)[0], 'abc123', 'свой id сохраняется');
+  assert.notEqual(new Set(cleanVideos({ mini: [{ id: 'abc123', t: 'А', url: VID }, { id: 'abc123', t: 'Б', url: VID }] }).videos.mini.map((x) => x.id)).size, 1, 'одинаковые id разводятся');
+  assert.deepEqual(normalizeVideos({ mini: [{ id: 'bad id', t: 'А', y: VID }, { id: 'abc123', t: 'А', y: 'нет' }] }).mini, [], 'мусор из базы отбрасывается');
+
+  const r1 = await saveCfg(ctx, { public: true, videos: { mini: [{ t: 'Первый урок', url: 'https://youtu.be/' + VID, ch: '0:00 Старт' }], mat: [{ t: 'Урок материалов', url: VID }] } });
+  assert.ok(!r1.error, r1.error);
+  const idMini = r1.cfg.videos.mini[0].id, idMat = r1.cfg.videos.mat[0].id;
+  await saveCfg(ctx, { public: true }); // другое поле не стирает видео
+  assert.equal((await loadCfg(ctx)).videos.mini[0].id, idMini);
+  assert.ok((await saveCfg(ctx, { videos: { mini: [{ t: 'Х', url: 'ерунда' }] } })).error);
+  assert.equal((await loadCfg(ctx)).videos.mini[0].id, idMini, 'после ошибки старое осталось');
+  const vs = viewFor(await loadCfg(ctx), NOW, false).videos.mini[0];
+  assert.deepEqual(vs, { id: idMini, t: 'Первый урок', n: 1 }, 'ученику ID видео не отдаём');
+  assert.ok(!JSON.stringify(viewFor(await loadCfg(ctx), NOW, false)).includes(VID));
+  assert.equal(viewFor(await loadCfg(ctx), NOW, true).videos.mini[0].y, VID, 'админу для редактора отдаём');
+
+  await db.run(`UPDATE users SET track = 'course' WHERE tg_id = 2`);
+  await db.run(`UPDATE users SET track = 'mat' WHERE tg_id = 3`);
+  const A = (init, body, path = '/api/watch/load') => post(path, body, init);
+  const u2 = sign({ id: 2, first_name: 'Имя2' }), u3 = sign({ id: 3, first_name: 'Имя3' }), adm = sign({ id: 1, first_name: 'Админ' });
+  assert.equal((await fetch(base + '/watch/a/mini/' + idMini)).status, 200);
+  assert.equal((await fetch(base + '/watch/a/xxx/' + idMini)).status, 404);
+  const ok = await A(u2, { k: 'mini', v: idMini }); assert.equal(ok.status, 200);
+  const okj = await ok.json(); assert.equal(okj.id, VID); assert.equal(okj.title, 'Первый урок');
+  assert.equal((await A(u2, { k: 'mat', v: idMat })).status, 403, 'чужой раздел');
+  assert.equal((await A(u3, { k: 'mini', v: idMini })).status, 403, 'чужой раздел');
+  assert.equal((await A(u3, { k: 'mat', v: idMat })).status, 200);
+  assert.equal((await A(u2, { k: 'mini', v: 'zzzzzz' })).status, 404);
+  assert.equal((await A(adm, { k: 'mat', v: idMat })).status, 200, 'админ видит оба раздела');
+  assert.equal((await A('', { k: 'mini', v: idMini })).status, 401);
+  assert.equal((await A(u2, { k: 'mini', v: idMini, s: 77, d: 900 }, '/api/watch/progress')).status, 200);
+  assert.equal((await db.first(`SELECT sec FROM watch_progress WHERE tg_id = 2 AND post_id = -1 AND btn = ?`, [idMini])).sec, 77);
+  assert.equal((await (await A(u2, { k: 'mini', v: idMini })).json()).resume, 77, 'место просмотра вернулось');
+  await saveCfg(ctx, { public: false });
+  assert.equal((await A(u2, { k: 'mini', v: idMini })).status, 403, 'аппка закрыта для всех — уроки тоже');
+  assert.equal((await A(adm, { k: 'mini', v: idMini })).status, 200);
+  console.log('✓ видеоуроки аппки: сохранение, ID не уходит ученикам, доступ по разделу и «показывать всем», место просмотра');
+}
 server.close();
 console.log('✓ маршруты: подпись Telegram обязательна, чужим 403, админам можно, заголовки защиты на месте');
 process.exit(0);
