@@ -100,6 +100,31 @@ await page.click('#bClear'); await page.click('#bSave'); await page.waitForTimeo
 assert.equal((await db.first(`SELECT buttons FROM posts WHERE title = 'Скрипты ответов'`)).buttons, null, '«без кнопок» убирает все');
 step('кнопки под постом: добавить, два в ряд, новый ряд, поменять ряды местами, проверка ссылки, убрать все');
 
+// 5б-2. кнопка «Видео»: ссылка YouTube и главы, проверка ссылки, возврат сохранённого в поля
+await page.locator('.card', { hasText: 'Скрипты ответов' }).locator('.ttl').click();
+await page.waitForSelector('.sheet.on'); await page.waitForTimeout(300);
+await page.click('#bRow');
+await page.click('#bEd button[data-type="video"][data-r="0"][data-i="0"]');
+assert.equal(await page.inputValue('#bEd input[data-r="0"][data-i="0"][data-f="text"]'), '▶️ Смотреть урок', 'текст кнопки подставился сам');
+await page.fill('#bEd input[data-f="vurl"]', 'https://vimeo.com/123');
+await page.click('#bSave'); await page.waitForTimeout(400);
+assert.match(await page.textContent('#toast'), /YouTube/, 'чужая ссылка не сохраняется');
+await page.fill('#bEd input[data-f="vurl"]', 'https://youtu.be/-abc_DEF123?si=1');
+await page.fill('#bEd textarea[data-f="vch"]', 'ерунда');
+await page.click('#bSave'); await page.waitForTimeout(400);
+assert.match(await page.textContent('#toast'), /время и название/, 'кривые главы не сохраняются');
+await page.fill('#bEd textarea[data-f="vch"]', '0:00 Вступление\n12:30 — Иерархия\n1:02:03 Итоги');
+await page.screenshot({ path: OUT + '/panel-10b-video-button.png' });
+await page.click('#bSave'); await page.waitForTimeout(500);
+br = JSON.parse((await db.first(`SELECT buttons FROM posts WHERE title = 'Скрипты ответов'`)).buttons);
+assert.deepEqual(br, [[{ text: '▶️ Смотреть урок', video: { id: '-abc_DEF123', ch: [{ t: 0, title: 'Вступление' }, { t: 750, title: 'Иерархия' }, { t: 3723, title: 'Итоги' }] } }]]);
+await page.locator('.card', { hasText: 'Скрипты ответов' }).locator('.ttl').click(); await page.waitForSelector('.sheet.on'); await page.waitForTimeout(300);
+assert.equal(await page.inputValue('#bEd input[data-f="vurl"]'), 'https://youtu.be/-abc_DEF123', 'ссылка вернулась в поле');
+assert.equal(await page.inputValue('#bEd textarea[data-f="vch"]'), '0:00 Вступление\n12:30 Иерархия\n1:02:03 Итоги', 'главы вернулись в поле');
+await page.click('#bClear'); await page.click('#bSave'); await page.waitForTimeout(400);
+assert.equal((await db.first(`SELECT buttons FROM posts WHERE title = 'Скрипты ответов'`)).buttons, null);
+step('кнопка «Видео»: ссылка и главы, проверка, сохранение и возврат в поля');
+
 // 5в. когда отправлять: «после поста»
 await page.locator('.card', { hasText: 'Контент-план' }).locator('.ttl').click();
 await page.waitForSelector('.sheet.on'); await page.waitForTimeout(300);

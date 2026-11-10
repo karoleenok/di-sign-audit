@@ -159,6 +159,14 @@ export const MIGRATIONS = [
     )`,
     `CREATE INDEX IF NOT EXISTS idx_user_events_tg ON user_events(tg_id, at)`,
   ],
+  // v12: видеоурок из YouTube (кнопка поста «video»): где человек остановился
+  [
+    `CREATE TABLE IF NOT EXISTS watch_progress (
+      tg_id INTEGER NOT NULL, post_id INTEGER NOT NULL, btn TEXT NOT NULL,
+      sec INTEGER NOT NULL DEFAULT 0, max_sec INTEGER NOT NULL DEFAULT 0, dur INTEGER NOT NULL DEFAULT 0,
+      at INTEGER NOT NULL, PRIMARY KEY (tg_id, post_id, btn)
+    )`,
+  ],
 ];
 
 // Обновить базу при первом запуске после выкладки новой версии (один раз на процесс)

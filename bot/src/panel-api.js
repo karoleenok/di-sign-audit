@@ -2,6 +2,7 @@
 // Вход: панель присылает initData от Telegram, мы проверяем подпись токеном бота
 // (так подделать вход нельзя) и что человек — админ.
 import { postDelivery, personLog } from './delivery.js';
+import { cleanVideo } from './video.js';
 import { isAdmin, startContentEdit } from './admin.js';
 import { lastBackup } from './backup.js';
 import { AUD, LEVELS } from './texts.js';
@@ -836,7 +837,7 @@ export async function cleanButtons(ctx, rowsIn, selfId) {
       const text = String(b.text || '').trim().slice(0, 60);
       let link = String(b.url || '').trim();
       const go = parseInt(b.go, 10) || null;
-      if (!text && !link && !go && !b.doc && !b.pay && !b.file && !b.lead && !b.fb && !b.app) continue;
+      if (!text && !link && !go && !b.doc && !b.pay && !b.file && !b.lead && !b.fb && !b.app && !b.video) continue;
       if (!text) return { error: 'У кнопки нет текста' };
       if (go) {
         if (go === selfId) return { error: `Кнопка «${text}» ведёт на этот же пост` };
@@ -849,6 +850,7 @@ export async function cleanButtons(ctx, rowsIn, selfId) {
       if (b.lead) { r.push({ text, lead: true }); continue; }
       if (b.fb) { r.push({ text, fb: true }); continue; }
       if (b.app) { r.push({ text, app: true }); continue; }
+      if (b.video) { const v = cleanVideo(b.video); if (v.error) return { error: `Кнопка «${text}»: ${v.error}` }; r.push({ text, video: v.video }); continue; }
       if (b.pay) { const pay = ['curator', 'mentor'].includes(b.pay) ? b.pay : 'curator'; r.push({ text, pay }); continue; }
       if (/^t\.me\//i.test(link)) link = 'https://' + link;
       if (!/^https?:\/\/\S+$/i.test(link)) return { error: `Ссылка у кнопки «${text}» должна начинаться с https://` };

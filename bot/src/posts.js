@@ -11,6 +11,7 @@ const j = (s, d) => { try { return s ? JSON.parse(s) : d; } catch { return d; } 
 //   file — файл: по нажатию бот присылает его в чат ({type, file_id, name})
 //   fb — «оставить отзыв»: бот задаёт два вопроса и присылает бонус за отзыв (один раз на человека)
 //   lead — «оставить заявку»: бот сохраняет заявку, пишет админам и благодарит человека
+//   video — видеоурок из YouTube: открывает плеер в мини-аппке ({id, ch: главы}), ID видео в сообщении не светится
 //   pay — оплата тарифа (продамус подключим позже — пока кнопка отвечает «скоро»)
 export const TRACKS = { all: 'всем', course: 'мини-курс', mat: 'материалы' };
 export const DOCS = { policy: 'Политика обработки данных', consent: 'Согласие на обработку данных', offer: 'Оферта' };
@@ -23,6 +24,7 @@ export function keyboard(post, uid, publicUrl, docs) {
     if (b.lead) return { text: b.text, callback_data: post.id ? `ld:p:${post.id}` : 'ld:x' };
     if (b.fb) return { text: b.text, callback_data: 'fb:p' };
     if (b.app) return publicUrl ? { text: b.text, web_app: { url: publicUrl + '/app' } } : null;
+    if (b.video) return publicUrl && post.id ? { text: b.text, web_app: { url: `${publicUrl}/watch/${post.id}/${ri}-${bi}` } } : null;
     if (b.file && b.file.type !== 'link') return { text: b.text, callback_data: post.id ? `fl:${post.id}:${ri}-${bi}` : 'fl:x' };
     if (b.doc) { const u = docs && docs[b.doc]; return u ? { text: b.text, url: u } : null; }
     return { text: b.text, url: publicUrl && post.id ? `${publicUrl}/r/${post.id}/${ri}-${bi}/${uid || 0}` : b.url };

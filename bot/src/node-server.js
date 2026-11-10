@@ -30,6 +30,7 @@ import { backupTick, makeBackup } from './backup.js';
 import { archiveOldDates } from './posts.js';
 import PANEL, { BUILD } from './panel-html.js';
 import { filePage, mimeOf, kindOf } from './filepage.js';
+import { watchRoute } from './watch-route.js';
 
 const env = process.env;
 if (!env.TEST_URL) env.TEST_URL = 'https://di-sign-bot.karolinabelikova90.workers.dev/test'; // ссылка на аудит, если на сервере не задана своя
@@ -84,6 +85,8 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(code, { 'content-type': type, ...headers }); res.end(body);
   };
   try {
+    // видеоурок из YouTube (кнопка поста открывает плеер)
+    if (await watchRoute({ req, res, url, send, env, ctxFor })) return;
     // панель админа (кнопка в боте) и её API
     if (url.pathname === '/admin/build') return send(200, BUILD, 'text/plain; charset=utf-8', { 'cache-control': 'no-store' });
     // игра-прогрев: пока только админам. Ворота пустые, игра отдаётся после проверки подписи Telegram
