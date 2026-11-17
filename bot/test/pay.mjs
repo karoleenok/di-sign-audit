@@ -182,11 +182,11 @@ const n0 = out.length;
 await pay.onPayCallback(ctx(), { id: 'q', from: { id: 14 }, data: 'pay:f:prof', message: { message_id: 77, chat: { id: 14 } } });
 const ed = out.slice(n0).find((o) => o.m === 'editMessageText');
 assert.ok(ed && /К оплате: 33 333/.test(ed.text), 'экран тарифа заменён ссылкой');
-assert.match(ed.kb, /pay\.test/); assert.match(ed.kb, /Читать оферту/);
+assert.match(ed.kb, /pay\.test/); assert.match(ed.kb, /Оферта/);
 assert.doesNotMatch(ed.text, /https?:\/\//, 'длинной ссылки на оферту в тексте нет');
 assert.equal(out.slice(n0).filter((o) => o.m === 'sendMessage').length, 0, 'новое сообщение не отправлялось');
 await pay.onPayCallback(ctx(), cq(14, 'pay:t:prof'));
-assert.match(out.at(-1).kb, /Читать оферту/); assert.match(out.at(-1).text, /^Тариф с профессором — 33 333 ₽\.\nГруппа, /);
+assert.match(out.at(-1).kb, /Оферта/); assert.match(out.at(-1).text, /^Тариф с профессором — 33 333 ₽\.\nГруппа, /);
 
 // проверка настоящей оплаты на 1 ₽: только по команде админа, в списке тарифов её нет
 assert.deepEqual(Object.keys(pay.TARIFFS), ['rector', 'prof']);
