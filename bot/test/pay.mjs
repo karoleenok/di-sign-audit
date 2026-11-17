@@ -106,10 +106,24 @@ await resetMsg(ctx(), 'payThanks');
 
 // сброс тестовых платежей: только у того, кто нажал команду
 await db.run(`INSERT INTO users (tg_id, first_name, status, created_at) VALUES (9, 'Админ', 'active', 0)`);
+// проверка настоящей оплаты на 1 ₽: только по команде админа, в списке тарифов её нет
+assert.deepEqual(Object.keys(pay.TARIFFS), ['rector', 'prof']);
+const before = (await db.all(`SELECT * FROM payments`)).length;
+await pay.onPayCallback(ctx(), cq(2, 'pay:t:check')); await pay.onPayCallback(ctx(), cq(2, 'pay:f:check'));
+assert.equal((await db.all(`SELECT * FROM payments`)).length, before, 'студент не может запустить служебный тариф');
+await db.run(`UPDATE users SET phone = '+79990000000', email = 'a@x.ru' WHERE tg_id = 9`);
+await pay.payAdminCommand(ctx(), { from: { id: 9 } }, 'paytest', '');
+const pc9 = await db.first(`SELECT * FROM payments WHERE tg_id = 9`);
+assert.ok(pc9 && pc9.amount === 1 && pc9.tariff === 'check');
+assert.equal(created.at(-1).amount.value, '1.00');
+await notify(ctx(T + 120), pc9.id);
+assert.match(sent(/💸/).at(-1).text, /тариф проверка: 1 ₽/);
+assert.equal(await pay.seatsLeft(ctx(), 'prof'), 20 - 2, 'проверка не занимает места студентов');
 await pay.payAdminCommand(ctx(), { from: { id: 9 } }, 'payreset', '');
 assert.match(out.at(-1).text, /payreset yes/);
 await pay.payAdminCommand(ctx(), { from: { id: 9 } }, 'payreset', 'yes');
 assert.equal((await db.all(`SELECT * FROM payments WHERE tg_id = 2`)).length, 1, 'чужие платежи не трогаем');
+assert.equal((await db.all(`SELECT * FROM payments WHERE tg_id = 9`)).length, 0, 'свои платежи стёрты');
 
 // никаких напоминаний про вторую часть и закрытия доступа
 await pay.payTick(ctx(d('2026-11-29T12:00:00')));

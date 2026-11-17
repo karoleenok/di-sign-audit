@@ -21,6 +21,10 @@ export const TARIFFS = {
   prof: { title: 'с профессором', pre: 33333, base: 44444, seats: 20, about: 'группа, ответы в чате, созвоны в конце каждой главы' },
 };
 
+// служебный тариф для проверки оплаты настоящей картой: 1 ₽, только для админов (/paytest),
+// в списке тарифов не виден (enumerable: false), места не занимает
+Object.defineProperty(TARIFFS, 'check', { value: { title: 'проверка', pre: 1, base: 1, seats: 99, about: 'служебная проверка оплаты' }, enumerable: false });
+
 const msk = (s) => Math.floor(Date.parse(s + '+03:00') / 1000);
 export function conf(env = {}) {
   return {
@@ -124,6 +128,7 @@ export async function onPayCallback(ctx, cq) {
   ctx = await withPay(ctx);
   const id = cq.from.id;
   const [, act, arg] = (cq.data || '').split(':');
+  if (arg === 'check') { await ctx.tg.call('answerCallbackQuery', { callback_query_id: cq.id }).catch(() => {}); return; } // служебный тариф только по /paytest
   const ack = (text) => ctx.tg.call('answerCallbackQuery', { callback_query_id: cq.id, ...(text ? { text } : {}) }).catch(() => {});
   const u = await ctx.db.first(`SELECT * FROM users WHERE tg_id = ?`, [id]);
   if (!u) { await ack(); return send(ctx, id, 'Нажми /start, и продолжим 🐾'); }
@@ -410,6 +415,12 @@ export async function payAdminCommand(ctx, msg, cmd, arg) {
     if (arg !== 'go') return send(ctx, id, 'Рассылка с тарифами уйдёт всем подписчикам, кто ещё не оплатил.\n\n/payoffer test — прислать только мне\n/payoffer go — разослать всем');
     await ctx.db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES ('pay:broadcast', 'on')`);
     return send(ctx, id, 'Запустила рассылку: уходит по 150 человек в минуту. Напишу, когда закончится.');
+  }
+  if (cmd === 'paytest') {
+    if (!ctx.env.YK_SHOP_ID || !ctx.env.YK_SECRET) return send(ctx, id, 'Сначала впиши ключи ЮKassa в панели: «Ещё → Оплата».');
+    await ctx.db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, ['payintent:' + id, JSON.stringify({ t: 'check', at: ctx.now })]);
+    await send(ctx, id, 'Проверка оплаты на 1 ₽. Пройди путь как студент: оставь телефон и почту, оплати. Потом верни рубль в ЮKassa («Операции» → платёж → «Вернуть») и отправь /payreset yes.');
+    return payContinue(ctx, id, true);
   }
   if (cmd === 'payreset') {
     const n = (await ctx.db.first(`SELECT COUNT(*) AS n FROM payments WHERE tg_id = ?`, [id])).n;
