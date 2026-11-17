@@ -137,17 +137,7 @@ export async function onPayCallback(ctx, cq) {
   if (act === 'back') { await ack(); return sendOffer(ctx, id); }
 
   // выбор тарифа → итог и кнопка оплаты
-  if (act === 't' && TARIFFS[arg]) {
-    await ack();
-    if ((await seatsLeft(ctx, arg, id)) < 1) return soldOut(ctx, id, arg);
-    const total = priceNow(arg, ctx.now, ctx.env);
-    return say(ctx, id, 'payTariff',
-      { тариф: TARIFFS[arg].title, сумма: rub(total), о_тарифе: TARIFFS[arg].about, условия: bnplLine(ctx), оферта: ofertaUrl(ctx), имя: nm(u) },
-      { reply_markup: { inline_keyboard: [
-        [{ text: await btn(ctx, 'payBtnGo', { сумма: rub(total) }), callback_data: `pay:f:${arg}` }],
-        [{ text: await btn(ctx, 'payBtnBack'), callback_data: 'pay:back' }],
-      ] }, link_preview_options: { is_disabled: true } });
-  }
+  if (act === 't' && TARIFFS[arg]) { await ack(); return showTariff(ctx, u, id, arg); }
 
   // кнопка оплаты → сначала телефон и почта (обязательно), потом ссылка на оплату
   if (act === 'f' && TARIFFS[arg]) {
@@ -163,6 +153,33 @@ export async function onPayCallback(ctx, cq) {
     return say(ctx, id, 'payWait', { тариф: TARIFFS[arg].title, имя: nm(u) });
   }
   await ack();
+}
+
+// Экран тарифа: итог, условия и кнопка «Оплатить»
+async function showTariff(ctx, u, id, t) {
+  if ((await seatsLeft(ctx, t, id)) < 1) return soldOut(ctx, id, t);
+  const total = priceNow(t, ctx.now, ctx.env);
+  return say(ctx, id, 'payTariff',
+    { тариф: TARIFFS[t].title, сумма: rub(total), о_тарифе: TARIFFS[t].about, условия: bnplLine(ctx), оферта: ofertaUrl(ctx), имя: nm(u) },
+    { reply_markup: { inline_keyboard: [
+      [{ text: await btn(ctx, 'payBtnGo', { сумма: rub(total) }), callback_data: `pay:f:${t}` }],
+      [{ text: await btn(ctx, 'payBtnBack'), callback_data: 'pay:back' }],
+    ] }, link_preview_options: { is_disabled: true } });
+}
+
+// Вход по ссылке t.me/бот?start=pay, pay_prof или pay_rector (с сайта, из постов, из кнопок).
+// Новичку сначала нужен обычный вход (согласие на данные), предложение придёт сразу после него.
+export async function payEntry(ctx, msg, tariff) {
+  ctx = await withPay(ctx);
+  const id = msg.from.id;
+  const u = await ctx.db.first(`SELECT * FROM users WHERE tg_id = ?`, [id]);
+  if (!u || !u.sched_at) {
+    await ctx.db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, ['payafter:' + id, tariff || '']);
+    return false;
+  }
+  if (u.paid_full_at) { await say(ctx, id, 'payAlready', { имя: nm(u) }); return true; }
+  if (tariff && TARIFFS[tariff]) await showTariff(ctx, u, id, tariff); else await sendOffer(ctx, id);
+  return true;
 }
 
 async function soldOut(ctx, id, t) {
@@ -419,6 +436,25 @@ export async function payTick(ctx) {
       await flag(ctx, u, 'offer');
       await sendOffer(ctx, u.tg_id).catch(async (e) => { if (e.code === 403) await ctx.db.run(`UPDATE users SET status = 'blocked' WHERE tg_id = ?`, [u.tg_id]); });
       await new Promise((r) => setTimeout(r, 45));
+    }
+  }
+
+  // 2б) пришёл по ссылке на оплату, но сначала проходил вход: предложение — как только вход закончен
+  const waiting = await ctx.db.all(`SELECT u.*, s.value AS want FROM users u JOIN settings s ON s.key = 'payafter:' || u.tg_id WHERE u.sched_at IS NOT NULL LIMIT 20`);
+  for (const u of waiting) {
+    await ctx.db.run(`DELETE FROM settings WHERE key = ?`, ['payafter:' + u.tg_id]);
+    if (u.paid_full_at) continue;
+    await flag(ctx, u, 'offer');
+    const send1 = u.want && TARIFFS[u.want] ? showTariff(ctx, u, u.tg_id, u.want) : sendOffer(ctx, u.tg_id);
+    await send1.catch(async (e) => { if (e.code === 403) await ctx.db.run(`UPDATE users SET status = 'blocked' WHERE tg_id = ?`, [u.tg_id]); });
+  }
+  // 2в) когда общая рассылка уже прошла, новичкам предложение приходит сам через сутки после входа
+  if (bc && bc.value === 'done') {
+    const fresh = await ctx.db.all(
+      `SELECT * FROM users WHERE status = 'active' AND paid1_at IS NULL AND sched_at IS NOT NULL AND sched_at < ? AND (pay_flags IS NULL OR pay_flags NOT LIKE '%offer%') LIMIT 20`, [now - 86400]);
+    for (const u of fresh) {
+      await flag(ctx, u, 'offer');
+      await sendOffer(ctx, u.tg_id).catch(async (e) => { if (e.code === 403) await ctx.db.run(`UPDATE users SET status = 'blocked' WHERE tg_id = ?`, [u.tg_id]); });
     }
   }
 

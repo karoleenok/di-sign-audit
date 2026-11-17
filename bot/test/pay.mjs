@@ -135,6 +135,29 @@ await pay.payReturned(ctx(T + 820), 6);
 assert.equal(sent(/Поздравляем/).filter((o) => o.chat === 6).length, 1, 'при возврате платёж зачтён сразу');
 await pay.payAdminCommand(ctx(), { from: { id: 6 } }, 'payreset', 'yes');
 
+// входы по ссылке: ?start=pay_prof сразу открывает тариф, новичок сначала проходит обычный вход
+await db.run(`INSERT INTO users (tg_id, first_name, status, created_at, sched_at) VALUES (10, 'Ссылка', 'active', 0, ?)`, [T]);
+assert.equal(await pay.payEntry(ctx(), { from: { id: 10 } }, 'prof'), true);
+assert.match(out.at(-1).text, /Тариф с профессором — 33 333/);
+assert.equal(await pay.payEntry(ctx(), { from: { id: 10 } }, ''), true);
+assert.match(out.at(-1).text, /Набор в Di Sign University открыт/);
+assert.equal(await pay.payEntry(ctx(), { from: { id: 11 }, chat: {} }, 'prof'), false, 'новичок идёт во вход');
+await db.run(`INSERT INTO users (tg_id, first_name, status, created_at) VALUES (11, 'Новичок', 'new', 0)`);
+await pay.payTick(ctx(T + 900));
+assert.equal(sent(/Тариф с профессором/).filter((o) => o.chat === 11).length, 0, 'до конца входа предложение не уходит');
+await db.run(`UPDATE users SET sched_at = ?, status = 'active' WHERE tg_id = 11`, [T + 910]);
+await pay.payTick(ctx(T + 960));
+assert.equal(out.filter((o) => o.m === 'sendMessage' && o.chat === 11 && /Тариф с профессором/.test(o.text)).length, 1, 'после входа открылся выбранный тариф');
+// после общей рассылки новичкам предложение приходит само через сутки после входа
+await db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES ('pay:broadcast', 'done')`);
+await db.run(`INSERT INTO users (tg_id, first_name, status, created_at, sched_at) VALUES (12, 'Старый', 'active', 0, ?)`, [T - 90000]);
+await db.run(`INSERT INTO users (tg_id, first_name, status, created_at, sched_at) VALUES (13, 'Свежий', 'active', 0, ?)`, [T + 1000]);
+await pay.payTick(ctx(T + 1100));
+const gotOffer = (id) => out.filter((o) => o.m === 'sendMessage' && o.chat === id && /Набор в Di Sign University открыт/.test(o.text)).length;
+assert.equal(gotOffer(12), 1); assert.equal(gotOffer(13), 0);
+await pay.payTick(ctx(T + 1160));
+assert.equal(gotOffer(12), 1, 'второй раз не шлём');
+
 // проверка настоящей оплаты на 1 ₽: только по команде админа, в списке тарифов её нет
 assert.deepEqual(Object.keys(pay.TARIFFS), ['rector', 'prof']);
 const before = (await db.all(`SELECT * FROM payments`)).length;

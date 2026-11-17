@@ -67,6 +67,7 @@ export const T = {
 export const USER_COMMANDS = [
   { command: 'start', description: 'Начать' },
   { command: 'level', description: 'Сменить уровень' },
+  { command: 'pay', description: 'Оплатить обучение' },
   { command: 'stop', description: 'Отписаться от рассылки' },
   { command: 'policy', description: 'Документы' },
   { command: 'delete', description: 'Удалить мои данные' },
