@@ -167,6 +167,30 @@ export const MIGRATIONS = [
       at INTEGER NOT NULL, PRIMARY KEY (tg_id, post_id, btn)
     )`,
   ],
+  // оплата обучения через ЮKassa (тарифы, оплата целиком или в 2 части)
+  [
+    `CREATE TABLE IF NOT EXISTS payments (
+      id TEXT PRIMARY KEY, tg_id INTEGER NOT NULL, tariff TEXT NOT NULL,
+      part TEXT NOT NULL,                 -- full | 1 | 2
+      amount INTEGER NOT NULL, url TEXT,
+      status TEXT NOT NULL DEFAULT 'pending', -- pending | succeeded | canceled
+      created_at INTEGER NOT NULL, paid_at INTEGER
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_pay_status ON payments(status, created_at)`,
+    `ALTER TABLE users ADD COLUMN tariff TEXT`,
+    `ALTER TABLE users ADD COLUMN pay_total INTEGER`,
+    `ALTER TABLE users ADD COLUMN pay_plan TEXT`,
+    `ALTER TABLE users ADD COLUMN paid1_at INTEGER`,
+    `ALTER TABLE users ADD COLUMN paid_full_at INTEGER`,
+    `ALTER TABLE users ADD COLUMN pay_flags TEXT`,
+  ],
+  // очередь записей об оплатах во внешнюю таблицу (если таблица не ответила, запись не теряется)
+  [
+    `CREATE TABLE IF NOT EXISTS pay_outbox (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL,
+      tries INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, sent_at INTEGER
+    )`,
+  ],
 ];
 
 // Обновить базу при первом запуске после выкладки новой версии (один раз на процесс)

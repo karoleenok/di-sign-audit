@@ -7,6 +7,7 @@ import { onStart, onUserCallback, onUserCommand, onUserText, getUState } from '.
 import { isAdmin, envAdmins, onAdminCommand, onAdminMessage, onAdminCallback } from './admin.js';
 import { sendPost, dueUsers, recordDeliveries, loadDocs, isStreamPost, loadCohorts } from './posts.js';
 import { btn } from './msgs.js';
+import { onPayCallback, payAdminCommand, sendOffer } from './pay.js';
 import { loadCfg, MENU_TEXT } from './appcfg.js';
 
 export function makeCtx({ db, env, publicUrl, fetchFn, now }) {
@@ -37,6 +38,7 @@ export async function handleUpdate(ctx, upd) {
   if (upd.callback_query) {
     const cq = upd.callback_query;
     const d = cq.data || '';
+    if (d.startsWith('pay:')) return onPayCallback(ctx, cq);
     if (/^(w:|p:|pl|h:|t:)/.test(d)) {
       await ctx.tg.call('answerCallbackQuery', { callback_query_id: cq.id }).catch(() => {});
       if (!(await isAdmin(ctx, cq.from.id))) return;
@@ -49,7 +51,10 @@ export async function handleUpdate(ctx, upd) {
   const admin = await isAdmin(ctx, msg.from.id);
   const c = msg.text ? parseCommand(msg.text) : null;
   if (c) {
+    if (c.cmd === 'start' && c.arg === 'pay') return sendOffer(ctx, msg.from.id);
     if (c.cmd === 'start') return onStart(ctx, msg, c.arg);
+    if (c.cmd === 'pay' || c.cmd === 'oplata') return sendOffer(ctx, msg.from.id);
+    if (admin) { const rp = await payAdminCommand(ctx, msg, c.cmd, c.arg); if (rp !== null) return rp; }
     if (admin) { const r = await onAdminCommand(ctx, msg, c.cmd, c.arg); if (r !== null) return r; }
     return onUserCommand(ctx, msg, c.cmd);
   }

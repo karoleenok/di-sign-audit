@@ -31,6 +31,7 @@ import { archiveOldDates } from './posts.js';
 import PANEL, { BUILD } from './panel-html.js';
 import { filePage, mimeOf, kindOf } from './filepage.js';
 import { watchRoute } from './watch-route.js';
+import { onYkNotify, payTick } from './pay.js';
 
 const env = process.env;
 if (!env.TEST_URL) env.TEST_URL = 'https://di-sign-bot.karolinabelikova90.workers.dev/test'; // ссылка на аудит, если на сервере не задана своя
@@ -185,7 +186,7 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(r.status, Object.fromEntries(r.headers)); return res.end(out);
     }
     // открытые страницы документов (политика, согласие) — лежат в bot/docs
-    if (url.pathname === '/policy' || url.pathname === '/consent') {
+    if (url.pathname === '/policy' || url.pathname === '/consent' || url.pathname === '/oferta') {
       const f = new URL('../docs/' + url.pathname.slice(1) + '.html', import.meta.url);
       return send(200, fs.readFileSync(f, 'utf8'), 'text/html; charset=utf-8', { 'cache-control': 'public, max-age=300' });
     }
@@ -252,6 +253,12 @@ const server = http.createServer(async (req, res) => {
       if (!testCache.html) return send(502, 'Тест временно недоступен, попробуй через минуту');
       return send(200, testCache.html, 'text/html; charset=utf-8', { 'cache-control': 'public, max-age=300' });
     }
+    // уведомления ЮKassa об оплате. Адрес с секретом из настроек, а статус всё равно перепроверяем запросом к ЮKassa
+    if (env.YK_HOOK_SECRET && url.pathname === '/yk/' + env.YK_HOOK_SECRET && req.method === 'POST') {
+      let body = ''; for await (const ch of req) { body += ch; if (body.length > 64_000) break; }
+      try { await onYkNotify(ctxFor(), body); } catch (e) { console.error('yk', e.message); }
+      return send(200, 'ok');
+    }
     if (url.pathname === '/tg' && req.method === 'POST') {
       if (env.WEBHOOK_SECRET && req.headers['x-telegram-bot-api-secret-token'] !== env.WEBHOOK_SECRET) return send(403, 'forbidden');
       let body = ''; for await (const ch of req) body += ch;
@@ -279,6 +286,7 @@ setTimeout(() => syncMenu(ctxFor()).catch((e) => console.error('menu', e)), 3000
 // расписание раз в минуту
 setInterval(async () => {
   try { await tick(ctxFor(), Number(env.TICK_BUDGET) || 600); await stepRuns(ctxFor(), 10); } catch (e) { console.error('tick', e); }
+  try { await payTick(ctxFor()); } catch (e) { console.error('pay', e); }
   try { await backupTick(ctxFor(), file); await archiveOldDates(ctxFor()); } catch (e) { console.error('backup', e); }
 }, 60_000);
 

@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/gen-panel.mjs && node scripts/build.mjs",
-    "test": "node scripts/gen-panel.mjs && node --no-warnings test/run.js && node --no-warnings test/video.mjs",
+    "test": "node scripts/gen-panel.mjs && node --no-warnings test/run.js && node --no-warnings test/video.mjs && node --no-warnings test/pay.mjs",
     "test:panel": "node scripts/gen-panel.mjs && node --no-warnings test/panel-ui.mjs",
-    "test:video": "node --no-warnings test/video.mjs"
+    "test:video": "node --no-warnings test/video.mjs && node --no-warnings test/pay.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",
