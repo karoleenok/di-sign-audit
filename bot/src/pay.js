@@ -196,7 +196,7 @@ async function showTariff(ctx, u, id, t) {
     { тариф: TARIFFS[t].title, сумма: rub(total), о_тарифе: cap(TARIFFS[t].about), условия: bnplLine(ctx), оферта: ofertaUrl(ctx), имя: nm(u) },
     { reply_markup: { inline_keyboard: [
       [{ text: await btn(ctx, 'payBtnGo', { сумма: rub(total) }), callback_data: `pay:f:${t}` }],
-      [{ text: await btn(ctx, 'payBtnOferta'), callback_data: 'pay:o' }],
+      [{ text: await btn(ctx, 'payBtnOferta'), ...(/^https:/.test(ofertaUrl(ctx)) ? { web_app: { url: ofertaUrl(ctx) } } : { callback_data: 'pay:o' }) }],
       [{ text: await btn(ctx, 'payBtnBack'), callback_data: 'pay:back' }],
     ] }, link_preview_options: { is_disabled: true } });
 }
@@ -297,7 +297,7 @@ async function giveLink(ctx, cq, ack, u, part, amount, mid = null) {
   return sayOrEdit(ctx, id, mid, 'payLink', { сумма: rub(amount), тариф: TARIFFS[u.tariff].title, оферта: ofertaUrl(ctx), имя: nm(u) },
     { link_preview_options: { is_disabled: true }, reply_markup: { inline_keyboard: [
       [{ text: await btn(ctx, 'payBtnLink', { сумма: rub(amount) }), url: p.url }],
-      [{ text: await btn(ctx, 'payBtnOferta'), callback_data: 'pay:o' }],
+      [{ text: await btn(ctx, 'payBtnOferta'), ...(/^https:/.test(ofertaUrl(ctx)) ? { web_app: { url: ofertaUrl(ctx) } } : { callback_data: 'pay:o' }) }],
     ] } });
 }
 
