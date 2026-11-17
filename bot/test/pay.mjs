@@ -172,7 +172,7 @@ assert.ok(pc9 && pc9.amount === 1 && pc9.tariff === 'check');
 assert.equal(created.at(-1).amount.value, '1.00');
 await notify(ctx(T + 120), pc9.id);
 assert.match(sent(/💸/).at(-1).text, /тариф проверка: 1 ₽/);
-assert.equal(await pay.seatsLeft(ctx(), 'prof'), 20 - 2, 'проверка не занимает места студентов');
+assert.equal(await pay.seatsLeft(ctx(), 'prof'), 20 - 3, 'проверка не занимает места (заняты: две оплаты и одна ссылка в ожидании)');
 await pay.payAdminCommand(ctx(), { from: { id: 9 } }, 'payreset', '');
 assert.match(out.at(-1).text, /payreset yes/);
 await pay.payAdminCommand(ctx(), { from: { id: 9 } }, 'payreset', 'yes');
@@ -184,11 +184,11 @@ await pay.payTick(ctx(d('2026-11-29T12:00:00')));
 await pay.payTick(ctx(d('2026-12-02T10:30:00')));
 assert.equal(sent(/втор(ая|ую|ой) част/i).length, 0);
 assert.equal(out.filter((o) => o.m === 'createChatInviteLink').length, 0, 'до назначенного времени ссылок нет');
-// за день до старта: личные ссылки в кампус всем оплатившим (5 из теста + Маша + Петя) и список для логинов
+// за день до старта: личные ссылки в кампус всем оплатившим (5 ректоров + Маша + Петя + «Ссылка», которого зачёл опрос) и список для логинов
 await pay.payTick(ctx(d('2026-12-02T11:31:00')));
-assert.equal(out.filter((o) => o.m === 'createChatInviteLink').length, 7);
+assert.equal(out.filter((o) => o.m === 'createChatInviteLink').length, 8);
 await pay.payTick(ctx(d('2026-12-02T11:45:00')));
-assert.equal(out.filter((o) => o.m === 'createChatInviteLink').length, 7, 'повторно ссылки не создаются');
+assert.equal(out.filter((o) => o.m === 'createChatInviteLink').length, 8, 'повторно ссылки не создаются');
 assert.equal(sent(/Пора выдать логины/).length, 1);
 
 // резерв: два файла с контактами, без колонок про части
