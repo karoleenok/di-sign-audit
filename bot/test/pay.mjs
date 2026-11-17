@@ -131,6 +131,13 @@ assert.match(files[0].body, /Имя;Ник;Telegram ID;Телефон;Почта
 assert.match(files[0].body, /Маша;@masha;1;\+79990001122;m@x\.ru;с профессором;33333;2026-11-18 12:01/);
 assert.doesNotMatch(files[0].body + files[1].body, /часть|План|Осталось/i);
 
+// вкладка «Оплаты» во внутренней таблице: контакты, тариф, статус
+const { sheetRows, buildXlsx } = await import('../src/export.js');
+const tbl = await sheetRows(ctx());
+const masha = tbl.pays.find((r) => r[0] === '1');
+assert.ok(masha && masha[2] === 'Маша' && masha[3] === '@masha' && masha[4] === '+79990001122' && masha[5] === 'm@x.ru' && masha[6] === 'с профессором' && masha[7] === '33333' && masha[8] === 'оплачено');
+assert.ok(Buffer.isBuffer(buildXlsx([{ name: 'Оплаты', head: ['a'], rows: tbl.pays.map((r) => [r[0]]), widths: [10] }])));
+
 // настройки из панели: шифрование, проверки ввода, секрет адреса, сроки, рассрочка банка
 const { payPanelSave, payPanelState, withPay } = await import('../src/paycfg.js');
 const pc = { db, tg, env: { BOT_TOKEN: '123:abc' }, now: T, publicUrl: 'https://x.test' };

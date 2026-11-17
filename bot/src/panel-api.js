@@ -11,7 +11,7 @@ import { mdToEntities, entitiesToMd } from './fmt.js';
 import { runPreview, runFullPath, startFastRun, stopRuns, stepRuns, activeRun } from './testrun.js';
 import { onStart, docVars, consentView, backfillFb, loadFlow, normFlow, FLOW_OPTIONAL } from './users.js';
 import { MSK, DAY } from './time.js';
-import { exportXlsx, sheetRows, LEAD_HEAD, REVIEW_HEAD } from './export.js';
+import { exportXlsx, sheetRows, LEAD_HEAD, REVIEW_HEAD, PAY_HEAD } from './export.js';
 import { techSet, addTech, removeTech } from './tech.js';
 import { upcoming } from './upcoming.js';
 import { payPanelState, payPanelSave, payPanelCheck } from './paycfg.js';
@@ -418,7 +418,7 @@ async function panelRest(ctx, request, url, user, path, body) {
   // предпросмотр той же таблицы прямо в панели
   if (path === '/export/rows') {
     const r = await sheetRows(ctx);
-    return json({ leadHead: LEAD_HEAD, reviewHead: REVIEW_HEAD, leads: r.leads, reviews: r.reviews });
+    return json({ leadHead: LEAD_HEAD, reviewHead: REVIEW_HEAD, payHead: PAY_HEAD, leads: r.leads, reviews: r.reviews, pays: r.pays });
   }
   // таблица заявок и отзывов: бот присылает файл .xlsx тому, кто нажал кнопку
   if (path === '/export/send' && request.method === 'POST') {
@@ -427,10 +427,10 @@ async function panelRest(ctx, request, url, user, path, body) {
     const stamp = `${d.getUTCFullYear()}-${p2(d.getUTCMonth() + 1)}-${p2(d.getUTCDate())}`;
     const fd = new FormData();
     fd.append('chat_id', String(user.id));
-    fd.append('caption', `таблица на ${stamp}: заявок ${x.leads}, отзывов ${x.reviews}. внутри телефоны и почты, храни только у себя`);
+    fd.append('caption', `таблица на ${stamp}: заявок ${x.leads}, отзывов ${x.reviews}, оплат ${x.pays}. внутри телефоны и почты, храни только у себя`);
     fd.append('document', new Blob([x.file], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `di-sign-crm-${stamp}.xlsx`);
     try { await ctx.tg.upload('sendDocument', fd); } catch (e) { return json({ error: 'Telegram не принял файл: ' + String(e.message || e).slice(0, 120) }, 400); }
-    return json({ ok: true, leads: x.leads, reviews: x.reviews });
+    return json({ ok: true, leads: x.leads, reviews: x.reviews, pays: x.pays });
   }
   // CRM: все люди одним списком — этап, контакты, заявка, отзыв, бонус
   if (path === '/crm') {

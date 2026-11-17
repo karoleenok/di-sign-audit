@@ -1,4 +1,4 @@
-// Внутренняя таблица: заявки и отзывы одним файлом .xlsx (два листа). Файл бот присылает админу в чат.
+// Внутренняя таблица: заявки, отзывы и оплаты одним файлом .xlsx (три листа). Файл бот присылает админу в чат.
 // Данные остаются на твоём сервере: никуда, кроме чата Telegram с тобой, они не уходят.
 import { crc32, deflateRawSync } from 'node:zlib';
 import { techSet } from './tech.js';
@@ -11,6 +11,7 @@ const fmt = (t) => {
 };
 const TRACK = { course: 'мини-курс', mat: 'материалы' };
 export const LEAD_HEAD = ['Telegram ID', 'Дата заявки', 'Имя', 'Ник', 'Телефон', 'Почта', 'Трек', 'Зона', 'Откуда'];
+export const PAY_HEAD = ['Telegram ID', 'Дата', 'Имя', 'Ник', 'Телефон', 'Почта', 'Тариф', 'Сумма', 'Статус', 'ID платежа'];
 export const REVIEW_HEAD = ['Telegram ID', 'Дата отзыва', 'Имя', 'Ник', 'Что понравилось', 'Что улучшить', 'Бонус отправлен'];
 
 // строки для таблицы: заявки (только принятые) и отзывы
@@ -28,7 +29,13 @@ export async function sheetRows(ctx) {
   const nick = (u) => (u.username ? '@' + u.username : '');
   const leads = us.filter((u) => u.lead_at).map((u) => [String(u.tg_id), fmt(u.lead_at), name(u), nick(u), u.phone || '', u.email || '', TRACK[u.track] || '', u.zone || '', u.lead_src || '']);
   const reviews = us.filter((u) => u.fb_at).map((u) => [String(u.tg_id), fmt(u.fb_at), name(u), nick(u), u.fb_like || '', u.fb_improve || '', u.bonus ? 'да' : 'нет']);
-  return { leads, reviews };
+  // оплаты: и оплатившие, и те, кто получил ссылку, но не оплатил (чтобы написать им)
+  const TT = { rector: 'с ректором', prof: 'с профессором' }, ST = { succeeded: 'оплачено', pending: 'ждёт оплаты', canceled: 'не прошла' };
+  const ps = (await db.all(
+    `SELECT p.id, p.tg_id, p.tariff, p.amount, p.status, p.created_at, p.paid_at, u.first_name, u.username, u.contact_name, u.phone, u.email
+       FROM payments p LEFT JOIN users u ON u.tg_id = p.tg_id ORDER BY p.created_at DESC`)).filter((p) => !tech.has(p));
+  const pays = ps.map((p) => [String(p.tg_id), fmt(p.paid_at || p.created_at), name(p), nick(p), p.phone || '', p.email || '', TT[p.tariff] || p.tariff, String(p.amount), ST[p.status] || p.status, p.id]);
+  return { leads, reviews, pays };
 }
 
 
@@ -73,9 +80,10 @@ export function buildXlsx(sheets) {
 
 // файл для скачивания: два листа, ширина колонок под содержимое
 export async function exportXlsx(ctx) {
-  const { leads, reviews } = await sheetRows(ctx);
-  return { leads: leads.length, reviews: reviews.length, file: buildXlsx([
+  const { leads, reviews, pays } = await sheetRows(ctx);
+  return { leads: leads.length, reviews: reviews.length, pays: pays.length, file: buildXlsx([
     { name: 'Заявки', head: LEAD_HEAD, rows: leads, widths: [14, 17, 22, 18, 17, 24, 13, 12, 18] },
     { name: 'Отзывы', head: REVIEW_HEAD, rows: reviews, widths: [14, 17, 22, 18, 50, 50, 16] },
+    { name: 'Оплаты', head: PAY_HEAD, rows: pays, widths: [14, 17, 22, 18, 17, 24, 16, 10, 14, 40] },
   ]) };
 }

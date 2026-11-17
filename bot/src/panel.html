@@ -2398,7 +2398,7 @@ function renderMore() {
     ['Вход для людей из соцсетей', 'Отдельная заготовка для тех, кто пришёл без аудита', () => { S.runSrc = 'site'; view.scEntry = true; tab = 'sched'; render(); }],
     ['Карта кнопок', 'Схема: какая кнопка куда ведёт, ответы на кнопки и развилки', () => { view.pv = 'map'; tab = 'path'; render(); }],
     ['Архив и откат', 'Убранные посты и возврат на шаг назад', () => openArchive()],
-    ['Заявки и отзывы', 'Таблица заявок и отзывов, выгрузка в Excel', () => previewTable('leads')],
+    ['Заявки, отзывы и оплаты', 'Таблица заявок, отзывов и оплат, выгрузка в Excel', () => previewTable('leads')],
     ['Люди и отзывы', 'Кто пришёл в бота, что кому пришло', () => openPeople()],
     ['Бонус за отзыв: догнать', 'Отправить бонус тем, кто уже оставил отзыв', () => fbBackfill()],
     ['Кого не считаем', 'Свои и тестовые аккаунты не попадают в цифры', () => openTech()],
@@ -2697,11 +2697,11 @@ async function openTech() {
 async function previewTable(tabNow) {
   let r;
   try { r = await api('/export/rows'); } catch (e) { toast(e.message); return; }
-  const cur = tabNow === 'reviews' ? 'reviews' : 'leads';
-  const head = cur === 'leads' ? r.leadHead : r.reviewHead, rows = cur === 'leads' ? r.leads : r.reviews;
+  const cur = tabNow === 'reviews' || tabNow === 'pays' ? tabNow : 'leads';
+  const head = { leads: r.leadHead, reviews: r.reviewHead, pays: r.payHead }[cur], rows = { leads: r.leads, reviews: r.reviews, pays: r.pays }[cur];
   const cell = (v) => '<td title="' + esc(v) + '">' + esc(v) + '</td>';
-  sheet('<span class="pill">Таблица</span><h2>Заявки и отзывы</h2>' +
-    '<div class="seg" style="margin:8px 0">' + [['leads', 'Заявки · ' + r.leads.length], ['reviews', 'Отзывы · ' + r.reviews.length]].map(([k, n]) => '<button type="button" data-tv="' + k + '" class="' + (k === cur ? 'on' : '') + '">' + n + '</button>').join('') + '</div>' +
+  sheet('<span class="pill">Таблица</span><h2>Заявки, отзывы и оплаты</h2>' +
+    '<div class="seg" style="margin:8px 0">' + [['leads', 'Заявки · ' + r.leads.length], ['reviews', 'Отзывы · ' + r.reviews.length], ['pays', 'Оплаты · ' + r.pays.length]].map(([k, n]) => '<button type="button" data-tv="' + k + '" class="' + (k === cur ? 'on' : '') + '">' + n + '</button>').join('') + '</div>' +
     (rows.length ? '<div class="tvw"><table class="tv"><thead><tr>' + head.map((h) => '<th>' + esc(h) + '</th>').join('') + '</tr></thead><tbody>' + rows.map((x) => '<tr>' + x.map(cell).join('') + '</tr>').join('') + '</tbody></table></div><p class="small muted" style="margin:6px 2px 0">Листайте вбок. Это персональные данные: не пересылайте их в чаты.</p>' : '<p class="small muted" style="margin:14px 2px">Здесь пока пусто: появится, когда кто-то оставит заявку или отзыв.</p>') +
     '<div class="btns"><button class="btn" id="tvDl">📥 Скачать Excel</button><button class="btn ghost" id="tvX">Закрыть</button></div>');
   $('tvX').onclick = closeSheet;
@@ -2716,7 +2716,7 @@ async function downloadTable(btn) {
   if (btn) btn.textContent = 'Готовлю файл…';
   try {
     const r = await api('/export/send', {});
-    haptic('medium'); toast('Файл в чате с ботом: заявок ' + r.leads + ', отзывов ' + r.reviews);
+    haptic('medium'); toast('Файл в чате с ботом: заявок ' + r.leads + ', отзывов ' + r.reviews + ', оплат ' + r.pays);
   } catch (e) { toast(e.message); }
   dlBusy = false;
   if (btn) btn.textContent = old;
