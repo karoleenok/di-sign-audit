@@ -14,6 +14,7 @@ import { MSK, DAY } from './time.js';
 import { exportXlsx, sheetRows, LEAD_HEAD, REVIEW_HEAD } from './export.js';
 import { techSet, addTech, removeTech } from './tech.js';
 import { upcoming } from './upcoming.js';
+import { payPanelState, payPanelSave, payPanelCheck } from './paycfg.js';
 import { ITEMS as GAME_ITEMS, loadCfg, saveCfgAndMenu, viewFor as gameView } from './appcfg.js';
 import { saveMsgExtra, saveBtnExtra, setMsgOff, linksOf } from './msgs.js';
 import { listMsgs, saveMsg, resetMsg, btn, say, setMsgMedia, canMedia, msgInfo, loadMsgs } from './msgs.js';
@@ -679,6 +680,11 @@ async function panelRest(ctx, request, url, user, path, body) {
     }
     return json(await view());
   }
+
+  // оплата: ключи ЮKassa и сроки (секреты назад не отдаём; в журнал отката этот путь не входит)
+  if (path === '/pay' && request.method === 'GET') return json(await payPanelState(ctx));
+  if (path === '/pay' && request.method === 'POST') { const r = await payPanelSave(ctx, body); return json(r, r.error ? 400 : 200); }
+  if (path === '/pay/check' && request.method === 'POST') { const r = await payPanelCheck(ctx); return json(r, r.error ? 400 : 200); }
 
   if (path === '/docs' && request.method === 'POST') {
     for (const k of ['policy', 'consent', 'offer', 'owner']) {

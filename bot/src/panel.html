@@ -106,7 +106,7 @@ body:not(.full) .card .ttl,body:not(.full) .fn>.ttl{display:-webkit-box;-webkit-
 .btns{display:grid;gap:8px;margin-top:14px}
 .btns.two{grid-template-columns:1fr 1fr}
 label.f{display:block;margin:14px 0 6px;font-size:13px;color:var(--soft);font-weight:500}
-input[type=text],input[type=url],input[type=time],input[type=datetime-local],select,textarea{width:100%;border:1px solid var(--line);background:var(--card);border-radius:12px;padding:11px 12px;outline:none}
+input[type=text],input[type=url],input[type=time],input[type=datetime-local],input[type=password],select,textarea{width:100%;border:1px solid var(--line);background:var(--card);border-radius:12px;padding:11px 12px;outline:none}
 input:focus,select:focus,textarea:focus{border-color:var(--ink)}
 textarea{min-height:120px;resize:vertical;line-height:1.45}
 .step{display:flex;align-items:center;gap:10px}
@@ -2392,6 +2392,7 @@ function renderMore() {
     ['Тексты бота', 'Приветствие, согласия, кнопки и все сообщения входа', () => { tab = 'texts'; render(); }],
     ['Старт потока', (S.cohort && (S.cohort.course || S.cohort.mat)) ? 'Мини-курс: ' + (S.cohort.course || 'не задан') + ' · материалы: ' + (S.cohort.mat || 'не задан') : 'Дата, с которой считаются дни для тех, кто вошёл раньше. Сейчас не задана', () => openCohort()],
     ['Все посты', 'Всё, что написано через /new и в панели: поиск, премиум-эмодзи, где стоит', () => { tab = 'lib'; render(); }],
+    ['Оплата', 'Ключи ЮKassa, адрес уведомлений, сроки, чат кампуса, резерв в таблицу', () => openPay()],
     ['Документы', 'Политика, согласия, ссылки на них', () => openDocs()],
     ['Задачи команды', 'Кто что делает, отметки «сделано»', () => { TD = null; tab = 'tasks'; render(); }],
     ['Вход для людей из соцсетей', 'Отдельная заготовка для тех, кто пришёл без аудита', () => { S.runSrc = 'site'; view.scEntry = true; tab = 'sched'; render(); }],
@@ -2719,6 +2720,45 @@ async function downloadTable(btn) {
   } catch (e) { toast(e.message); }
   dlBusy = false;
   if (btn) btn.textContent = old;
+}
+// ---------- оплата: ключи ЮKassa, сроки, кампус, таблица ----------
+async function openPay() {
+  let p;
+  try { p = await api('/pay'); } catch (e) { toast(e.message); return; }
+  const f = (id, t, val, o) => { o = o || {}; return '<label class="f">' + t + '</label><input type="' + (o.type || 'text') + '" id="' + id + '" ' + (o.mode ? 'inputmode="' + o.mode + '" ' : '') + 'autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="' + esc(o.ph || '') + '" value="' + esc(val || '') + '">' + (o.hint ? '<p class="small muted" style="margin:6px 2px 0">' + o.hint + '</p>' : ''); };
+  const modeTxt = p.mode === 'none' ? 'ключ не задан' : p.mode === 'test' ? 'тестовый ключ: деньги не списываются' : 'боевой ключ: платежи настоящие';
+  const seatTxt = Object.keys(p.seats).map((k) => p.seats[k].title + ': свободно ' + p.seats[k].left + ' из ' + p.seats[k].total).join(' · ');
+  sheet('<div class="shd"><span class="pill">Оплата</span><button type="button" class="sx" id="payX" aria-label="закрыть">✕</button></div><h2>ЮKassa и <i>сроки</i></h2>' +
+    '<p class="small muted">Зачислено: ' + p.paid + ' (оплатили полностью: ' + p.full + '). ' + esc(seatTxt) + '.</p>' +
+    f('pyShop', 'Номер магазина (shopId)', p.shopId, { mode: 'numeric', ph: '1486061' }) +
+    f('pySecret', 'Секретный ключ', '', { type: 'password', ph: p.secretSet ? 'сохранён, вставь новый, чтобы заменить' : 'test_… или live_…', hint: 'Сейчас: ' + modeTxt + '. После сохранения ключ нигде не показывается, в базе лежит зашифрованным.' }) +
+    '<div class="btns"><button class="btn ghost" id="payCheck">Проверить подключение</button></div><p class="small" id="payCheckOut" style="margin:6px 2px 0"></p>' +
+    '<label class="f">Адрес для уведомлений ЮKassa</label>' +
+    (p.hookUrl ? '<input type="text" id="pyHook" readonly value="' + esc(p.hookUrl) + '"><p class="small muted" style="margin:6px 2px 0">Вставь в ЮKassa: Интеграция → HTTP-уведомления. Отметь события payment.succeeded и payment.canceled. Адрес секретный, не пересылай.</p><div class="btns"><button class="btn ghost" id="payCopy">Скопировать</button></div>'
+      : '<p class="small muted" style="margin:0 2px 6px">Адреса пока нет. Создай его и вставь в ЮKassa: Интеграция → HTTP-уведомления.</p><div class="btns"><button class="btn ghost" id="payGen">Создать адрес</button></div>') +
+    '<h3 style="margin:18px 0 0">Сроки (время по Москве)</h3>' +
+    f('pyPre', 'Цена предзаписи действует до', p.preUntil, { type: 'datetime-local' }) +
+    f('pyDue2', 'Вторую часть оплатить до', p.due2, { type: 'datetime-local' }) +
+    f('pyInv', 'Ссылки в «Внутренний кампус» и список для логинов', p.inviteAt, { type: 'datetime-local' }) +
+    f('pyStart', 'Старт обучения', p.start, { type: 'datetime-local' }) +
+    '<h3 style="margin:18px 0 0">Кампус и резерв</h3>' +
+    f('pyCampus', 'ID чата «Внутренний кампус»', p.campus, { mode: 'numeric', ph: '-1001234567890', hint: 'Бот должен быть админом чата с правом «Приглашать пользователей». Без этого личные ссылки не создаются.' }) +
+    f('pySheet', 'Адрес Google Таблицы (Apps Script)', p.sheetUrl, { mode: 'url', ph: 'https://script.google.com/…', hint: 'По желанию. Каждая оплата добавится строкой. Файлы со списком оплативших и так приходят админам каждый день.' }) +
+    f('pySheetKey', 'Ключ таблицы', '', { type: 'password', ph: p.sheetKeySet ? 'сохранён, вставь новый, чтобы заменить' : 'тот же, что в скрипте таблицы' }) +
+    '<div class="btns"><button class="btn" id="paySave">Сохранить</button><button class="btn ghost" id="payClose">Закрыть</button></div>');
+  $('payX').onclick = $('payClose').onclick = closeSheet;
+  const body = () => ({ shopId: $('pyShop').value.trim(), secret: $('pySecret').value.trim(), preUntil: $('pyPre').value, due2: $('pyDue2').value, inviteAt: $('pyInv').value, start: $('pyStart').value, campus: $('pyCampus').value.trim(), sheetUrl: $('pySheet').value.trim(), sheetKey: $('pySheetKey').value.trim() });
+  $('paySave').onclick = async () => { try { await api('/pay', body()); haptic('medium'); toast('Сохранено ✓'); openPay(); } catch (e) { toast(e.message); } };
+  $('payCheck').onclick = async () => {
+    const out = $('payCheckOut'); out.textContent = 'Проверяю…';
+    try {
+      if ($('pySecret').value.trim() || $('pyShop').value.trim() !== p.shopId) await api('/pay', { shopId: $('pyShop').value.trim(), secret: $('pySecret').value.trim() });
+      const r = await api('/pay/check', {});
+      out.textContent = '✓ Подключено: ' + (r.test ? 'тестовый магазин' : 'боевой магазин') + ', статус «' + r.status + '», чеки от ЮKassa ' + (r.fiscal ? 'включены' : 'выключены') + '.';
+    } catch (e) { out.textContent = '✗ ' + e.message; }
+  };
+  if ($('payGen')) $('payGen').onclick = async () => { try { await api('/pay', { genHook: true }); haptic('medium'); openPay(); } catch (e) { toast(e.message); } };
+  if ($('payCopy')) $('payCopy').onclick = async () => { const el = $('pyHook'); try { await navigator.clipboard.writeText(el.value); toast('Скопировано ✓'); } catch (e) { el.select(); toast('Выдели и скопируй вручную'); } };
 }
 function openDocs() {
   const d = S.docs || {};

@@ -254,10 +254,12 @@ const server = http.createServer(async (req, res) => {
       return send(200, testCache.html, 'text/html; charset=utf-8', { 'cache-control': 'public, max-age=300' });
     }
     // уведомления ЮKassa об оплате. Адрес с секретом из настроек, а статус всё равно перепроверяем запросом к ЮKassa
-    if (env.YK_HOOK_SECRET && url.pathname === '/yk/' + env.YK_HOOK_SECRET && req.method === 'POST') {
+    const yk = /^\/yk\/([\w-]{8,80})$/.exec(url.pathname);
+    if (yk && req.method === 'POST') {
       let body = ''; for await (const ch of req) { body += ch; if (body.length > 64_000) break; }
-      try { await onYkNotify(ctxFor(), body); } catch (e) { console.error('yk', e.message); }
-      return send(200, 'ok');
+      let ok = false;
+      try { ok = await onYkNotify(ctxFor(), body, yk[1]); } catch (e) { console.error('yk', e.message); ok = true; }
+      return send(ok === false ? 404 : 200, ok === false ? 'not found' : 'ok');
     }
     if (url.pathname === '/tg' && req.method === 'POST') {
       if (env.WEBHOOK_SECRET && req.headers['x-telegram-bot-api-secret-token'] !== env.WEBHOOK_SECRET) return send(403, 'forbidden');

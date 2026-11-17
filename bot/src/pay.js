@@ -9,6 +9,7 @@
 //   PAY_PRE_UNTIL, PAY_DUE2, PAY_INVITE_AT, PAY_START — даты в формате 2026-11-18T23:59:59 (Москва)
 import { nowSec } from './time.js';
 import { envAdmins } from './admin.js';
+import { withPay } from './paycfg.js';
 
 const API = 'https://api.yookassa.ru/v3';
 
@@ -114,11 +115,13 @@ async function toAdmins(ctx, text) {
 const who = (u) => `<a href="tg://user?id=${u.tg_id}">${esc(u.contact_name || u.first_name || 'без имени')}</a>${u.username ? ' @' + esc(u.username) : ''}\n   📞 ${u.phone ? esc(u.phone) : 'телефона нет'} · ✉️ ${u.email ? esc(u.email) : 'почты нет'}`;
 
 export async function sendOffer(ctx, chat) {
+  ctx = await withPay(ctx);
   return send(ctx, chat, await offerText(ctx), await offerKb(ctx));
 }
 
 // ---------- кнопки ----------
 export async function onPayCallback(ctx, cq) {
+  ctx = await withPay(ctx);
   const id = cq.from.id;
   const [, act, arg] = (cq.data || '').split(':');
   const ack = (text) => ctx.tg.call('answerCallbackQuery', { callback_query_id: cq.id, ...(text ? { text } : {}) }).catch(() => {});
@@ -211,13 +214,20 @@ async function askSecond(ctx, u) {
 
 // ---------- уведомление от ЮKassa ----------
 // Самому уведомлению не верим: берём id платежа и спрашиваем статус у ЮKassa напрямую.
-export async function onYkNotify(ctx, body) {
+export async function onYkNotify(ctx, body, secret) {
+  ctx = await withPay(ctx);
+  // адрес уведомлений содержит секрет из панели: чужой запрос отбрасываем
+  const want = ctx.env.YK_HOOK_SECRET || '';
+  let diff = want.length === String(secret || '').length ? 0 : 1;
+  for (let i = 0; i < want.length; i++) diff |= want.charCodeAt(i) ^ String(secret || '').charCodeAt(i);
+  if (!want || diff) return false;
   let id;
-  try { id = JSON.parse(body).object.id; } catch { return; }
-  if (!id || !/^[\w-]{10,60}$/.test(id)) return;
+  try { id = JSON.parse(body).object.id; } catch { return true; }
+  if (!id || !/^[\w-]{10,60}$/.test(id)) return true;
   const row = await ctx.db.first(`SELECT id FROM payments WHERE id = ?`, [id]);
-  if (!row) return; // чужой или выдуманный id
+  if (!row) return true; // чужой или выдуманный id
   await checkPayment(ctx, id);
+  return true;
 }
 
 export async function checkPayment(ctx, id) {
@@ -341,6 +351,7 @@ const flag = async (ctx, u, f) => {
 };
 
 export async function payTick(ctx) {
+  ctx = await withPay(ctx);
   if (!ctx.env.YK_SHOP_ID) return;
   const now = ctx.now;
   const c = conf(ctx.env);
@@ -414,6 +425,7 @@ export async function payTick(ctx) {
 
 // ---------- команды ----------
 export async function payAdminCommand(ctx, msg, cmd, arg) {
+  ctx = await withPay(ctx);
   const id = msg.from.id;
   if (cmd === 'payoffer') {
     if (arg === 'test') return sendOffer(ctx, id);
