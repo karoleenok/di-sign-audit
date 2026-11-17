@@ -131,7 +131,7 @@ export async function onPayCallback(ctx, cq) {
   if (arg === 'check') { await ctx.tg.call('answerCallbackQuery', { callback_query_id: cq.id }).catch(() => {}); return; } // служебный тариф только по /paytest
   const ack = (text) => ctx.tg.call('answerCallbackQuery', { callback_query_id: cq.id, ...(text ? { text } : {}) }).catch(() => {});
   const u = await ctx.db.first(`SELECT * FROM users WHERE tg_id = ?`, [id]);
-  if (!u) { await ack(); return send(ctx, id, 'Нажми /start, и продолжим 🐾'); }
+  if (!u) { await ack(); return say(ctx, id, 'needStart'); }
 
   if (u.paid_full_at) { await ack(); return say(ctx, id, 'payAlready', { имя: nm(u) }); }
   if (act === 'back') { await ack(); return sendOffer(ctx, id); }
@@ -314,10 +314,6 @@ async function onPaid(ctx, row, yk) {
 
   await enqueueSheet(ctx, row, u);
   await say(ctx, id, 'payThanks', { тариф: TARIFFS[row.tariff].title, сумма: rub(row.amount), дата_доступов: dm(c.inviteAt), дата_старта: dm(c.start), имя: nm(u) });
-  if (!u.phone && !u.email) {
-    await send(ctx, id, 'Оставь телефон или почту: так куратору будет проще прислать тебе доступы и связаться, если что-то пойдёт не так.',
-      { inline_keyboard: [[{ text: '📞 Телефон', callback_data: 'ct:phone' }, { text: '✉️ Почта', callback_data: 'ct:email' }]] }).catch(() => {});
-  }
   await toAdmins(ctx, `💸 ${who(u)} — тариф ${TARIFFS[row.tariff].title}: ${rub(row.amount)}`);
 }
 
@@ -433,8 +429,7 @@ export async function payTick(ctx) {
       if (!ctx.env.CAMPUS_CHAT_ID) break;
       try {
         const link = await ctx.tg.call('createChatInviteLink', { chat_id: ctx.env.CAMPUS_CHAT_ID, member_limit: 1, expire_date: c.start + 7 * 86400, name: `id${u.tg_id}` });
-        await send(ctx, u.tg_id, `Завтра стартуем 🎓\n\nВот твоя личная ссылка во «Внутренний кампус» Di Sign University — она одноразовая, не пересылай её:`,
-          { inline_keyboard: [[{ text: 'Войти в кампус', url: link.invite_link }]] });
+        await say(ctx, u.tg_id, 'payCampus', { имя: nm(u) }, { reply_markup: { inline_keyboard: [[{ text: await btn(ctx, 'payBtnCampus'), url: link.invite_link }]] } });
         await flag(ctx, u, 'campus');
       } catch (e) { console.error('campus', e.message); }
     }
