@@ -43,7 +43,7 @@ export async function withPay(ctx) {
   if (c.sheet_url) e.SHEET_HOOK_URL = c.sheet_url;
   if (c.sheet_key) e.SHEET_HOOK_KEY = await unseal(ctx.env, c.sheet_key);
   if (c.pre_until) e.PAY_PRE_UNTIL = c.pre_until;
-  if (c.due2) e.PAY_DUE2 = c.due2;
+  if (c.bnpl) e.PAY_BNPL = c.bnpl;
   if (c.invite_at) e.PAY_INVITE_AT = c.invite_at;
   if (c.start) e.PAY_START = c.start;
   return { ...ctx, env: e, _payEnv: true };
@@ -65,7 +65,7 @@ export async function payPanelState(ctx) {
     secretFrom: c.secret ? 'panel' : ctx.env.YK_SECRET ? 'server' : '',
     hookUrl: e.YK_HOOK_SECRET ? (ctx.publicUrl || '') + '/yk/' + e.YK_HOOK_SECRET : '',
     campus: e.CAMPUS_CHAT_ID || '', sheetUrl: e.SHEET_HOOK_URL || '', sheetKeySet: !!e.SHEET_HOOK_KEY,
-    preUntil: short(e.PAY_PRE_UNTIL || '2026-11-18T23:59'), due2: short(e.PAY_DUE2 || '2026-12-01T23:59'),
+    preUntil: short(e.PAY_PRE_UNTIL || '2026-11-18T23:59'), bnpl: e.PAY_BNPL === '1',
     inviteAt: short(e.PAY_INVITE_AT || '2026-12-02T11:30'), start: short(e.PAY_START || '2026-12-03T11:30'),
     seats, paid: paid.n, full: full.n,
   };
@@ -85,6 +85,7 @@ export async function payPanelSave(ctx, b) {
     if (v.length < 20 || /[^\w.\-]/.test(v)) return { error: 'Не похоже на секретный ключ: он длинный (около 40 символов), только латиница, цифры, _ и -. Скопируй его из ЮKassa целиком (Интеграция → Ключи API)' };
     c.secret = await seal(ctx.env, v);
   }
+  if (b.bnpl !== undefined) c.bnpl = b.bnpl ? '1' : '';
   if (b.genHook && !c.hook) c.hook = [...crypto.getRandomValues(new Uint8Array(18))].map((x) => x.toString(16).padStart(2, '0')).join('');
   if (b.campus !== undefined) {
     const v = str(b.campus);
@@ -101,7 +102,7 @@ export async function payPanelSave(ctx, b) {
     if (v.length < 8 || v.length > 100) return { error: 'Ключ таблицы: от 8 до 100 символов' };
     c.sheet_key = await seal(ctx.env, v);
   }
-  for (const [k, f, name] of [['preUntil', 'pre_until', 'конца цены предзаписи'], ['due2', 'due2', 'второй части'], ['inviteAt', 'invite_at', 'ссылок в кампус'], ['start', 'start', 'старта']]) {
+  for (const [k, f, name] of [['preUntil', 'pre_until', 'конца цены предзаписи'], ['inviteAt', 'invite_at', 'ссылок в кампус'], ['start', 'start', 'старта']]) {
     if (b[k] === undefined) continue;
     const v = str(b[k]);
     if (v && !DATE_RX.test(v)) return { error: 'Дата ' + name + ' не распознана' };

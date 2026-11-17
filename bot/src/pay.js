@@ -23,7 +23,6 @@ const msk = (s) => Math.floor(Date.parse(s + '+03:00') / 1000);
 export function conf(env = {}) {
   return {
     preUntil: msk(env.PAY_PRE_UNTIL || '2026-11-18T23:59:59'),
-    due2: msk(env.PAY_DUE2 || '2026-12-01T23:59:59'),
     inviteAt: msk(env.PAY_INVITE_AT || '2026-12-02T11:30:00'),
     start: msk(env.PAY_START || '2026-12-03T11:30:00'),
   };
@@ -31,7 +30,6 @@ export function conf(env = {}) {
 
 const rub = (n) => n.toLocaleString('ru-RU').replace(/\s/g, ' ') + ' ₽';
 const dm = (ts) => new Date((ts + 3 * 3600) * 1000).toISOString().slice(5, 10).split('-').reverse().join('.');
-const half = (total) => { const a = Math.ceil(total / 2); return [a, total - a]; };
 export const priceNow = (t, now, env) => (now <= conf(env).preUntil ? TARIFFS[t].pre : TARIFFS[t].base);
 
 // Сколько мест осталось: занятые (оплатили первую часть) + те, кто сейчас держит ссылку на оплату (45 минут)
@@ -39,7 +37,7 @@ export async function seatsLeft(ctx, tariff, exceptTg) {
   const paid = await ctx.db.first(`SELECT COUNT(*) AS n FROM users WHERE tariff = ? AND paid1_at IS NOT NULL`, [tariff]);
   const hold = await ctx.db.first(
     `SELECT COUNT(DISTINCT p.tg_id) AS n FROM payments p JOIN users u ON u.tg_id = p.tg_id
-     WHERE p.tariff = ? AND p.status = 'pending' AND p.part IN ('full', '1') AND p.created_at > ? AND u.paid1_at IS NULL AND p.tg_id != ?`,
+     WHERE p.tariff = ? AND p.status = 'pending' AND p.part = 'full' AND p.created_at > ? AND u.paid1_at IS NULL AND p.tg_id != ?`,
     [tariff, ctx.now - 45 * 60, exceptTg || 0]);
   return Math.max(0, TARIFFS[tariff].seats - paid.n - hold.n);
 }
@@ -56,7 +54,7 @@ async function ykCreate(ctx, { tgId, tariff, part, amount, botUrl }) {
     amount: { value: amount.toFixed(2), currency: 'RUB' },
     capture: true,
     confirmation: { type: 'redirect', return_url: botUrl },
-    description: `Di Sign University, тариф ${TARIFFS[tariff].title}` + (part === 'full' ? '' : `, часть ${part} из 2`),
+    description: `Di Sign University, тариф ${TARIFFS[tariff].title}`,
     metadata: { tg_id: String(tgId), tariff, part },
   };
   if (ctx.env.YK_RECEIPT === '1' && ctx.env.YK_RECEIPT_EMAIL) {
@@ -82,6 +80,8 @@ async function ykGet(env, id) {
 }
 
 // ---------- тексты ----------
+// строка про рассрочку банка (Долями, Сплит): показываем, только если админ включил её в панели
+const bnplLine = (ctx) => (ctx.env.PAY_BNPL === '1' ? 'Оплатить можно картой, по СБП или по частям (Долями, Сплит), если банк одобрит рассрочку на странице оплаты.' : 'Оплата проходит на защищённой странице ЮKassa.');
 async function offerText(ctx) {
   const L = { rector: await seatsLeft(ctx, 'rector'), prof: await seatsLeft(ctx, 'prof') };
   const c = conf(ctx.env);
@@ -93,7 +93,7 @@ async function offerText(ctx) {
     `🎓 <b>С ректором</b> — ${p('rector')}\n${TARIFFS.rector.about}. ${L.rector ? `Осталось мест: ${L.rector} из ${TARIFFS.rector.seats}` : 'Мест нет'}\n\n` +
     `📐 <b>С профессором</b> — ${p('prof')}\n${TARIFFS.prof.about}. ${L.prof ? `Осталось мест: ${L.prof} из ${TARIFFS.prof.seats}` : 'Мест нет'}\n\n` +
     (pre ? `Цена предзаписи действует до ${dm(c.preUntil)} включительно, потом ${rub(TARIFFS.prof.base)} и ${rub(TARIFFS.rector.base)}.\n\n` : '') +
-    `Можно оплатить целиком или в 2 части: половина сейчас, вторая до ${dm(c.due2)}.`
+    bnplLine(ctx)
   );
 }
 async function offerKb(ctx) {
@@ -127,44 +127,33 @@ export async function onPayCallback(ctx, cq) {
   const ack = (text) => ctx.tg.call('answerCallbackQuery', { callback_query_id: cq.id, ...(text ? { text } : {}) }).catch(() => {});
   const u = await ctx.db.first(`SELECT * FROM users WHERE tg_id = ?`, [id]);
   if (!u) { await ack(); return send(ctx, id, 'Нажми /start, и продолжим 🐾'); }
-  const c = conf(ctx.env);
 
   if (u.paid_full_at) { await ack(); return send(ctx, id, 'Ты уже зачислен(а) в Di Sign University 🎓 Подробности придут за день до старта.'); }
   if (act === 'back') { await ack(); return sendOffer(ctx, id); }
 
-  // выбор тарифа → как платить
+  // выбор тарифа → итог и кнопка оплаты
   if (act === 't' && TARIFFS[arg]) {
     await ack();
-    if (u.paid1_at) return askSecond(ctx, u);
     if ((await seatsLeft(ctx, arg, id)) < 1) return soldOut(ctx, id, arg);
     const total = priceNow(arg, ctx.now, ctx.env);
-    const [a, b] = half(total);
     return send(ctx, id,
-      `Тариф <b>${TARIFFS[arg].title}</b> — ${rub(total)}.\n\nКак удобнее оплатить?\n\n` +
-      `• <b>Целиком</b> — ${rub(total)}\n` +
-      `• <b>В 2 части</b> — ${rub(a)} сейчас и ${rub(b)} до ${dm(c.due2)}. Без второй части доступ к обучению и кампусу не откроется.\n\n` +
+      `Тариф <b>${TARIFFS[arg].title}</b> — ${rub(total)}.\n${TARIFFS[arg].about}.\n\n${bnplLine(ctx)}\n\n` +
       `Нажимая кнопку оплаты, ты принимаешь условия <a href="${ofertaUrl(ctx)}">оферты</a>.`,
       { inline_keyboard: [
-        [{ text: `Целиком · ${rub(total)}`, callback_data: `pay:f:${arg}` }],
-        [{ text: `В 2 части · ${rub(a)} сейчас`, callback_data: `pay:s:${arg}` }],
+        [{ text: `Оплатить · ${rub(total)}`, callback_data: `pay:f:${arg}` }],
         [{ text: '← Другой тариф', callback_data: 'pay:back' }],
       ] });
   }
 
-  // целиком / первая часть / вторая часть → ссылка на оплату
-  if ((act === 'f' || act === 's') && TARIFFS[arg]) {
-    if (u.paid1_at) { await ack(); return askSecond(ctx, u); }
+  // кнопка оплаты → ссылка на оплату
+  if (act === 'f' && TARIFFS[arg]) {
     if ((await seatsLeft(ctx, arg, id)) < 1) { await ack(); return soldOut(ctx, id, arg); }
     const total = priceNow(arg, ctx.now, ctx.env);
     await ctx.db.run(`INSERT INTO consents (tg_id, kind, granted, version, at) VALUES (?, 'offer', 1, 'v1', ?)`, [id, ctx.now]);
-    await ctx.db.run(`UPDATE users SET tariff = ?, pay_total = ?, pay_plan = ? WHERE tg_id = ?`, [arg, total, act === 'f' ? 'full' : 'split', id]);
-    const part = act === 'f' ? 'full' : '1';
-    return giveLink(ctx, cq, ack, { ...u, tariff: arg, pay_total: total }, part, act === 'f' ? total : half(total)[0]);
+    await ctx.db.run(`UPDATE users SET tariff = ?, pay_total = ? WHERE tg_id = ?`, [arg, total, id]);
+    return giveLink(ctx, cq, ack, { ...u, tariff: arg, pay_total: total }, 'full', total);
   }
-  if (act === '2') {
-    if (!u.paid1_at || !u.pay_total) { await ack(); return sendOffer(ctx, id); }
-    return giveLink(ctx, cq, ack, u, '2', half(u.pay_total)[1]);
-  }
+  if (act === 's' || act === '2') { await ack(); return sendOffer(ctx, id); } // кнопки из прежней версии
   if (act === 'w' && TARIFFS[arg]) {
     await ack('Записала в лист ожидания');
     if (await flag(ctx, u, 'wait_' + arg)) await toAdmins(ctx, `🕐 Лист ожидания, тариф ${TARIFFS[arg].title}:\n${who(u)}`);
@@ -199,17 +188,9 @@ async function giveLink(ctx, cq, ack, u, part, amount) {
       [p.id, id, u.tariff, part, amount, p.url, ctx.now]);
   }
   await ack();
-  const label = part === 'full' ? 'Оплата целиком' : part === '1' ? 'Первая часть' : 'Вторая часть';
   return send(ctx, id,
-    `${label}: <b>${rub(amount)}</b>, тариф ${TARIFFS[u.tariff].title}.\n\nСсылка действует около часа. Как только оплата пройдёт, я сразу напишу сюда.`,
+    `К оплате: <b>${rub(amount)}</b>, тариф ${TARIFFS[u.tariff].title}.\n\nСсылка действует около часа. Как только оплата пройдёт, я сразу напишу сюда.`,
     { inline_keyboard: [[{ text: `Оплатить ${rub(amount)}`, url: p.url }]] });
-}
-
-async function askSecond(ctx, u) {
-  const [, b] = half(u.pay_total);
-  return send(ctx, u.tg_id,
-    `Первая часть уже оплачена ✅\nОсталась вторая — <b>${rub(b)}</b>, до ${dm(conf(ctx.env).due2)}.`,
-    { inline_keyboard: [[{ text: `Оплатить вторую часть · ${rub(b)}`, callback_data: 'pay:2' }]] });
 }
 
 // ---------- уведомление от ЮKassa ----------
@@ -241,7 +222,7 @@ export async function checkPayment(ctx, id) {
     if (r.changes === 1) {
       const row = await ctx.db.first(`SELECT * FROM payments WHERE id = ?`, [id]);
       await send(ctx, row.tg_id, 'Оплата не прошла или ссылка истекла. Ничего не списано — можно попробовать ещё раз 🐾',
-        { inline_keyboard: [[{ text: 'Попробовать ещё раз', callback_data: row.part === '2' ? 'pay:2' : `pay:t:${row.tariff}` }]] }).catch(() => {});
+        { inline_keyboard: [[{ text: 'Попробовать ещё раз', callback_data: `pay:t:${row.tariff}` }]] }).catch(() => {});
     }
   }
 }
@@ -254,9 +235,7 @@ async function onPaid(ctx, row, yk) {
   }
   const id = row.tg_id;
   const c = conf(ctx.env);
-  if (row.part === 'full') await ctx.db.run(`UPDATE users SET paid1_at = ?, paid_full_at = ? WHERE tg_id = ?`, [ctx.now, ctx.now, id]);
-  if (row.part === '1') await ctx.db.run(`UPDATE users SET paid1_at = ? WHERE tg_id = ?`, [ctx.now, id]);
-  if (row.part === '2') await ctx.db.run(`UPDATE users SET paid_full_at = ? WHERE tg_id = ?`, [ctx.now, id]);
+  await ctx.db.run(`UPDATE users SET paid1_at = ?, paid_full_at = ? WHERE tg_id = ?`, [ctx.now, ctx.now, id]);
   const u = await ctx.db.first(`SELECT * FROM users WHERE tg_id = ?`, [id]);
 
   await enqueueSheet(ctx, row, u);
@@ -266,24 +245,16 @@ async function onPaid(ctx, row, yk) {
     `• в тот же день я пришлю ссылку во «Внутренний кампус» — общий чат потока;\n` +
     `• ${dm(c.start)} стартуем.\n\n` +
     `А пока продолжай мини-курс и забирай материалы из библиотеки — они твои весь ноябрь.`;
-  if (row.part === '1') {
-    await send(ctx, id,
-      `Первая часть получена, ты в Di Sign University 🎓🐾\n\n` +
-      `Вторая часть — <b>${rub(row.amount === u.pay_total ? 0 : u.pay_total - row.amount)}</b>, до ${dm(c.due2)}. Я напомню заранее. Без неё доступ к обучению не откроется.\n\n` + next,
-      { inline_keyboard: [[{ text: 'Оплатить вторую часть сразу', callback_data: 'pay:2' }]] });
-  } else {
-    await send(ctx, id, `Поздравляем, ты зачислен(а) в Di Sign University 🎓🐾\n\nТариф ${TARIFFS[row.tariff].title}, оплата получена полностью.\n\n` + next);
-  }
+  await send(ctx, id, `Поздравляем, ты зачислен(а) в Di Sign University 🎓🐾\n\nТариф ${TARIFFS[row.tariff].title}, оплата получена.\n\n` + next);
   if (!u.phone && !u.email) {
     await send(ctx, id, 'Оставь телефон или почту: так куратору будет проще прислать тебе доступы и связаться, если что-то пойдёт не так.',
       { inline_keyboard: [[{ text: '📞 Телефон', callback_data: 'ct:phone' }, { text: '✉️ Почта', callback_data: 'ct:email' }]] }).catch(() => {});
   }
-  await toAdmins(ctx, `💸 ${who(u)} — тариф ${TARIFFS[row.tariff].title}, ${row.part === 'full' ? 'целиком' : 'часть ' + row.part}: ${rub(row.amount)}`);
+  await toAdmins(ctx, `💸 ${who(u)} — тариф ${TARIFFS[row.tariff].title}: ${rub(row.amount)}`);
 }
 
 // ---------- резерв: таблица и файлы ----------
 const fmtD = (ts) => (ts ? new Date((ts + 3 * 3600) * 1000).toISOString().replace('T', ' ').slice(0, 16) : '');
-const partLabel = (p) => (p === 'full' ? 'целиком' : p === '1' ? 'часть 1 из 2' : 'часть 2 из 2');
 const csv = (rows) => '﻿' + rows.map((r) => r.map((c) => {
   const s = c == null ? '' : String(c);
   return /[";\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
@@ -297,14 +268,13 @@ async function adminIds(ctx) {
 export async function sendFiles(ctx, chat, caption) {
   const users = await ctx.db.all(`SELECT * FROM users WHERE paid1_at IS NOT NULL ORDER BY paid1_at`);
   const sums = Object.fromEntries((await ctx.db.all(`SELECT tg_id, SUM(amount) AS s FROM payments WHERE status = 'succeeded' GROUP BY tg_id`)).map((r) => [r.tg_id, r.s]));
-  const a = [['Имя', 'Ник', 'Telegram ID', 'Телефон', 'Почта', 'Тариф', 'План', 'Цена тарифа', 'Оплачено', 'Осталось', 'Первая оплата', 'Оплачено полностью']];
+  const a = [['Имя', 'Ник', 'Telegram ID', 'Телефон', 'Почта', 'Тариф', 'Оплачено', 'Дата оплаты']];
   for (const u of users) a.push([u.contact_name || u.first_name, u.username ? '@' + u.username : '', u.tg_id, u.phone, u.email,
-    TARIFFS[u.tariff] ? TARIFFS[u.tariff].title : u.tariff, u.pay_plan === 'full' ? 'целиком' : '2 части', u.pay_total, sums[u.tg_id] || 0,
-    (u.pay_total || 0) - (sums[u.tg_id] || 0), fmtD(u.paid1_at), fmtD(u.paid_full_at)]);
+    TARIFFS[u.tariff] ? TARIFFS[u.tariff].title : u.tariff, sums[u.tg_id] || 0, fmtD(u.paid_full_at || u.paid1_at)]);
   const pays = await ctx.db.all(`SELECT p.*, u.first_name, u.contact_name, u.username, u.phone, u.email FROM payments p LEFT JOIN users u ON u.tg_id = p.tg_id WHERE p.status = 'succeeded' ORDER BY p.paid_at`);
-  const b = [['Дата', 'ID платежа', 'Имя', 'Ник', 'Telegram ID', 'Телефон', 'Почта', 'Тариф', 'Часть', 'Сумма']];
+  const b = [['Дата', 'ID платежа', 'Имя', 'Ник', 'Telegram ID', 'Телефон', 'Почта', 'Тариф', 'Сумма']];
   for (const p of pays) b.push([fmtD(p.paid_at), p.id, p.contact_name || p.first_name, p.username ? '@' + p.username : '', p.tg_id, p.phone, p.email,
-    TARIFFS[p.tariff] ? TARIFFS[p.tariff].title : p.tariff, partLabel(p.part), p.amount]);
+    TARIFFS[p.tariff] ? TARIFFS[p.tariff].title : p.tariff, p.amount]);
   const day = new Date((ctx.now + 3 * 3600) * 1000).toISOString().slice(0, 10);
   for (const [name, rows, cap] of [['oplativshie', a, `Оплатившие: ${a.length - 1}. ${caption || ''}`], ['platezhi', b, `Платежи: ${b.length - 1}`]]) {
     const f = new FormData();
@@ -319,7 +289,7 @@ export async function sendFiles(ctx, chat, caption) {
 async function enqueueSheet(ctx, row, u) {
   await ctx.db.run(`INSERT INTO pay_outbox (payload, created_at) VALUES (?, ?)`, [JSON.stringify({
     date: fmtD(ctx.now), payment_id: row.id, name: u.contact_name || u.first_name || '', username: u.username ? '@' + u.username : '',
-    tg_id: u.tg_id, phone: u.phone || '', email: u.email || '', tariff: TARIFFS[row.tariff].title, part: partLabel(row.part),
+    tg_id: u.tg_id, phone: u.phone || '', email: u.email || '', tariff: TARIFFS[row.tariff].title,
     amount: row.amount, total: u.pay_total || row.amount,
   }), ctx.now]);
 }
@@ -387,21 +357,7 @@ export async function payTick(ctx) {
     }
   }
 
-  // 3) вторая часть: напоминания и закрытие доступа
-  const split = await ctx.db.all(`SELECT * FROM users WHERE paid1_at IS NOT NULL AND paid_full_at IS NULL`);
-  const daytime = msk.getUTCHours() >= 10 && msk.getUTCHours() < 20; // напоминания только днём по Москве, не ночью
-  for (const u of split) {
-    if (!daytime) break;
-    if (now >= c.due2 - 3 * 86400 && now < c.due2 - 12 * 3600 && (await flag(ctx, u, 'r3'))) await askSecond(ctx, u).catch(() => {});
-    else if (now >= c.due2 - 12 * 3600 && now < c.due2 && (await flag(ctx, u, 'r0'))) await askSecond(ctx, u).catch(() => {});
-    else if (now >= c.due2 && (await flag(ctx, u, 'late'))) {
-      await send(ctx, u.tg_id, 'Срок второй части прошёл, поэтому доступ к обучению пока закрыт. Если оплатишь сейчас — откроем 🐾',
-        { inline_keyboard: [[{ text: 'Оплатить вторую часть', callback_data: 'pay:2' }]] }).catch(() => {});
-      await toAdmins(ctx, `⏰ Не доплатил(а) вторую часть: ${who(u)}`);
-    }
-  }
-
-  // 4) за день до старта: ссылки в кампус и список для выдачи доступов
+  // 3) за день до старта: ссылки в кампус и список для выдачи доступов
   if (now >= c.inviteAt && now < c.start + 14 * 86400) {
     const paid = await ctx.db.all(`SELECT * FROM users WHERE paid_full_at IS NOT NULL AND (pay_flags IS NULL OR pay_flags NOT LIKE '%campus%')`);
     for (const u of paid) {
@@ -443,7 +399,7 @@ export async function payAdminCommand(ctx, msg, cmd, arg) {
     const rows = await ctx.db.all(`SELECT * FROM users WHERE paid1_at IS NOT NULL ORDER BY paid1_at`);
     const sum = await ctx.db.first(`SELECT COALESCE(SUM(amount), 0) AS s FROM payments WHERE status = 'succeeded'`);
     return send(ctx, id, `Зачислены: ${rows.length}, получено ${rub(sum.s)}\nСвободно мест: ректор ${await seatsLeft(ctx, 'rector')} из ${TARIFFS.rector.seats}, профессор ${await seatsLeft(ctx, 'prof')} из ${TARIFFS.prof.seats}\n\n` +
-      (rows.map((u) => `${u.paid_full_at ? '✅' : '½'} ${TARIFFS[u.tariff] ? TARIFFS[u.tariff].title : '?'}\n${who(u)}`).join('\n\n') || 'пока никого'));
+      (rows.map((u) => `✅ ${TARIFFS[u.tariff] ? TARIFFS[u.tariff].title : '?'}\n${who(u)}`).join('\n\n') || 'пока никого'));
   }
   return null;
 }

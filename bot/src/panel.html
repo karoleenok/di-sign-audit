@@ -2729,16 +2729,16 @@ async function openPay() {
   const modeTxt = p.mode === 'none' ? 'ключ не задан' : p.mode === 'test' ? 'тестовый ключ: деньги не списываются' : p.mode === 'live' ? 'боевой ключ: платежи настоящие' : 'ключ нестандартного вида, нажми «Проверить подключение»';
   const seatTxt = Object.keys(p.seats).map((k) => p.seats[k].title + ': свободно ' + p.seats[k].left + ' из ' + p.seats[k].total).join(' · ');
   sheet('<div class="shd"><span class="pill">Оплата</span><button type="button" class="sx" id="payX" aria-label="закрыть">✕</button></div><h2>ЮKassa и <i>сроки</i></h2>' +
-    '<p class="small muted">Зачислено: ' + p.paid + ' (оплатили полностью: ' + p.full + '). ' + esc(seatTxt) + '.</p>' +
-    f('pyShop', 'Номер магазина (shopId)', p.shopId, { mode: 'numeric', ph: '1486061' }) +
+    '<p class="small muted">Зачислено: ' + p.paid + '. ' + esc(seatTxt) + '.</p>' +
+    f('pyShop', 'Номер магазина (shopId)', p.shopId, { mode: 'numeric', ph: 'например, 123456' }) +
     f('pySecret', 'Секретный ключ', '', { type: 'password', ph: p.secretSet ? 'сохранён, вставь новый, чтобы заменить' : 'test_… или live_…', hint: 'Сейчас: ' + modeTxt + '. После сохранения ключ нигде не показывается, в базе лежит зашифрованным.' }) +
     '<div class="btns"><button class="btn ghost" id="payCheck">Проверить подключение</button></div><p class="small" id="payCheckOut" style="margin:6px 2px 0"></p>' +
     '<label class="f">Адрес для уведомлений ЮKassa</label>' +
     (p.hookUrl ? '<input type="text" id="pyHook" readonly value="' + esc(p.hookUrl) + '"><p class="small muted" style="margin:6px 2px 0">Вставь в ЮKassa: Интеграция → HTTP-уведомления. Отметь события payment.succeeded и payment.canceled. Адрес секретный, не пересылай.</p><div class="btns"><button class="btn ghost" id="payCopy">Скопировать</button></div>'
       : '<p class="small muted" style="margin:0 2px 6px">Адреса пока нет. Создай его и вставь в ЮKassa: Интеграция → HTTP-уведомления.</p><div class="btns"><button class="btn ghost" id="payGen">Создать адрес</button></div>') +
+    '<label class="f">Рассрочка банка (Долями, Сплит)</label><select id="pyBnpl"><option value=""' + (p.bnpl ? '' : ' selected') + '>Не упоминать</option><option value="1"' + (p.bnpl ? ' selected' : '') + '>Упоминать в сообщениях бота</option></select><p class="small muted" style="margin:6px 2px 0">Включай, только когда ЮKassa подтвердила, что на странице оплаты этого магазина есть оплата частями. Лимиты банков: «Долями» до 70 000 ₽ (новым клиентам около 30 000), поэтому тариф «с ректором» может не пройти.</p>' +
     '<h3 style="margin:18px 0 0">Сроки (время по Москве)</h3>' +
     f('pyPre', 'Цена предзаписи действует до', p.preUntil, { type: 'datetime-local' }) +
-    f('pyDue2', 'Вторую часть оплатить до', p.due2, { type: 'datetime-local' }) +
     f('pyInv', 'Ссылки в «Внутренний кампус» и список для логинов', p.inviteAt, { type: 'datetime-local' }) +
     f('pyStart', 'Старт обучения', p.start, { type: 'datetime-local' }) +
     '<h3 style="margin:18px 0 0">Кампус и резерв</h3>' +
@@ -2747,7 +2747,7 @@ async function openPay() {
     f('pySheetKey', 'Ключ таблицы', '', { type: 'password', ph: p.sheetKeySet ? 'сохранён, вставь новый, чтобы заменить' : 'тот же, что в скрипте таблицы' }) +
     '<div class="btns"><button class="btn" id="paySave">Сохранить</button><button class="btn ghost" id="payClose">Закрыть</button></div>');
   $('payX').onclick = $('payClose').onclick = closeSheet;
-  const body = () => ({ shopId: $('pyShop').value.trim(), secret: $('pySecret').value.trim(), preUntil: $('pyPre').value, due2: $('pyDue2').value, inviteAt: $('pyInv').value, start: $('pyStart').value, campus: $('pyCampus').value.trim(), sheetUrl: $('pySheet').value.trim(), sheetKey: $('pySheetKey').value.trim() });
+  const body = () => ({ shopId: $('pyShop').value.trim(), secret: $('pySecret').value.trim(), preUntil: $('pyPre').value, bnpl: $('pyBnpl').value === '1', inviteAt: $('pyInv').value, start: $('pyStart').value, campus: $('pyCampus').value.trim(), sheetUrl: $('pySheet').value.trim(), sheetKey: $('pySheetKey').value.trim() });
   $('paySave').onclick = async () => { try { await api('/pay', body()); haptic('medium'); toast('Сохранено ✓'); openPay(); } catch (e) { toast(e.message); } };
   $('payCheck').onclick = async () => {
     const out = $('payCheckOut'); out.textContent = 'Проверяю…';
