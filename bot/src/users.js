@@ -384,7 +384,7 @@ export async function getUState(ctx, id) {
   const r = await ctx.db.first(`SELECT state FROM states WHERE tg_id = ?`, [id]);
   return r && r.state && r.state.startsWith('u:') ? r.state : null;
 }
-async function setUState(ctx, id, state) {
+export async function setUState(ctx, id, state) {
   if (!state) { await ctx.db.run(`DELETE FROM states WHERE tg_id = ? AND state LIKE 'u:%'`, [id]); return; }
   await ctx.db.run(`INSERT INTO states (tg_id, state, data, updated_at) VALUES (?, ?, NULL, ?) ON CONFLICT(tg_id) DO UPDATE SET state = excluded.state, data = NULL, updated_at = excluded.updated_at`, [id, state, ctx.now]);
 }
@@ -486,6 +486,8 @@ export async function backfillFb(ctx, since, dry, only) {
 
 // после имени / контакта: если есть заявка без данных — доводим её до конца, иначе идём дальше по входу
 async function afterData(ctx, id) {
+  // человек пришёл оплачивать: ссылка появится, когда оставлены и телефон, и почта
+  try { const { payContinue } = await import('./pay.js'); if (await payContinue(ctx, id)) return; } catch (e) { console.error('payContinue', e.message); }
   if (await finishLead(ctx, id, false)) return;
   return nextStep(ctx, await getUser(ctx, id));
 }

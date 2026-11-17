@@ -78,11 +78,38 @@ assert.equal((await db.all(`SELECT * FROM payments WHERE tg_id = 2`)).length, 0)
 await pay.onPayCallback(ctx(), cq(2, 'pay:w:rector'));
 assert.equal(sent(/Лист ожидания/).length, 1);
 
-// у Пети нет контактов: после оплаты бот просит телефон или почту
+// у Пети нет контактов: ссылку на оплату он получит только после телефона и почты
 await pay.onPayCallback(ctx(), cq(2, 'pay:f:prof'));
+assert.equal((await db.all(`SELECT * FROM payments WHERE tg_id = 2`)).length, 0, 'без контактов ссылку не даём');
+assert.match(out.at(-1).text, /телефон/i);
+const { onUserText } = await import('../src/users.js');
+await onUserText(ctx(T + 95), { from: { id: 2 }, text: '+7 999 111-22-33' }, 'u:phone');
+assert.equal((await db.all(`SELECT * FROM payments WHERE tg_id = 2`)).length, 0, 'без почты ссылку не даём');
+assert.match(out.at(-1).text, /почт/i);
+await onUserText(ctx(T + 96), { from: { id: 2 }, text: 'petya@x.ru' }, 'u:email');
 const p2 = await db.first(`SELECT * FROM payments WHERE tg_id = 2`);
+assert.ok(p2, 'после телефона и почты ссылка создана');
+assert.match(out.at(-1).text, /К оплате: 33 333/); assert.match(out.at(-1).kb, /pay\.test/);
+const u2 = await db.first(`SELECT * FROM users WHERE tg_id = 2`);
+assert.equal(u2.phone, '+79991112233'); assert.equal(u2.email, 'petya@x.ru');
 await notify(ctx(T + 100), p2.id);
-assert.equal(sent(/Оставь телефон или почту/).length, 1);
+assert.match(sent(/💸/).at(-1).text, /\+79991112233/);
+
+// тексты можно править в /texts: своя версия подхватывается, картинка и кнопки остаются
+const { saveMsg, resetMsg } = await import('../src/msgs.js');
+await saveMsg(ctx(), 'payThanks', 'Ура, {тариф}! Логины {дата_доступов}.', []);
+await db.run(`UPDATE payments SET status = 'pending', paid_at = NULL WHERE id = ?`, [p2.id]);
+await db.run(`UPDATE users SET paid1_at = NULL, paid_full_at = NULL WHERE tg_id = 2`);
+await notify(ctx(T + 101), p2.id);
+assert.match(sent(/Ура, с профессором/).at(-1).text, /Логины 02\.12/);
+await resetMsg(ctx(), 'payThanks');
+
+// сброс тестовых платежей: только у того, кто нажал команду
+await db.run(`INSERT INTO users (tg_id, first_name, status, created_at) VALUES (9, 'Админ', 'active', 0)`);
+await pay.payAdminCommand(ctx(), { from: { id: 9 } }, 'payreset', '');
+assert.match(out.at(-1).text, /payreset yes/);
+await pay.payAdminCommand(ctx(), { from: { id: 9 } }, 'payreset', 'yes');
+assert.equal((await db.all(`SELECT * FROM payments WHERE tg_id = 2`)).length, 1, 'чужие платежи не трогаем');
 
 // никаких напоминаний про вторую часть и закрытия доступа
 await pay.payTick(ctx(d('2026-11-29T12:00:00')));

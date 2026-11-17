@@ -10,6 +10,8 @@
 import { nowSec } from './time.js';
 import { envAdmins } from './admin.js';
 import { withPay } from './paycfg.js';
+import { say, btn } from './msgs.js';
+import { setUState } from './users.js';
 
 const API = 'https://api.yookassa.ru/v3';
 
@@ -82,20 +84,8 @@ async function ykGet(env, id) {
 // ---------- тексты ----------
 // строка про рассрочку банка (Долями, Сплит): показываем, только если админ включил её в панели
 const bnplLine = (ctx) => (ctx.env.PAY_BNPL === '1' ? 'Оплатить можно картой, по СБП или по частям (Долями, Сплит), если банк одобрит рассрочку на странице оплаты.' : 'Оплата проходит на защищённой странице ЮKassa.');
-async function offerText(ctx) {
-  const L = { rector: await seatsLeft(ctx, 'rector'), prof: await seatsLeft(ctx, 'prof') };
-  const c = conf(ctx.env);
-  const pre = ctx.now <= c.preUntil;
-  const p = (t) => (pre ? `<s>${rub(TARIFFS[t].base)}</s> <b>${rub(TARIFFS[t].pre)}</b>` : `<b>${rub(TARIFFS[t].base)}</b>`);
-  return (
-    `Набор в Di Sign University открыт 🐾\n\n` +
-    `Старт — <b>${dm(c.start)}</b>. Выбирай формат:\n\n` +
-    `🎓 <b>С ректором</b> — ${p('rector')}\n${TARIFFS.rector.about}. ${L.rector ? `Осталось мест: ${L.rector} из ${TARIFFS.rector.seats}` : 'Мест нет'}\n\n` +
-    `📐 <b>С профессором</b> — ${p('prof')}\n${TARIFFS.prof.about}. ${L.prof ? `Осталось мест: ${L.prof} из ${TARIFFS.prof.seats}` : 'Мест нет'}\n\n` +
-    (pre ? `Цена предзаписи действует до ${dm(c.preUntil)} включительно, потом ${rub(TARIFFS.prof.base)} и ${rub(TARIFFS.rector.base)}.\n\n` : '') +
-    bnplLine(ctx)
-  );
-}
+// сроки цены и способы оплаты одной строкой для сообщений
+const terms = (ctx, pre, c) => (pre ? `Цена предзаписи действует до ${dm(c.preUntil)} включительно.\n\n` : '') + bnplLine(ctx);
 async function offerKb(ctx) {
   const row = async (t, icon, name) => {
     const left = await seatsLeft(ctx, t);
@@ -104,6 +94,7 @@ async function offerKb(ctx) {
   return { inline_keyboard: [await row('rector', '🎓', 'С ректором'), await row('prof', '📐', 'С профессором')] };
 }
 const ofertaUrl = (ctx) => (ctx.publicUrl || '') + '/oferta';
+const nm = (u) => (u && (u.contact_name || u.first_name)) || 'друг';
 
 async function send(ctx, chat, text, kb) {
   return ctx.tg.call('sendMessage', { chat_id: chat, text, parse_mode: 'HTML', disable_web_page_preview: true, ...(kb ? { reply_markup: kb } : {}) });
@@ -116,7 +107,16 @@ const who = (u) => `<a href="tg://user?id=${u.tg_id}">${esc(u.contact_name || u.
 
 export async function sendOffer(ctx, chat) {
   ctx = await withPay(ctx);
-  return send(ctx, chat, await offerText(ctx), await offerKb(ctx));
+  const c = conf(ctx.env);
+  const pre = ctx.now <= c.preUntil;
+  const price = (t) => (pre ? `${rub(TARIFFS[t].pre)} (потом ${rub(TARIFFS[t].base)})` : rub(TARIFFS[t].base));
+  const seats = async (t) => { const n = await seatsLeft(ctx, t); return n ? `Осталось мест: ${n} из ${TARIFFS[t].seats}` : 'Мест нет'; };
+  return say(ctx, chat, 'payOffer', {
+    старт: dm(c.start),
+    цена_ректор: price('rector'), о_ректор: TARIFFS.rector.about, места_ректор: await seats('rector'),
+    цена_проф: price('prof'), о_проф: TARIFFS.prof.about, места_проф: await seats('prof'),
+    условия: terms(ctx, pre, c),
+  }, { reply_markup: await offerKb(ctx), link_preview_options: { is_disabled: true } });
 }
 
 // ---------- кнопки ----------
@@ -128,7 +128,7 @@ export async function onPayCallback(ctx, cq) {
   const u = await ctx.db.first(`SELECT * FROM users WHERE tg_id = ?`, [id]);
   if (!u) { await ack(); return send(ctx, id, 'Нажми /start, и продолжим 🐾'); }
 
-  if (u.paid_full_at) { await ack(); return send(ctx, id, 'Ты уже зачислен(а) в Di Sign University 🎓 Подробности придут за день до старта.'); }
+  if (u.paid_full_at) { await ack(); return say(ctx, id, 'payAlready', { имя: nm(u) }); }
   if (act === 'back') { await ack(); return sendOffer(ctx, id); }
 
   // выбор тарифа → итог и кнопка оплаты
@@ -136,35 +136,65 @@ export async function onPayCallback(ctx, cq) {
     await ack();
     if ((await seatsLeft(ctx, arg, id)) < 1) return soldOut(ctx, id, arg);
     const total = priceNow(arg, ctx.now, ctx.env);
-    return send(ctx, id,
-      `Тариф <b>${TARIFFS[arg].title}</b> — ${rub(total)}.\n${TARIFFS[arg].about}.\n\n${bnplLine(ctx)}\n\n` +
-      `Нажимая кнопку оплаты, ты принимаешь условия <a href="${ofertaUrl(ctx)}">оферты</a>.`,
-      { inline_keyboard: [
-        [{ text: `Оплатить · ${rub(total)}`, callback_data: `pay:f:${arg}` }],
-        [{ text: '← Другой тариф', callback_data: 'pay:back' }],
-      ] });
+    return say(ctx, id, 'payTariff',
+      { тариф: TARIFFS[arg].title, сумма: rub(total), о_тарифе: TARIFFS[arg].about, условия: bnplLine(ctx), оферта: ofertaUrl(ctx), имя: nm(u) },
+      { reply_markup: { inline_keyboard: [
+        [{ text: await btn(ctx, 'payBtnGo', { сумма: rub(total) }), callback_data: `pay:f:${arg}` }],
+        [{ text: await btn(ctx, 'payBtnBack'), callback_data: 'pay:back' }],
+      ] }, link_preview_options: { is_disabled: true } });
   }
 
-  // кнопка оплаты → ссылка на оплату
+  // кнопка оплаты → сначала телефон и почта (обязательно), потом ссылка на оплату
   if (act === 'f' && TARIFFS[arg]) {
-    if ((await seatsLeft(ctx, arg, id)) < 1) { await ack(); return soldOut(ctx, id, arg); }
-    const total = priceNow(arg, ctx.now, ctx.env);
-    await ctx.db.run(`INSERT INTO consents (tg_id, kind, granted, version, at) VALUES (?, 'offer', 1, 'v1', ?)`, [id, ctx.now]);
-    await ctx.db.run(`UPDATE users SET tariff = ?, pay_total = ? WHERE tg_id = ?`, [arg, total, id]);
-    return giveLink(ctx, cq, ack, { ...u, tariff: arg, pay_total: total }, 'full', total);
+    await ack();
+    if ((await seatsLeft(ctx, arg, id)) < 1) return soldOut(ctx, id, arg);
+    await ctx.db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, ['payintent:' + id, JSON.stringify({ t: arg, at: ctx.now })]);
+    return payContinue(ctx, id, true);
   }
   if (act === 's' || act === '2') { await ack(); return sendOffer(ctx, id); } // кнопки из прежней версии
   if (act === 'w' && TARIFFS[arg]) {
     await ack('Записала в лист ожидания');
     if (await flag(ctx, u, 'wait_' + arg)) await toAdmins(ctx, `🕐 Лист ожидания, тариф ${TARIFFS[arg].title}:\n${who(u)}`);
-    return send(ctx, id, `Записала тебя в лист ожидания на тариф ${TARIFFS[arg].title}. Если место освободится, напишу сюда первой 🐾`);
+    return say(ctx, id, 'payWait', { тариф: TARIFFS[arg].title, имя: nm(u) });
   }
   await ack();
 }
 
 async function soldOut(ctx, id, t) {
-  return send(ctx, id, `На тариф <b>${TARIFFS[t].title}</b> места закончились.\nМожно записаться в лист ожидания или выбрать другой формат.`,
-    { inline_keyboard: [[{ text: 'В лист ожидания', callback_data: `pay:w:${t}` }], [{ text: '← Другой тариф', callback_data: 'pay:back' }]] });
+  return say(ctx, id, 'paySoldOut', { тариф: TARIFFS[t].title },
+    { reply_markup: { inline_keyboard: [[{ text: await btn(ctx, 'payBtnWait'), callback_data: `pay:w:${t}` }], [{ text: await btn(ctx, 'payBtnBack'), callback_data: 'pay:back' }]] } });
+}
+
+// Продолжение оплаты: пока нет телефона и почты, просим их; когда есть оба, выдаём ссылку.
+// Вызывается с кнопки «Оплатить» и после каждого ответа человека (телефон, почта) из users.js.
+export async function payContinue(ctx, id, first = false) {
+  ctx = await withPay(ctx);
+  const key = 'payintent:' + id;
+  const row = await ctx.db.first(`SELECT value FROM settings WHERE key = ?`, [key]);
+  if (!row) return false;
+  let it = null; try { it = JSON.parse(row.value); } catch {}
+  const clear = () => ctx.db.run(`DELETE FROM settings WHERE key = ?`, [key]);
+  if (!it || !TARIFFS[it.t] || ctx.now - it.at > 3 * 3600) { await clear(); return false; }
+  const u = await ctx.db.first(`SELECT * FROM users WHERE tg_id = ?`, [id]);
+  if (!u) { await clear(); return false; }
+  if (!u.phone || !u.email) {
+    if (first) await say(ctx, id, 'payNeedData', { имя: nm(u) });
+    if (!u.phone) {
+      await setUState(ctx, id, 'u:phone');
+      await say(ctx, id, 'askPhone', {}, { reply_markup: { keyboard: [[{ text: await btn(ctx, 'phoneBtn'), request_contact: true }]], resize_keyboard: true, one_time_keyboard: true } });
+    } else {
+      await setUState(ctx, id, 'u:email');
+      await say(ctx, id, 'askEmail');
+    }
+    return true;
+  }
+  await clear();
+  if ((await seatsLeft(ctx, it.t, id)) < 1) { await soldOut(ctx, id, it.t); return true; }
+  const total = priceNow(it.t, ctx.now, ctx.env);
+  await ctx.db.run(`INSERT INTO consents (tg_id, kind, granted, version, at) VALUES (?, 'offer', 1, 'v1', ?)`, [id, ctx.now]);
+  await ctx.db.run(`UPDATE users SET tariff = ?, pay_total = ? WHERE tg_id = ?`, [it.t, total, id]);
+  await giveLink(ctx, null, async (t) => { if (t) await send(ctx, id, t); }, { ...u, tariff: it.t, pay_total: total }, 'full', total);
+  return true;
 }
 
 async function giveLink(ctx, cq, ack, u, part, amount) {
@@ -188,9 +218,8 @@ async function giveLink(ctx, cq, ack, u, part, amount) {
       [p.id, id, u.tariff, part, amount, p.url, ctx.now]);
   }
   await ack();
-  return send(ctx, id,
-    `К оплате: <b>${rub(amount)}</b>, тариф ${TARIFFS[u.tariff].title}.\n\nСсылка действует около часа. Как только оплата пройдёт, я сразу напишу сюда.`,
-    { inline_keyboard: [[{ text: `Оплатить ${rub(amount)}`, url: p.url }]] });
+  return say(ctx, id, 'payLink', { сумма: rub(amount), тариф: TARIFFS[u.tariff].title, имя: nm(u) },
+    { reply_markup: { inline_keyboard: [[{ text: await btn(ctx, 'payBtnLink', { сумма: rub(amount) }), url: p.url }]] } });
 }
 
 // ---------- уведомление от ЮKassa ----------
@@ -221,8 +250,7 @@ export async function checkPayment(ctx, id) {
     const r = await ctx.db.run(`UPDATE payments SET status = 'canceled' WHERE id = ? AND status = 'pending'`, [id]);
     if (r.changes === 1) {
       const row = await ctx.db.first(`SELECT * FROM payments WHERE id = ?`, [id]);
-      await send(ctx, row.tg_id, 'Оплата не прошла или ссылка истекла. Ничего не списано — можно попробовать ещё раз 🐾',
-        { inline_keyboard: [[{ text: 'Попробовать ещё раз', callback_data: `pay:t:${row.tariff}` }]] }).catch(() => {});
+      await say(ctx, row.tg_id, 'payFail', {}, { reply_markup: { inline_keyboard: [[{ text: await btn(ctx, 'payBtnRetry'), callback_data: `pay:t:${row.tariff}` }]] } }).catch(() => {});
     }
   }
 }
@@ -239,13 +267,7 @@ async function onPaid(ctx, row, yk) {
   const u = await ctx.db.first(`SELECT * FROM users WHERE tg_id = ?`, [id]);
 
   await enqueueSheet(ctx, row, u);
-  const next =
-    `Что дальше:\n` +
-    `• ${dm(c.inviteAt)} куратор или Диана пришлют личный логин и пароль от кабинета;\n` +
-    `• в тот же день я пришлю ссылку во «Внутренний кампус» — общий чат потока;\n` +
-    `• ${dm(c.start)} стартуем.\n\n` +
-    `А пока продолжай мини-курс и забирай материалы из библиотеки — они твои весь ноябрь.`;
-  await send(ctx, id, `Поздравляем, ты зачислен(а) в Di Sign University 🎓🐾\n\nТариф ${TARIFFS[row.tariff].title}, оплата получена.\n\n` + next);
+  await say(ctx, id, 'payThanks', { тариф: TARIFFS[row.tariff].title, сумма: rub(row.amount), дата_доступов: dm(c.inviteAt), дата_старта: dm(c.start), имя: nm(u) });
   if (!u.phone && !u.email) {
     await send(ctx, id, 'Оставь телефон или почту: так куратору будет проще прислать тебе доступы и связаться, если что-то пойдёт не так.',
       { inline_keyboard: [[{ text: '📞 Телефон', callback_data: 'ct:phone' }, { text: '✉️ Почта', callback_data: 'ct:email' }]] }).catch(() => {});
@@ -388,6 +410,15 @@ export async function payAdminCommand(ctx, msg, cmd, arg) {
     if (arg !== 'go') return send(ctx, id, 'Рассылка с тарифами уйдёт всем подписчикам, кто ещё не оплатил.\n\n/payoffer test — прислать только мне\n/payoffer go — разослать всем');
     await ctx.db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES ('pay:broadcast', 'on')`);
     return send(ctx, id, 'Запустила рассылку: уходит по 150 человек в минуту. Напишу, когда закончится.');
+  }
+  if (cmd === 'payreset') {
+    const n = (await ctx.db.first(`SELECT COUNT(*) AS n FROM payments WHERE tg_id = ?`, [id])).n;
+    if (arg !== 'yes') return send(ctx, id, `Сотру только твои платежи в боте: сейчас их ${n}. Место, которое они занимали, освободится.\n\nНужно подтвердить: /payreset yes\n\nВ ЮKassa платёж останется (его видно в «Операциях»), а строку в Google Таблице, если она там уже есть, придётся удалить руками.`);
+    await ctx.db.run(`DELETE FROM payments WHERE tg_id = ?`, [id]);
+    await ctx.db.run(`DELETE FROM pay_outbox WHERE sent_at IS NULL AND payload LIKE ?`, [`%"tg_id":${id},%`]);
+    await ctx.db.run(`DELETE FROM settings WHERE key = ?`, ['payintent:' + id]);
+    await ctx.db.run(`UPDATE users SET tariff = NULL, pay_total = NULL, paid1_at = NULL, paid_full_at = NULL, pay_flags = NULL WHERE tg_id = ?`, [id]);
+    return send(ctx, id, `Готово: твои платежи (${n}) стёрты, места свободны. Можно проверять оплату заново.`);
   }
   if (cmd === 'paysfile') { await sendFiles(ctx, id, 'По запросу.'); return true; }
   if (cmd === 'paysync') {
