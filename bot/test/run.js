@@ -521,7 +521,7 @@ step('шаг пути можно заменить своим постом: те�
     const kb = withBtn.body.reply_markup.inline_keyboard.flat();
     const g = kb.find((b) => b.text === 'Читать пост');
     assert.match(g.callback_data, /^gm:askName:0-0$/, 'кнопка-пост шага идёт через gm:');
-    assert.ok(kb.some((b) => b.text === 'Тариф' && /^gp:askName$/.test(b.callback_data)), 'оплата — заглушка gp:');
+    assert.ok(kb.some((b) => b.text === 'Тариф' && /^pp:rector$/.test(b.callback_data)), 'кнопка оплаты шага ведёт в оплату тарифа (mentor = с ректором)');
     const c1 = calls.length;
     await cb(1400, g.callback_data);
     assert.ok(calls.slice(c1).some((c) => c.body.chat_id === 1400 && /Мой пост для/.test(c.body.text || '')), 'нажатие кнопки-поста шлёт выбранный пост');

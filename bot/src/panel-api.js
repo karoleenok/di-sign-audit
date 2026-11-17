@@ -857,7 +857,7 @@ export async function cleanButtons(ctx, rowsIn, selfId) {
       if (b.fb) { r.push({ text, fb: true }); continue; }
       if (b.app) { r.push({ text, app: true }); continue; }
       if (b.video) { const v = cleanVideo(b.video); if (v.error) return { error: `Кнопка «${text}»: ${v.error}` }; r.push({ text, video: v.video }); continue; }
-      if (b.pay) { const pay = ['curator', 'mentor'].includes(b.pay) ? b.pay : 'curator'; r.push({ text, pay }); continue; }
+      if (b.pay) { const pay = ['all', 'prof', 'rector'].includes(b.pay) ? b.pay : ({ curator: 'prof', mentor: 'rector' }[b.pay] || 'all'); r.push({ text, pay }); continue; }
       if (/^t\.me\//i.test(link)) link = 'https://' + link;
       if (!/^https?:\/\/\S+$/i.test(link)) return { error: `Ссылка у кнопки «${text}» должна начинаться с https://` };
       r.push({ text, url: link });

@@ -20,7 +20,7 @@ export function keyboard(post, uid, publicUrl, docs) {
   if (!rows.length) return undefined;
   const out = rows.map((row, ri) => row.map((b, bi) => {
     if (b.go) return { text: b.text, callback_data: post.id ? `go:${post.id}:${ri}-${bi}` : 'go:x' };
-    if (b.pay) return { text: b.text, callback_data: post.id ? `buy:${post.id}:${ri}-${bi}` : 'buy:x' };
+    if (b.pay) return { text: b.text, callback_data: post.id ? `buy:${post.id}:${ri}-${bi}` : `pp:${{ curator: 'prof', mentor: 'rector', prof: 'prof', rector: 'rector' }[b.pay] || 'all'}` };
     if (b.lead) return { text: b.text, callback_data: post.id ? `ld:p:${post.id}` : 'ld:x' };
     if (b.fb) return { text: b.text, callback_data: 'fb:p' };
     if (b.app) return publicUrl ? { text: b.text, web_app: { url: publicUrl + '/app' } } : null;

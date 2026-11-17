@@ -10,7 +10,7 @@
 import { nowSec } from './time.js';
 import { envAdmins } from './admin.js';
 import { withPay } from './paycfg.js';
-import { say, btn } from './msgs.js';
+import { say, btn, msg as msgText } from './msgs.js';
 import { setUState } from './users.js';
 
 const API = 'https://api.yookassa.ru/v3';
@@ -172,6 +172,19 @@ async function goPay(ctx, id, t) {
   if ((await seatsLeft(ctx, t, id)) < 1) return soldOut(ctx, id, t);
   await ctx.db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, ['payintent:' + id, JSON.stringify({ t, at: ctx.now })]);
   return payContinue(ctx, id, true);
+}
+
+// Кнопка оплаты в посте или в сообщении бота: prof / rector — сразу к оплате, all — предложение с двумя тарифами
+export async function payFromButton(ctx, cq, tariff) {
+  ctx = await withPay(ctx);
+  const id = cq.from.id;
+  // оплата ещё не подключена (нет ключей ЮKassa): честно говорим, что она откроется позже
+  if (!ctx.env.YK_SHOP_ID || !ctx.env.YK_SECRET) {
+    return ctx.tg.call('answerCallbackQuery', { callback_query_id: cq.id, text: (await msgText(ctx, 'payLater')).text.slice(0, 190), show_alert: true }).catch(() => {});
+  }
+  await ctx.tg.call('answerCallbackQuery', { callback_query_id: cq.id }).catch(() => {});
+  const t = TARIFFS[tariff] && tariff !== 'check' ? tariff : '';
+  if (!(await payEntry(ctx, { from: cq.from }, t))) await say(ctx, id, 'needStart');
 }
 
 // Вход по ссылке t.me/бот?start=pay, pay_prof или pay_rector (с сайта, из постов, из кнопок).

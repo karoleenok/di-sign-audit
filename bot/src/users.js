@@ -1,8 +1,10 @@
 import { ZONES, LEVELS } from './texts.js';
-import { say, btn, msg as msgText, delayOf, linksOf, CB_BTN, btnExtra, isOff } from './msgs.js';
+import { say, btn, msg as msgText, delayOf, linksOf, CB_BTN, btnExtra, isOff, payKey } from './msgs.js';
 import { sendPost, recordDeliveries, loadDocs, sendButtonFile, resolveFork } from './posts.js';
 import { isAdmin } from './admin.js';
 import { userMenu, openKb } from './appcfg.js';
+// оплата живёт в pay.js, а тот импортирует отсюда: подключаем по требованию, чтобы не было круга
+const payFromButton = async (...a) => (await import('./pay.js')).payFromButton(...a);
 
 const CONSENT_VERSION = 'v1';
 
@@ -628,7 +630,7 @@ export async function onUserCallback(ctx, cq) {
   }
   if (d === 'del:no') { await answer('deleteCancel'); return done(); }
   if (d.startsWith('go:')) return onGo(ctx, cq, u, answer);
-  if (d.startsWith('gp:')) { await ctx.tg.call('answerCallbackQuery', { callback_query_id: cq.id, text: (await msgText(ctx, 'payLater')).text.slice(0, 190), show_alert: true }).catch(() => {}); return; }
+  if (d.startsWith('gp:')) return payFromButton(ctx, cq, 'all'); // кнопки из прежней версии
   if (d.startsWith('fl:') || d.startsWith('fm:')) {
     // кнопка «файл»: присылаем прикреплённый файл
     await answer();
@@ -753,12 +755,14 @@ export async function onUserCallback(ctx, cq) {
     return;
   }
   if (d.startsWith('buy:')) {
-    // оплата тарифа: продамус подключим позже — пока всплывашка
-    await ctx.tg.call('answerCallbackQuery', { callback_query_id: cq.id, text: (await msgText(ctx, 'payLater')).text.slice(0, 190), show_alert: true }).catch(() => {});
+    // кнопка «Оплата тарифа» в посте: ведёт в оплату выбранного тарифа (или показывает оба)
     const m = /^buy:(\d+):(\d+)-(\d+)$/.exec(d);
-    if (m) { const p = await ctx.db.first(`SELECT buttons FROM posts WHERE id = ?`, [+m[1]]); const b = p && (JSON.parse(p.buttons || '[]')[+m[2]] || [])[+m[3]]; if (b) await ctx.db.run(`INSERT INTO clicks (post_id, tg_id, btn, at) VALUES (?, ?, ?, ?)`, [+m[1], id, b.text, ctx.now]); }
-    return;
+    let tariff = 'all';
+    if (m) { const p = await ctx.db.first(`SELECT buttons FROM posts WHERE id = ?`, [+m[1]]); const b = p && (JSON.parse(p.buttons || '[]')[+m[2]] || [])[+m[3]]; if (b) { tariff = payKey(b.pay); await ctx.db.run(`INSERT INTO clicks (post_id, tg_id, btn, at) VALUES (?, ?, ?, ?)`, [+m[1], id, b.text, ctx.now]); } }
+    return payFromButton(ctx, cq, tariff);
   }
+  // кнопка оплаты в сообщении бота (кнопки шагов входа)
+  if (d.startsWith('pp:')) return payFromButton(ctx, cq, d.slice(3));
   await answer();
 }
 

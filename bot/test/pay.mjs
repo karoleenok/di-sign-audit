@@ -160,6 +160,23 @@ assert.equal(gotOffer(12), 1); assert.equal(gotOffer(13), 0);
 await pay.payTick(ctx(T + 1160));
 assert.equal(gotOffer(12), 1, 'второй раз не шлём');
 
+// кнопки в постах и сообщениях: «Оплата тарифа» ведёт в оплату, старые названия (curator, mentor) понимаем
+const { keyboard } = await import('../src/posts.js');
+const kbp = keyboard({ id: 5, buttons: JSON.stringify([[{ text: 'Хочу', pay: 'prof' }, { text: 'Персонально', pay: 'mentor' }, { text: 'Оба', pay: 'all' }]]) }, 1, 'https://x.test', {});
+assert.equal(kbp.inline_keyboard[0].length, 3);
+assert.ok(kbp.inline_keyboard[0].every((b) => /^buy:5:0-\d$/.test(b.callback_data)));
+const { payKey } = await import('../src/msgs.js');
+assert.deepEqual(['curator', 'mentor', 'prof', 'rector', 'all', undefined].map(payKey), ['prof', 'rector', 'prof', 'rector', 'all', 'all']);
+await db.run(`INSERT INTO users (tg_id, first_name, phone, email, status, created_at, sched_at) VALUES (14, 'Кнопка', '+79994440000', 'k@x.ru', 'active', 0, ?)`, [T]);
+await pay.payFromButton(ctx(), { id: 'q', from: { id: 14 } }, 'prof');
+assert.match(out.at(-1).text, /К оплате: 33 333/); assert.match(out.at(-1).kb, /pay\.test/);
+await pay.payFromButton(ctx(), { id: 'q', from: { id: 14 } }, 'all');
+assert.match(out.at(-1).text, /Набор в Di Sign University открыт/);
+await pay.payFromButton(ctx(), { id: 'q', from: { id: 999 } }, 'prof');
+assert.match(out.at(-1).text, /\/start/, 'незнакомому — сначала /start');
+await pay.payFromButton(ctx(), { id: 'q', from: { id: 14 } }, 'check');
+assert.match(out.at(-1).text, /Набор в Di Sign University открыт/, 'служебный тариф кнопкой не открыть');
+
 // проверка настоящей оплаты на 1 ₽: только по команде админа, в списке тарифов её нет
 assert.deepEqual(Object.keys(pay.TARIFFS), ['rector', 'prof']);
 const before = (await db.all(`SELECT * FROM payments`)).length;
@@ -172,7 +189,7 @@ assert.ok(pc9 && pc9.amount === 1 && pc9.tariff === 'check');
 assert.equal(created.at(-1).amount.value, '1.00');
 await notify(ctx(T + 120), pc9.id);
 assert.match(sent(/💸/).at(-1).text, /тариф проверка: 1 ₽/);
-assert.equal(await pay.seatsLeft(ctx(), 'prof'), 20 - 3, 'проверка не занимает места (заняты: две оплаты и одна ссылка в ожидании)');
+assert.equal(await pay.seatsLeft(ctx(), 'prof'), 20 - 4, 'проверка не занимает места (заняты: две оплаты и две ссылки в ожидании)');
 await pay.payAdminCommand(ctx(), { from: { id: 9 } }, 'payreset', '');
 assert.match(out.at(-1).text, /payreset yes/);
 await pay.payAdminCommand(ctx(), { from: { id: 9 } }, 'payreset', 'yes');

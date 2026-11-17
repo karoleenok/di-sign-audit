@@ -198,7 +198,7 @@ export function cleanRows(rows) {
       if (b.doc) { if (!['policy', 'consent', 'offer'].includes(b.doc)) throw new Error('Неизвестный документ'); r.push({ text, doc: b.doc }); continue; }
       if (b.lead) { r.push({ text, lead: true }); continue; }
       if (b.fb) { r.push({ text, fb: true }); continue; }
-      if (b.pay) { r.push({ text, pay: ['curator', 'mentor'].includes(b.pay) ? b.pay : 'curator' }); continue; }
+      if (b.pay) { r.push({ text, pay: ['all', 'prof', 'rector'].includes(b.pay) ? b.pay : ({ curator: 'prof', mentor: 'rector' }[b.pay] || 'all') }); continue; }
       if (/^t\.me\//i.test(link)) link = 'https://' + link;
       if (!/^https?:\/\/\S+$/i.test(link)) throw new Error(`Ссылка у кнопки «${text}» должна начинаться с https://`);
       r.push({ text, url: link });
@@ -208,6 +208,8 @@ export function cleanRows(rows) {
   }
   return out;
 }
+// тариф кнопки оплаты: all (оба), prof, rector; старые названия curator и mentor понимаем тоже
+export const payKey = (v) => ({ curator: 'prof', mentor: 'rector', prof: 'prof', rector: 'rector' }[v] || 'all');
 // свои кнопки шага -> клавиатура Telegram (пост — через нажатие gm:, документ — ссылка из настроек)
 export async function linkRows(ctx, key) {
   const rows = await linksOf(ctx, key);
@@ -217,7 +219,7 @@ export async function linkRows(ctx, key) {
     if (b.go) return { text: b.text, callback_data: `gm:${key}:${ri}-${bi}` };
     if (b.lead) return { text: b.text, callback_data: `ld:s:${key}` };
     if (b.fb) return { text: b.text, callback_data: 'fb:p' };
-    if (b.pay) return { text: b.text, callback_data: `gp:${key}` };
+    if (b.pay) return { text: b.text, callback_data: `pp:${payKey(b.pay)}` };
     if (b.file && b.file.type !== 'link') return { text: b.text, callback_data: `fm:${key}:${ri}-${bi}` };
     if (b.doc) return docs[b.doc] ? { text: b.text, url: docs[b.doc] } : null;
     return { text: b.text, url: b.url };

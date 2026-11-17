@@ -1205,7 +1205,7 @@ function stepBtnEditor(el, rowsIn) {
     if (b.t === 'app') return '<div class="small muted" style="margin:4px 2px">Кнопка открывает аппку прямо в Телеграме. Работает, когда аппка открыта для всех (вкладка «Игра»). Кто ещё не выбрал трек, увидит экран «Пройти аудит».</div>';
     if (b.t === 'fb') return '<div class="small muted" style="margin:4px 2px">Человек нажимает — бот задаёт 2 вопроса про кабинет и присылает бонус за отзыв (посты «💬 Бонус за отзыв»). Один раз на человека.</div>';
     if (b.t === 'lead') return '<div class="small muted" style="margin:4px 2px">Человек нажимает — заявка сохраняется, тебе приходит карточка, ему «Заявка принята» (текст — во вкладке «Тексты»).</div>';
-    if (b.t === 'pay') return '<select ' + a + ' data-f="pay">' + Object.keys(TARIFF).map((k) => '<option value="' + k + '"' + (b.pay === k ? ' selected' : '') + '>' + TARIFF[k] + '</option>').join('') + '</select>';
+    if (b.t === 'pay') return '<select ' + a + ' data-f="pay">' + Object.keys(TARIFF).map((k) => '<option value="' + k + '"' + ((PAYK[b.pay] || b.pay) === k ? ' selected' : '') + '>' + TARIFF[k] + '</option>').join('') + '</select>';
     if (b.t === 'video') return '<input type="text" placeholder="Ссылка на YouTube: https://youtu.be/…" inputmode="url" autocomplete="off" ' + a + ' data-f="vurl" value="' + esc(b.vurl || '') + '"><textarea rows="5" style="min-height:96px" placeholder="Главы, по строке на главу (по желанию):&#10;0:00 Вступление&#10;12:30 Что такое иерархия" ' + a + ' data-f="vch">' + esc(b.vch || '') + '</textarea><p class="small muted" style="margin:2px">Человек нажимает, и плеер открывается прямо в Телеграме. На YouTube у видео должен быть доступ «По ссылке» и включено встраивание.</p>';
     return '<input type="text" placeholder="https://ссылка" inputmode="url" ' + a + ' data-f="url" value="' + esc(b.url || '') + '">';
   };
@@ -1221,10 +1221,10 @@ function stepBtnEditor(el, rowsIn) {
   el.addEventListener('click', (e) => {
     const t = e.target.closest('button'); if (!t) return; sync();
     if (t.dataset.pick) { const [r, i] = t.dataset.pick.split(':').map(Number); pickBtnFile((f) => { rows[r][i].file = f; draw(); }); return; }
-    if (t.dataset.type) { const b = rows[+t.dataset.r][+t.dataset.i]; b.t = t.dataset.type; if (b.t === 'doc' && !b.doc) b.doc = 'policy'; if (b.t === 'pay' && !b.pay) b.pay = 'curator'; if (b.t === 'video' && !String(b.text || '').trim()) b.text = '▶️ Смотреть урок'; if (b.t === 'app' && !String(b.text || '').trim()) b.text = 'Открыть аппку'; }
+    if (t.dataset.type) { const b = rows[+t.dataset.r][+t.dataset.i]; b.t = t.dataset.type; if (b.t === 'doc' && !b.doc) b.doc = 'policy'; if (b.t === 'pay' && !b.pay) b.pay = 'all'; if (b.t === 'video' && !String(b.text || '').trim()) b.text = '▶️ Смотреть урок'; if (b.t === 'app' && !String(b.text || '').trim()) b.text = 'Открыть аппку'; }
     else if (t.dataset.newrow) rows.push([{ t: 'url', text: '', url: '' }]);
     else if (t.dataset.newapp) rows.push([{ t: 'app', text: 'Открыть аппку' }]);
-    else if (t.dataset.add !== undefined) { const rr = rows[+t.dataset.add]; rr.push({ t: rr[rr.length - 1].t, text: '', url: '', go: '', doc: 'policy', pay: 'curator' }); }
+    else if (t.dataset.add !== undefined) { const rr = rows[+t.dataset.add]; rr.push({ t: rr[rr.length - 1].t, text: '', url: '', go: '', doc: 'policy', pay: 'all' }); }
     else if (t.dataset.del) { const [r, i] = t.dataset.del.split(':').map(Number); rows[r].splice(i, 1); if (!rows[r].length) rows.splice(r, 1); }
     else if (t.dataset.up) { const r = +t.dataset.up; [rows[r - 1], rows[r]] = [rows[r], rows[r - 1]]; }
     else if (t.dataset.down) { const r = +t.dataset.down; [rows[r + 1], rows[r]] = [rows[r], rows[r + 1]]; }
@@ -1256,7 +1256,8 @@ const KIND_NOTE = {
   node: 'Приходит, только когда человек нажимает кнопку, которая ведёт сюда. Так строятся развилки: «выбери вариант → следующий пост».',
   fb: 'Уходит сразу после отзыва о прототипе кабинета: гайд, секретный урок. Если таких несколько — по порядку.',
 };
-const TARIFF = { curator: 'Тариф с кураторами', mentor: 'Тариф с ментором' };
+const TARIFF = { all: 'Оба тарифа: выбор', prof: 'Тариф с профессором', rector: 'Тариф с ректором' };
+const PAYK = { curator: 'prof', mentor: 'rector' }; // старые названия тарифов в уже созданных кнопках
 const parentsOf = (id) => { const out = []; S.posts.forEach((p) => (p.rows || []).forEach((row) => row.forEach((b) => { if (+b.go === id) out.push({ p, b }); }))); return out; };
 const afterKids = (id) => S.posts.filter((x) => x.kind === 'drip' && x.mode === 'after' && x.after === id);
 const domainOf = (u) => { try { return new URL(u).host.replace(/^www\./, ''); } catch (e) { return u || 'ссылка не задана'; } };
@@ -3021,7 +3022,7 @@ function openPost(id, opt) {
     if (b.t === 'app') return '<div class="small muted" style="margin:4px 2px">Кнопка открывает игру прямо в Телеграме. Работает, когда игра открыта для всех (вкладка «Игра»). Кто ещё не выбрал трек, увидит экран «Пройти аудит».</div>';
     if (b.t === 'fb') return '<div class="small muted" style="margin:4px 2px">Человек нажимает — бот задаёт 2 вопроса про кабинет и присылает бонус за отзыв (посты «💬 Бонус за отзыв»). Один раз на человека.</div>';
     if (b.t === 'lead') return '<div class="small muted" style="margin:4px 2px">Человек нажимает — заявка сохраняется, тебе приходит карточка, ему «Заявка принята» (текст — во вкладке «Тексты»).</div>';
-    if (b.t === 'pay') return '<select ' + a + ' data-f="pay">' + Object.keys(TARIFF).map((k) => '<option value="' + k + '"' + (b.pay === k ? ' selected' : '') + '>' + TARIFF[k] + '</option>').join('') + '</select><p class="small muted" style="margin:2px">Оплату через продамус подключим позже — пока кнопка отвечает «откроется в день продаж».</p>';
+    if (b.t === 'pay') return '<select ' + a + ' data-f="pay">' + Object.keys(TARIFF).map((k) => '<option value="' + k + '"' + ((PAYK[b.pay] || b.pay) === k ? ' selected' : '') + '>' + TARIFF[k] + '</option>').join('') + '</select><p class="small muted" style="margin:2px">Оплату через продамус подключим позже — пока кнопка отвечает «откроется в день продаж».</p>';
     if (b.t === 'video') return '<input type="text" placeholder="Ссылка на YouTube: https://youtu.be/…" inputmode="url" autocomplete="off" ' + a + ' data-f="vurl" value="' + esc(b.vurl || '') + '"><textarea rows="5" style="min-height:96px" placeholder="Главы, по строке на главу (по желанию):&#10;0:00 Вступление&#10;12:30 Что такое иерархия" ' + a + ' data-f="vch">' + esc(b.vch || '') + '</textarea><p class="small muted" style="margin:2px">Человек нажимает, и плеер открывается прямо в Телеграме. На YouTube у видео должен быть доступ «По ссылке» и включено встраивание.</p>';
     return '<input type="text" placeholder="https://ссылка" inputmode="url" ' + a + ' data-f="url" value="' + esc(b.url || '') + '">';
   };
@@ -3042,8 +3043,8 @@ function openPost(id, opt) {
   $('bEd').addEventListener('click', (e) => {
     const t = e.target.closest('button'); if (!t) return; sync();
     if (t.dataset.pick) { const [r, i] = t.dataset.pick.split(':').map(Number); pickBtnFile((f) => { rows[r][i].file = f; drawRows(); }); return; }
-    if (t.dataset.type) { const b = rows[+t.dataset.r][+t.dataset.i]; b.t = t.dataset.type; if (b.t === 'doc' && !b.doc) b.doc = 'policy'; if (b.t === 'pay' && !b.pay) b.pay = 'curator'; if (b.t === 'video' && !String(b.text || '').trim()) b.text = '▶️ Смотреть урок'; }
-    if (t.dataset.add !== undefined) { const rr = rows[+t.dataset.add]; rr.push({ t: rr[rr.length - 1].t, text: '', url: '', go: '', doc: 'policy', pay: 'curator' }); }
+    if (t.dataset.type) { const b = rows[+t.dataset.r][+t.dataset.i]; b.t = t.dataset.type; if (b.t === 'doc' && !b.doc) b.doc = 'policy'; if (b.t === 'pay' && !b.pay) b.pay = 'all'; if (b.t === 'video' && !String(b.text || '').trim()) b.text = '▶️ Смотреть урок'; }
+    if (t.dataset.add !== undefined) { const rr = rows[+t.dataset.add]; rr.push({ t: rr[rr.length - 1].t, text: '', url: '', go: '', doc: 'policy', pay: 'all' }); }
     if (t.dataset.clear) rows = [];
     if (t.dataset.del) { const [r, i] = t.dataset.del.split(':').map(Number); rows[r].splice(i, 1); if (!rows[r].length) rows.splice(r, 1); }
     if (t.dataset.up) { const r = +t.dataset.up; [rows[r - 1], rows[r]] = [rows[r], rows[r - 1]]; }
