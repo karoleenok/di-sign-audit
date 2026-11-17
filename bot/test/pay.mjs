@@ -37,7 +37,7 @@ await db.run(`INSERT INTO users (tg_id, first_name, status, created_at) VALUES (
 // предложение: цены предзаписи, описание и места; своих двух частей нет
 await pay.sendOffer(ctx(), 1);
 assert.match(out.at(-1).text, /77 777/); assert.match(out.at(-1).text, /Осталось мест: 5 из 5/); assert.match(out.at(-1).text, /20 из 20/);
-assert.match(out.at(-1).text, /персональное ведение/); assert.match(out.at(-1).text, /созвоны в конце каждой главы/);
+assert.match(out.at(-1).text, /[Пп]ерсональное ведение/); assert.match(out.at(-1).text, /созвоны в конце каждой главы/);
 assert.doesNotMatch(out.at(-1).text, /2 части|втор/i);
 assert.doesNotMatch(out.at(-1).text, /Долями/, 'про рассрочку банка молчим, пока она не включена в панели');
 await pay.sendOffer(ctx(d('2026-11-19T12:00:00')), 1);
@@ -176,6 +176,17 @@ await pay.payFromButton(ctx(), { id: 'q', from: { id: 999 } }, 'prof');
 assert.match(out.at(-1).text, /\/start/, 'незнакомому — сначала /start');
 await pay.payFromButton(ctx(), { id: 'q', from: { id: 14 } }, 'check');
 assert.match(out.at(-1).text, /Набор в Di Sign University открыт/, 'служебный тариф кнопкой не открыть');
+
+// одно сообщение вместо двух: экран тарифа превращается в ссылку на оплату на месте, оферта — кнопкой
+const n0 = out.length;
+await pay.onPayCallback(ctx(), { id: 'q', from: { id: 14 }, data: 'pay:f:prof', message: { message_id: 77, chat: { id: 14 } } });
+const ed = out.slice(n0).find((o) => o.m === 'editMessageText');
+assert.ok(ed && /К оплате: 33 333/.test(ed.text), 'экран тарифа заменён ссылкой');
+assert.match(ed.kb, /pay\.test/); assert.match(ed.kb, /Читать оферту/);
+assert.doesNotMatch(ed.text, /https?:\/\//, 'длинной ссылки на оферту в тексте нет');
+assert.equal(out.slice(n0).filter((o) => o.m === 'sendMessage').length, 0, 'новое сообщение не отправлялось');
+await pay.onPayCallback(ctx(), cq(14, 'pay:t:prof'));
+assert.match(out.at(-1).kb, /Читать оферту/); assert.match(out.at(-1).text, /^Тариф с профессором — 33 333 ₽\.\nГруппа, /);
 
 // проверка настоящей оплаты на 1 ₽: только по команде админа, в списке тарифов её нет
 assert.deepEqual(Object.keys(pay.TARIFFS), ['rector', 'prof']);

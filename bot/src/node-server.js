@@ -31,7 +31,8 @@ import { archiveOldDates } from './posts.js';
 import PANEL, { BUILD } from './panel-html.js';
 import { filePage, mimeOf, kindOf } from './filepage.js';
 import { watchRoute } from './watch-route.js';
-import { onYkNotify, payTick } from './pay.js';
+import { onYkNotify, payTick, conf } from './pay.js';
+import { withPay } from './paycfg.js';
 
 const env = process.env;
 if (!env.TEST_URL) env.TEST_URL = 'https://di-sign-bot.karolinabelikova90.workers.dev/test'; // ссылка на аудит, если на сервере не задана своя
@@ -188,7 +189,14 @@ const server = http.createServer(async (req, res) => {
     // открытые страницы документов (политика, согласие) — лежат в bot/docs
     if (url.pathname === '/policy' || url.pathname === '/consent' || url.pathname === '/oferta') {
       const f = new URL('../docs/' + url.pathname.slice(1) + '.html', import.meta.url);
-      return send(200, fs.readFileSync(f, 'utf8'), 'text/html; charset=utf-8', { 'cache-control': 'public, max-age=300' });
+      let html = fs.readFileSync(f, 'utf8');
+      if (html.includes('{{ПРЕДЗАПИСЬ_ДО}}')) {
+        // последний день предзаписи — из настроек панели («Ещё → Оплата»)
+        let dd = '19.11.2026';
+        try { const d = new Date((conf((await withPay(ctxFor())).env).preUntil + 3 * 3600) * 1000), p2 = (n) => String(n).padStart(2, '0'); dd = `${p2(d.getUTCDate())}.${p2(d.getUTCMonth() + 1)}.${d.getUTCFullYear()}`; } catch {}
+        html = html.split('{{ПРЕДЗАПИСЬ_ДО}}').join(dd);
+      }
+      return send(200, html, 'text/html; charset=utf-8', { 'cache-control': 'public, max-age=60' });
     }
     // список работ галереи: правит админ в аппке (таблица settings); пока там пусто — берём bot/app/gallery/data.json
     const galDir = path.join(path.dirname(file), 'gallery');

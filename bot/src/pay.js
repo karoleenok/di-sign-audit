@@ -10,7 +10,7 @@
 import { nowSec } from './time.js';
 import { envAdmins } from './admin.js';
 import { withPay } from './paycfg.js';
-import { say, btn, msg as msgText } from './msgs.js';
+import { say, btn, msg as msgText, postOf } from './msgs.js';
 import { setUState } from './users.js';
 
 const API = 'https://api.yookassa.ru/v3';
@@ -98,6 +98,20 @@ async function offerKb(ctx) {
   return { inline_keyboard: [await row('rector', '🎓', 'С ректором'), await row('prof', '📐', 'С профессором')] };
 }
 const ofertaUrl = (ctx) => (ctx.publicUrl || '') + '/oferta';
+const cap = (t) => (t ? t.charAt(0).toUpperCase() + t.slice(1) : t);
+// Отправить сообщение; если можно, превращаем в него предыдущее (одно сообщение вместо двух)
+async function sayOrEdit(ctx, id, mid, key, vars, extra = {}) {
+  if (mid && !(await postOf(ctx, key))) {
+    try {
+      const m = await msgText(ctx, key, vars);
+      if (!m.media) {
+        await ctx.tg.call('editMessageText', { chat_id: id, message_id: mid, text: m.text || '…', ...(m.entities && m.entities.length ? { entities: m.entities } : {}), ...(extra.reply_markup ? { reply_markup: extra.reply_markup } : {}), link_preview_options: { is_disabled: true } });
+        return;
+      }
+    } catch (e) { /* не вышло отредактировать: пришлём новым */ }
+  }
+  return say(ctx, id, key, vars, extra);
+}
 const nm = (u) => (u && (u.contact_name || u.first_name)) || 'друг';
 
 async function send(ctx, chat, text, kb) {
@@ -117,8 +131,8 @@ export async function sendOffer(ctx, chat) {
   const seats = async (t) => { const n = await seatsLeft(ctx, t); return n ? `Осталось мест: ${n} из ${TARIFFS[t].seats}` : 'Мест нет'; };
   return say(ctx, chat, 'payOffer', {
     старт: dm(c.start),
-    цена_ректор: price('rector'), о_ректор: TARIFFS.rector.about, места_ректор: await seats('rector'),
-    цена_проф: price('prof'), о_проф: TARIFFS.prof.about, места_проф: await seats('prof'),
+    цена_ректор: price('rector'), о_ректор: cap(TARIFFS.rector.about), места_ректор: await seats('rector'),
+    цена_проф: price('prof'), о_проф: cap(TARIFFS.prof.about), места_проф: await seats('prof'),
     условия: terms(ctx, pre, c),
   }, { reply_markup: await offerKb(ctx), link_preview_options: { is_disabled: true } });
 }
@@ -144,7 +158,7 @@ export async function onPayCallback(ctx, cq) {
     await ack();
     if ((await seatsLeft(ctx, arg, id)) < 1) return soldOut(ctx, id, arg);
     await ctx.db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, ['payintent:' + id, JSON.stringify({ t: arg, at: ctx.now })]);
-    return payContinue(ctx, id, true);
+    return payContinue(ctx, id, true, cq.message && cq.message.message_id);
   }
   if (act === 's' || act === '2') { await ack(); return sendOffer(ctx, id); } // кнопки из прежней версии
   if (act === 'w' && TARIFFS[arg]) {
@@ -160,9 +174,10 @@ async function showTariff(ctx, u, id, t) {
   if ((await seatsLeft(ctx, t, id)) < 1) return soldOut(ctx, id, t);
   const total = priceNow(t, ctx.now, ctx.env);
   return say(ctx, id, 'payTariff',
-    { тариф: TARIFFS[t].title, сумма: rub(total), о_тарифе: TARIFFS[t].about, условия: bnplLine(ctx), оферта: ofertaUrl(ctx), имя: nm(u) },
+    { тариф: TARIFFS[t].title, сумма: rub(total), о_тарифе: cap(TARIFFS[t].about), условия: bnplLine(ctx), оферта: ofertaUrl(ctx), имя: nm(u) },
     { reply_markup: { inline_keyboard: [
       [{ text: await btn(ctx, 'payBtnGo', { сумма: rub(total) }), callback_data: `pay:f:${t}` }],
+      [{ text: await btn(ctx, 'payBtnOferta'), url: ofertaUrl(ctx) }],
       [{ text: await btn(ctx, 'payBtnBack'), callback_data: 'pay:back' }],
     ] }, link_preview_options: { is_disabled: true } });
 }
@@ -209,7 +224,7 @@ async function soldOut(ctx, id, t) {
 
 // Продолжение оплаты: пока нет телефона и почты, просим их; когда есть оба, выдаём ссылку.
 // Вызывается с кнопки «Оплатить» и после каждого ответа человека (телефон, почта) из users.js.
-export async function payContinue(ctx, id, first = false) {
+export async function payContinue(ctx, id, first = false, mid = null) {
   ctx = await withPay(ctx);
   const key = 'payintent:' + id;
   const row = await ctx.db.first(`SELECT value FROM settings WHERE key = ?`, [key]);
@@ -235,11 +250,11 @@ export async function payContinue(ctx, id, first = false) {
   const total = priceNow(it.t, ctx.now, ctx.env);
   await ctx.db.run(`INSERT INTO consents (tg_id, kind, granted, version, at) VALUES (?, 'offer', 1, 'v1', ?)`, [id, ctx.now]);
   await ctx.db.run(`UPDATE users SET tariff = ?, pay_total = ? WHERE tg_id = ?`, [it.t, total, id]);
-  await giveLink(ctx, null, async (t) => { if (t) await send(ctx, id, t); }, { ...u, tariff: it.t, pay_total: total }, 'full', total);
+  await giveLink(ctx, null, async (t) => { if (t) await send(ctx, id, t); }, { ...u, tariff: it.t, pay_total: total }, 'full', total, mid);
   return true;
 }
 
-async function giveLink(ctx, cq, ack, u, part, amount) {
+async function giveLink(ctx, cq, ack, u, part, amount, mid = null) {
   const id = u.tg_id;
   // уже есть свежая неоплаченная ссылка на то же самое — отдаём её, второй платёж не создаём
   let p = await ctx.db.first(
@@ -260,8 +275,11 @@ async function giveLink(ctx, cq, ack, u, part, amount) {
       [p.id, id, u.tariff, part, amount, p.url, ctx.now]);
   }
   await ack();
-  return say(ctx, id, 'payLink', { сумма: rub(amount), тариф: TARIFFS[u.tariff].title, оферта: ofertaUrl(ctx), имя: nm(u) },
-    { link_preview_options: { is_disabled: true }, reply_markup: { inline_keyboard: [[{ text: await btn(ctx, 'payBtnLink', { сумма: rub(amount) }), url: p.url }]] } });
+  return sayOrEdit(ctx, id, mid, 'payLink', { сумма: rub(amount), тариф: TARIFFS[u.tariff].title, оферта: ofertaUrl(ctx), имя: nm(u) },
+    { link_preview_options: { is_disabled: true }, reply_markup: { inline_keyboard: [
+      [{ text: await btn(ctx, 'payBtnLink', { сумма: rub(amount) }), url: p.url }],
+      [{ text: await btn(ctx, 'payBtnOferta'), url: ofertaUrl(ctx) }],
+    ] } });
 }
 
 // ---------- уведомление от ЮKassa ----------

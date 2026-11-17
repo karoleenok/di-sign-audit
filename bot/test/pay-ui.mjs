@@ -29,6 +29,7 @@ for (const w of [390, 320]) {
   if (await page.$('#payGen')) await page.click('#payGen');
   await page.waitForSelector('#pyHook');
   assert.match(await page.inputValue('#pyHook'), /\/yk\/[0-9a-f]{36}$/);
+  await page.waitForFunction(() => { const e = document.getElementById('pySecret'); return e && e.value === ''; }, null, { timeout: 5000 }).catch(() => {});
   assert.equal(await page.inputValue('#pySecret'), '', 'секрет назад в поле не возвращается');
   assert.match(await page.getAttribute('#pySecret', 'placeholder'), /сохранён/);
   await page.evaluate(() => { document.getElementById('sheet').scrollTop = 700; });
