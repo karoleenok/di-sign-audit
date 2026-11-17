@@ -61,7 +61,7 @@ export async function payPanelState(ctx) {
   const full = await ctx.db.first(`SELECT COUNT(*) AS n FROM users WHERE paid_full_at IS NOT NULL`);
   const e = x.env;
   return {
-    shopId: e.YK_SHOP_ID || '', secretSet: !!e.YK_SECRET, mode: !e.YK_SECRET ? 'none' : String(e.YK_SECRET).startsWith('test_') ? 'test' : 'live',
+    shopId: e.YK_SHOP_ID || '', secretSet: !!e.YK_SECRET, mode: !e.YK_SECRET ? 'none' : String(e.YK_SECRET).startsWith('test_') ? 'test' : String(e.YK_SECRET).startsWith('live_') ? 'live' : 'other',
     secretFrom: c.secret ? 'panel' : ctx.env.YK_SECRET ? 'server' : '',
     hookUrl: e.YK_HOOK_SECRET ? (ctx.publicUrl || '') + '/yk/' + e.YK_HOOK_SECRET : '',
     campus: e.CAMPUS_CHAT_ID || '', sheetUrl: e.SHEET_HOOK_URL || '', sheetKeySet: !!e.SHEET_HOOK_KEY,
@@ -80,8 +80,9 @@ export async function payPanelSave(ctx, b) {
     c.shop_id = v;
   }
   if (str(b.secret)) {
-    const v = str(b.secret);
-    if (!/^(test|live)_[\w-]{20,120}$/.test(v)) return { error: 'Секретный ключ начинается с test_ или live_ (ЮKassa → Интеграция → Ключи API)' };
+    // при копировании из мессенджеров и писем в ключ попадают кавычки, пробелы и невидимые символы: убираем
+    const v = String(b.secret).replace(/[\s\u200b-\u200f\u2060\ufeff"'`«»]/g, '');
+    if (v.length < 20 || /[^\w.\-]/.test(v)) return { error: 'Не похоже на секретный ключ: он длинный (около 40 символов), только латиница, цифры, _ и -. Скопируй его из ЮKassa целиком (Интеграция → Ключи API)' };
     c.secret = await seal(ctx.env, v);
   }
   if (b.genHook && !c.hook) c.hook = [...crypto.getRandomValues(new Uint8Array(18))].map((x) => x.toString(16).padStart(2, '0')).join('');
@@ -117,8 +118,8 @@ export async function payPanelCheck(ctx) {
   try {
     const r = await fetch('https://api.yookassa.ru/v3/me', { headers: { authorization: 'Basic ' + btoa(`${x.env.YK_SHOP_ID}:${x.env.YK_SECRET}`) }, signal: AbortSignal.timeout(15_000) });
     const j = await r.json().catch(() => ({}));
-    if (r.status === 401) return { error: 'ЮKassa не приняла номер магазина или ключ. Проверь, что они из одного магазина' };
-    if (!r.ok) return { error: 'ЮKassa ответила ошибкой ' + r.status };
+    if (r.status === 401) return { error: 'ЮKassa не приняла пару «номер магазина + ключ». Чаще всего они от разных магазинов: например, тестовый номер и боевой ключ. Впиши оба из одного магазина' };
+    if (!r.ok) return { error: 'ЮKassa ответила ошибкой ' + r.status + (j.description ? ': ' + j.description : '') };
     return { ok: true, test: !!j.test, status: j.status || '', fiscal: !!j.fiscalization_enabled, methods: j.payment_methods || [] };
   } catch (e) { return { error: 'ЮKassa не отвечает: ' + e.message }; }
 }

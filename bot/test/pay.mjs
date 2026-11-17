@@ -119,6 +119,13 @@ const w = await withPay(pc);
 assert.equal(w.env.YK_SECRET, KEY); assert.equal(w.env.PAY_PRE_UNTIL, '2026-11-21T23:59:00'); assert.equal(w.env.CAMPUS_CHAT_ID, '-1001234567890');
 assert.equal((await withPay({ db, env: { BOT_TOKEN: 'другой' }, now: T })).env.YK_SECRET, '', 'с чужим токеном ключ не расшифровать');
 assert.ok((await payPanelSave(pc, { secret: 'abc' })).error);
+assert.ok((await payPanelSave(pc, { secret: 'live_' + 'B'.repeat(20) + ' чужой текст' })).error);
+// ключ, скопированный с кавычками, пробелом и невидимым символом, принимается очищенным
+const dirty = await payPanelSave(pc, { secret: ' «live_' + 'C'.repeat(25) + '\u200b" ' });
+assert.ok(dirty.ok && dirty.state.mode === 'live', JSON.stringify(dirty));
+assert.equal((await withPay(pc)).env.YK_SECRET, 'live_' + 'C'.repeat(25));
+assert.equal((await payPanelSave(pc, { secret: 'X'.repeat(40) })).state.mode, 'other'); // ключ без префикса не отвергаем
+await payPanelSave(pc, { secret: KEY });
 assert.ok((await payPanelSave(pc, { shopId: 'x1' })).error);
 assert.ok((await payPanelSave(pc, { sheetUrl: 'http://evil.test' })).error);
 assert.ok((await payPanelSave(pc, { preUntil: 'вчера' })).error);

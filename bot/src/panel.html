@@ -2726,7 +2726,7 @@ async function openPay() {
   let p;
   try { p = await api('/pay'); } catch (e) { toast(e.message); return; }
   const f = (id, t, val, o) => { o = o || {}; return '<label class="f">' + t + '</label><input type="' + (o.type || 'text') + '" id="' + id + '" ' + (o.mode ? 'inputmode="' + o.mode + '" ' : '') + 'autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="' + esc(o.ph || '') + '" value="' + esc(val || '') + '">' + (o.hint ? '<p class="small muted" style="margin:6px 2px 0">' + o.hint + '</p>' : ''); };
-  const modeTxt = p.mode === 'none' ? 'ключ не задан' : p.mode === 'test' ? 'тестовый ключ: деньги не списываются' : 'боевой ключ: платежи настоящие';
+  const modeTxt = p.mode === 'none' ? 'ключ не задан' : p.mode === 'test' ? 'тестовый ключ: деньги не списываются' : p.mode === 'live' ? 'боевой ключ: платежи настоящие' : 'ключ нестандартного вида, нажми «Проверить подключение»';
   const seatTxt = Object.keys(p.seats).map((k) => p.seats[k].title + ': свободно ' + p.seats[k].left + ' из ' + p.seats[k].total).join(' · ');
   sheet('<div class="shd"><span class="pill">Оплата</span><button type="button" class="sx" id="payX" aria-label="закрыть">✕</button></div><h2>ЮKassa и <i>сроки</i></h2>' +
     '<p class="small muted">Зачислено: ' + p.paid + ' (оплатили полностью: ' + p.full + '). ' + esc(seatTxt) + '.</p>' +
