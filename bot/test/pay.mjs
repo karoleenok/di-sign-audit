@@ -137,17 +137,19 @@ await pay.payAdminCommand(ctx(), { from: { id: 6 } }, 'payreset', 'yes');
 
 // входы по ссылке: ?start=pay_prof сразу открывает тариф, новичок сначала проходит обычный вход
 await db.run(`INSERT INTO users (tg_id, first_name, status, created_at, sched_at) VALUES (10, 'Ссылка', 'active', 0, ?)`, [T]);
+await db.run(`UPDATE users SET phone = '+79990001000', email = 'l@x.ru' WHERE tg_id = 10`);
 assert.equal(await pay.payEntry(ctx(), { from: { id: 10 } }, 'prof'), true);
-assert.match(out.at(-1).text, /Тариф с профессором — 33 333/);
+assert.match(out.at(-1).text, /К оплате: 33 333/); assert.match(out.at(-1).text, /оферты/); assert.match(out.at(-1).kb, /pay\.test/);
 assert.equal(await pay.payEntry(ctx(), { from: { id: 10 } }, ''), true);
 assert.match(out.at(-1).text, /Набор в Di Sign University открыт/);
 assert.equal(await pay.payEntry(ctx(), { from: { id: 11 }, chat: {} }, 'prof'), false, 'новичок идёт во вход');
 await db.run(`INSERT INTO users (tg_id, first_name, status, created_at) VALUES (11, 'Новичок', 'new', 0)`);
 await pay.payTick(ctx(T + 900));
-assert.equal(sent(/Тариф с профессором/).filter((o) => o.chat === 11).length, 0, 'до конца входа предложение не уходит');
+assert.equal(out.filter((o) => o.chat === 11).length, 0, 'до конца входа ничего не уходит');
 await db.run(`UPDATE users SET sched_at = ?, status = 'active' WHERE tg_id = 11`, [T + 910]);
 await pay.payTick(ctx(T + 960));
-assert.equal(out.filter((o) => o.m === 'sendMessage' && o.chat === 11 && /Тариф с профессором/.test(o.text)).length, 1, 'после входа открылся выбранный тариф');
+assert.ok(out.filter((o) => o.m === 'sendMessage' && o.chat === 11 && /телефон/i.test(o.text)).length >= 1, 'после входа сразу к оплате: просит контакты');
+assert.equal(sent(/Набор в Di Sign University открыт/).filter((o) => o.chat === 11).length, 0, 'выбранный тариф: общее предложение не шлём');
 // после общей рассылки новичкам предложение приходит само через сутки после входа
 await db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES ('pay:broadcast', 'done')`);
 await db.run(`INSERT INTO users (tg_id, first_name, status, created_at, sched_at) VALUES (12, 'Старый', 'active', 0, ?)`, [T - 90000]);

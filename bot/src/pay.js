@@ -167,6 +167,13 @@ async function showTariff(ctx, u, id, t) {
     ] }, link_preview_options: { is_disabled: true } });
 }
 
+// Сразу к оплате, без экрана тарифа: контакты (если их ещё нет), потом кнопка со ссылкой на ЮKassa
+async function goPay(ctx, id, t) {
+  if ((await seatsLeft(ctx, t, id)) < 1) return soldOut(ctx, id, t);
+  await ctx.db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, ['payintent:' + id, JSON.stringify({ t, at: ctx.now })]);
+  return payContinue(ctx, id, true);
+}
+
 // Вход по ссылке t.me/бот?start=pay, pay_prof или pay_rector (с сайта, из постов, из кнопок).
 // Новичку сначала нужен обычный вход (согласие на данные), предложение придёт сразу после него.
 export async function payEntry(ctx, msg, tariff) {
@@ -178,7 +185,7 @@ export async function payEntry(ctx, msg, tariff) {
     return false;
   }
   if (u.paid_full_at) { await say(ctx, id, 'payAlready', { имя: nm(u) }); return true; }
-  if (tariff && TARIFFS[tariff]) await showTariff(ctx, u, id, tariff); else await sendOffer(ctx, id);
+  if (tariff && TARIFFS[tariff]) await goPay(ctx, id, tariff); else await sendOffer(ctx, id);
   return true;
 }
 
@@ -240,8 +247,8 @@ async function giveLink(ctx, cq, ack, u, part, amount) {
       [p.id, id, u.tariff, part, amount, p.url, ctx.now]);
   }
   await ack();
-  return say(ctx, id, 'payLink', { сумма: rub(amount), тариф: TARIFFS[u.tariff].title, имя: nm(u) },
-    { reply_markup: { inline_keyboard: [[{ text: await btn(ctx, 'payBtnLink', { сумма: rub(amount) }), url: p.url }]] } });
+  return say(ctx, id, 'payLink', { сумма: rub(amount), тариф: TARIFFS[u.tariff].title, оферта: ofertaUrl(ctx), имя: nm(u) },
+    { link_preview_options: { is_disabled: true }, reply_markup: { inline_keyboard: [[{ text: await btn(ctx, 'payBtnLink', { сумма: rub(amount) }), url: p.url }]] } });
 }
 
 // ---------- уведомление от ЮKassa ----------
@@ -445,7 +452,7 @@ export async function payTick(ctx) {
     await ctx.db.run(`DELETE FROM settings WHERE key = ?`, ['payafter:' + u.tg_id]);
     if (u.paid_full_at) continue;
     await flag(ctx, u, 'offer');
-    const send1 = u.want && TARIFFS[u.want] ? showTariff(ctx, u, u.tg_id, u.want) : sendOffer(ctx, u.tg_id);
+    const send1 = u.want && TARIFFS[u.want] ? goPay(ctx, u.tg_id, u.want) : sendOffer(ctx, u.tg_id);
     await send1.catch(async (e) => { if (e.code === 403) await ctx.db.run(`UPDATE users SET status = 'blocked' WHERE tg_id = ?`, [u.tg_id]); });
   }
   // 2в) когда общая рассылка уже прошла, новичкам предложение приходит сам через сутки после входа
