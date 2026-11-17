@@ -7,7 +7,7 @@ import { onStart, onUserCallback, onUserCommand, onUserText, getUState } from '.
 import { isAdmin, envAdmins, onAdminCommand, onAdminMessage, onAdminCallback } from './admin.js';
 import { sendPost, dueUsers, recordDeliveries, loadDocs, isStreamPost, loadCohorts } from './posts.js';
 import { btn } from './msgs.js';
-import { onPayCallback, payAdminCommand, sendOffer } from './pay.js';
+import { onPayCallback, payAdminCommand, sendOffer, payReturned } from './pay.js';
 import { loadCfg, MENU_TEXT } from './appcfg.js';
 
 export function makeCtx({ db, env, publicUrl, fetchFn, now }) {
@@ -51,6 +51,7 @@ export async function handleUpdate(ctx, upd) {
   const admin = await isAdmin(ctx, msg.from.id);
   const c = msg.text ? parseCommand(msg.text) : null;
   if (c) {
+    if (c.cmd === 'start' && c.arg === 'paid') return payReturned(ctx, msg.from.id);
     if (c.cmd === 'start' && c.arg === 'pay') return sendOffer(ctx, msg.from.id);
     if (c.cmd === 'start') return onStart(ctx, msg, c.arg);
     if (c.cmd === 'pay' || c.cmd === 'oplata') return sendOffer(ctx, msg.from.id);

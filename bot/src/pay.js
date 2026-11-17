@@ -211,7 +211,7 @@ async function giveLink(ctx, cq, ack, u, part, amount) {
   if (!p) {
     let yk;
     try {
-      yk = await ykCreate(ctx, { tgId: id, tariff: u.tariff, part, amount, botUrl: 'https://t.me/di_sign_university_bot' });
+      yk = await ykCreate(ctx, { tgId: id, tariff: u.tariff, part, amount, botUrl: 'https://t.me/di_sign_university_bot?start=paid' });
     } catch (e) {
       console.error('pay create', e.message);
       await ack('Платёжный сервис не ответил, попробуй через минуту');
@@ -260,6 +260,19 @@ export async function checkPayment(ctx, id) {
     }
   }
   return out;
+}
+
+// Человек вернулся из ЮKassa в бота (кнопка «Вернуться»): сразу проверяем его платёж, не ждём уведомления.
+// Если банк ещё подтверждает (бывает при СБП), успокаиваем: ничего делать не нужно, подтверждение придёт сюда.
+export async function payReturned(ctx, id) {
+  ctx = await withPay(ctx);
+  const u = await ctx.db.first(`SELECT * FROM users WHERE tg_id = ?`, [id]);
+  if (!u || u.paid_full_at) return;
+  const rows = await ctx.db.all(`SELECT id FROM payments WHERE tg_id = ? AND status = 'pending' AND created_at > ? ORDER BY created_at DESC LIMIT 3`, [id, ctx.now - 3 * 3600]);
+  if (!rows.length) return sendOffer(ctx, id);
+  let paid = false;
+  for (const r of rows) { try { const yk = await checkPayment(ctx, r.id); if (yk.status === 'succeeded' && yk.paid) paid = true; } catch (e) { console.error('pay return', e.message); } }
+  if (!paid) await say(ctx, id, 'payWaiting', { имя: nm(u) });
 }
 
 // Страховка на случай, если уведомление от ЮKassa не дошло: сами спрашиваем статус неоплаченных платежей.

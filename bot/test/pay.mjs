@@ -122,6 +122,19 @@ await pay.payAdminCommand(ctx(), { from: { id: 9 } }, 'paycheck', '');
 assert.match(out.at(-1).text, /Неоплаченных платежей за последние сутки нет|Проверила/);
 await pay.payAdminCommand(ctx(), { from: { id: 5 } }, 'payreset', 'yes'); // чистим служебного студента
 
+// вернулся из ЮKassa: платёж проверяется сразу; если банк ещё думает, человека успокаиваем
+await db.run(`INSERT INTO users (tg_id, first_name, phone, email, status, created_at) VALUES (6, 'Возврат', '+79996660000', 'v@x.ru', 'active', 0)`);
+await pay.onPayCallback(ctx(T + 800), cq(6, 'pay:f:prof'));
+const realFetch = globalThis.fetch;
+globalThis.fetch = async (url) => new Response(JSON.stringify({ id: 'x', status: 'pending', paid: false, amount: { value: '33333.00' } }));
+await pay.payReturned(ctx(T + 810), 6);
+globalThis.fetch = realFetch;
+assert.match(out.at(-1).text, /Банк ещё подтверждает/);
+assert.equal(sent(/Поздравляем/).filter((o) => o.chat === 6).length, 0);
+await pay.payReturned(ctx(T + 820), 6);
+assert.equal(sent(/Поздравляем/).filter((o) => o.chat === 6).length, 1, 'при возврате платёж зачтён сразу');
+await pay.payAdminCommand(ctx(), { from: { id: 6 } }, 'payreset', 'yes');
+
 // проверка настоящей оплаты на 1 ₽: только по команде админа, в списке тарифов её нет
 assert.deepEqual(Object.keys(pay.TARIFFS), ['rector', 'prof']);
 const before = (await db.all(`SELECT * FROM payments`)).length;
