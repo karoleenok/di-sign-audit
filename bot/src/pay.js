@@ -149,6 +149,7 @@ export async function onPayCallback(ctx, cq) {
 
   if (u.paid_full_at) { await ack(); return say(ctx, id, 'payAlready', { имя: nm(u) }); }
   if (act === 'back') { await ack(); return sendOffer(ctx, id); }
+  if (act === 'o') { await ack(); return sendOferta(ctx, id); }
 
   // выбор тарифа → итог и кнопка оплаты
   if (act === 't' && TARIFFS[arg]) { await ack(); return showTariff(ctx, u, id, arg); }
@@ -169,6 +170,24 @@ export async function onPayCallback(ctx, cq) {
   await ack();
 }
 
+// Оферта прямо в чате: не зависит от ссылки и браузера
+async function sendOferta(ctx, id) {
+  let html = '';
+  try { html = await (await import('node:fs/promises')).readFile(new URL('../docs/oferta.html', import.meta.url), 'utf8'); } catch { /* нет файла */ }
+  let dd = '19.11.2026';
+  try { const d = new Date((conf(ctx.env).preUntil + 3 * 3600) * 1000), p2 = (n) => String(n).padStart(2, '0'); dd = `${p2(d.getUTCDate())}.${p2(d.getUTCMonth() + 1)}.${d.getUTCFullYear()}`; } catch { /* оставим по умолчанию */ }
+  const body = (html.split('<main>')[1] || '').split('</main>')[0]
+    .replace(/\{\{ПРЕДЗАПИСЬ_ДО\}\}/g, dd)
+    .replace(/<h[12][^>]*>/g, '\n\n').replace(/<\/(h[12]|p|ul)>/g, '\n').replace(/<li>/g, '• ').replace(/<\/li>/g, '\n')
+    .replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&laquo;/g, '«').replace(/&raquo;/g, '»')
+    .replace(/\n{3,}/g, '\n\n').trim();
+  if (!body) return ctx.tg.call('sendMessage', { chat_id: id, text: 'Оферта: ' + ofertaUrl(ctx) });
+  const parts = []; let cur = '';
+  for (const para of body.split('\n\n')) { if ((cur + '\n\n' + para).length > 3800 && cur) { parts.push(cur); cur = para; } else cur = cur ? cur + '\n\n' + para : para; }
+  if (cur) parts.push(cur);
+  for (const t of parts) await ctx.tg.call('sendMessage', { chat_id: id, text: t, link_preview_options: { is_disabled: true } });
+}
+
 // Экран тарифа: итог, условия и кнопка «Оплатить»
 async function showTariff(ctx, u, id, t) {
   if ((await seatsLeft(ctx, t, id)) < 1) return soldOut(ctx, id, t);
@@ -177,7 +196,7 @@ async function showTariff(ctx, u, id, t) {
     { тариф: TARIFFS[t].title, сумма: rub(total), о_тарифе: cap(TARIFFS[t].about), условия: bnplLine(ctx), оферта: ofertaUrl(ctx), имя: nm(u) },
     { reply_markup: { inline_keyboard: [
       [{ text: await btn(ctx, 'payBtnGo', { сумма: rub(total) }), callback_data: `pay:f:${t}` }],
-      [{ text: await btn(ctx, 'payBtnOferta'), url: ofertaUrl(ctx) }],
+      [{ text: await btn(ctx, 'payBtnOferta'), callback_data: 'pay:o' }],
       [{ text: await btn(ctx, 'payBtnBack'), callback_data: 'pay:back' }],
     ] }, link_preview_options: { is_disabled: true } });
 }
@@ -278,7 +297,7 @@ async function giveLink(ctx, cq, ack, u, part, amount, mid = null) {
   return sayOrEdit(ctx, id, mid, 'payLink', { сумма: rub(amount), тариф: TARIFFS[u.tariff].title, оферта: ofertaUrl(ctx), имя: nm(u) },
     { link_preview_options: { is_disabled: true }, reply_markup: { inline_keyboard: [
       [{ text: await btn(ctx, 'payBtnLink', { сумма: rub(amount) }), url: p.url }],
-      [{ text: await btn(ctx, 'payBtnOferta'), url: ofertaUrl(ctx) }],
+      [{ text: await btn(ctx, 'payBtnOferta'), callback_data: 'pay:o' }],
     ] } });
 }
 
