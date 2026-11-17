@@ -247,6 +247,7 @@ export async function onYkNotify(ctx, body, secret) {
 
 export async function checkPayment(ctx, id) {
   const p = await ykGet(ctx.env, id);
+  const out = p;
   if (p.status === 'succeeded' && p.paid) {
     // отмечаем один раз: повторные уведомления ничего не делают
     const r = await ctx.db.run(`UPDATE payments SET status = 'succeeded', paid_at = ? WHERE id = ? AND status != 'succeeded'`, [ctx.now, id]);
@@ -258,6 +259,33 @@ export async function checkPayment(ctx, id) {
       await say(ctx, row.tg_id, 'payFail', {}, { reply_markup: { inline_keyboard: [[{ text: await btn(ctx, 'payBtnRetry'), callback_data: `pay:t:${row.tariff}` }]] } }).catch(() => {});
     }
   }
+  return out;
+}
+
+// Страховка на случай, если уведомление от ЮKassa не дошло: сами спрашиваем статус неоплаченных платежей.
+// Возвращает {проверено, зачислено}. Если оплату поймал опрос спустя пару минут после списания, админам раз в сутки
+// приходит предупреждение: значит, адрес уведомлений в ЮKassa вписан неверно или не сохранён.
+export async function pollPending(ctx, limit = 25, windowSec = 2 * 3600) {
+  const rows = await ctx.db.all(`SELECT id FROM payments WHERE status = 'pending' AND created_at > ? ORDER BY created_at DESC LIMIT ?`, [ctx.now - windowSec, limit]);
+  let paid = 0, late = false;
+  for (const r of rows) {
+    try {
+      const yk = await checkPayment(ctx, r.id);
+      if (yk.status === 'succeeded' && yk.paid) {
+        paid++;
+        if (yk.captured_at && ctx.now - Date.parse(yk.captured_at) / 1000 > 120) late = true;
+      }
+    } catch (e) { console.error('pay poll', e.message); }
+  }
+  if (late) {
+    const day = new Date((ctx.now + 3 * 3600) * 1000).toISOString().slice(0, 10);
+    const f = await ctx.db.first(`SELECT value FROM settings WHERE key = 'pay:hookwarn'`);
+    if (!f || f.value !== day) {
+      await ctx.db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES ('pay:hookwarn', ?)`, [day]);
+      await toAdmins(ctx, '⚠️ Оплата дошла до бота с опозданием: уведомление от ЮKassa не пришло, платёж поймала проверка. Деньги не потеряны, но проверь, что адрес уведомлений вписан в боевой магазин ЮKassa (Интеграция → HTTP-уведомления, события payment.succeeded и payment.canceled).');
+    }
+  }
+  return { checked: rows.length, paid };
 }
 
 async function onPaid(ctx, row, yk) {
@@ -354,6 +382,7 @@ export async function payTick(ctx) {
   const c = conf(ctx.env);
 
   await flushSheet(ctx).catch((e) => console.error('sheet', e.message));
+  await pollPending(ctx).catch((e) => console.error('pay poll', e.message));
   // каждый день в 10:00 по Москве — два файла со списком оплативших всем админам
   const msk = new Date((now + 3 * 3600) * 1000), dayKey = msk.toISOString().slice(0, 10);
   if (msk.getUTCHours() === 10 && msk.getUTCMinutes() < 5) {
@@ -415,6 +444,10 @@ export async function payAdminCommand(ctx, msg, cmd, arg) {
     if (arg !== 'go') return send(ctx, id, 'Рассылка с тарифами уйдёт всем подписчикам, кто ещё не оплатил.\n\n/payoffer test — прислать только мне\n/payoffer go — разослать всем');
     await ctx.db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES ('pay:broadcast', 'on')`);
     return send(ctx, id, 'Запустила рассылку: уходит по 150 человек в минуту. Напишу, когда закончится.');
+  }
+  if (cmd === 'paycheck') {
+    const r = await pollPending(ctx, 100, 24 * 3600);
+    return send(ctx, id, r.checked ? `Проверила неоплаченных платежей за сутки: ${r.checked}. Зачислено сейчас: ${r.paid}.` : 'Неоплаченных платежей за последние сутки нет.');
   }
   if (cmd === 'paytest') {
     if (!ctx.env.YK_SHOP_ID || !ctx.env.YK_SECRET) return send(ctx, id, 'Сначала впиши ключи ЮKassa в панели: «Ещё → Оплата».');

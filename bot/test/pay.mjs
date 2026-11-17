@@ -106,6 +106,22 @@ await resetMsg(ctx(), 'payThanks');
 
 // сброс тестовых платежей: только у того, кто нажал команду
 await db.run(`INSERT INTO users (tg_id, first_name, status, created_at) VALUES (9, 'Админ', 'active', 0)`);
+// страховка: уведомление не пришло, платёж ловит опрос (и один раз предупреждает админов)
+await db.run(`INSERT INTO users (tg_id, first_name, phone, email, status, created_at) VALUES (5, 'Опрос', '+79995550000', 'o@x.ru', 'active', 0)`);
+await pay.onPayCallback(ctx(T + 200), cq(5, 'pay:f:prof'));
+const pp = await db.first(`SELECT * FROM payments WHERE tg_id = 5`);
+assert.equal(pp.status, 'pending');
+const polled = await pay.pollPending(ctx(T + 600));
+assert.equal(polled.paid, 1);
+assert.equal((await db.first(`SELECT status FROM payments WHERE id = ?`, [pp.id])).status, 'succeeded');
+assert.equal(sent(/Поздравляем/).filter((o) => o.chat === 5).length, 1, 'человек получил «зачислен(а)» без уведомления');
+assert.equal((await pay.pollPending(ctx(T + 660))).paid, 0, 'повторно не зачисляем');
+await notify(ctx(T + 700), pp.id);
+assert.equal(sent(/Поздравляем/).filter((o) => o.chat === 5).length, 1, 'позднее уведомление дубль не шлёт');
+await pay.payAdminCommand(ctx(), { from: { id: 9 } }, 'paycheck', '');
+assert.match(out.at(-1).text, /Неоплаченных платежей за последние сутки нет|Проверила/);
+await pay.payAdminCommand(ctx(), { from: { id: 5 } }, 'payreset', 'yes'); // чистим служебного студента
+
 // проверка настоящей оплаты на 1 ₽: только по команде админа, в списке тарифов её нет
 assert.deepEqual(Object.keys(pay.TARIFFS), ['rector', 'prof']);
 const before = (await db.all(`SELECT * FROM payments`)).length;
