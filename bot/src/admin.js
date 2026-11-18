@@ -600,7 +600,7 @@ async function showMsg(ctx, id, key, note) {
     : [{ text: '🖼 Добавить картинку', callback_data: 't:p:' + key }]);
   if (all[key]) rows.push([{ text: '↩️ Вернуть как было', callback_data: 't:r:' + key }]);
   rows.push([{ text: '← Назад', callback_data: 't:g:' + i.group }]);
-  return say(ctx, id, i.vars.length ? `Подстановки: ${i.vars.map((v) => '{' + v + '}').join(' ')} (в примере — образец)` : 'Что дальше?', { reply_markup: kb(rows) });
+  return say(ctx, id, 'Что дальше?', { reply_markup: kb(rows) });
 }
 
 // ---------- панель ----------
