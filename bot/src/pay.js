@@ -134,7 +134,8 @@ export async function sendOffer(ctx, chat) {
     цена_ректор: price('rector'), о_ректор: cap(TARIFFS.rector.about), места_ректор: await seats('rector'),
     цена_проф: price('prof'), о_проф: cap(TARIFFS.prof.about), места_проф: await seats('prof'),
     условия: terms(ctx, pre, c),
-  }, { reply_markup: await offerKb(ctx), link_preview_options: { is_disabled: true } });
+  // если вместо шаблона стоит свой пост, его кнопки (на факультеты) главные: кнопки тарифов бота не дублируем
+  }, { reply_markup: (await postOf(ctx, 'payOffer')) ? undefined : await offerKb(ctx), link_preview_options: { is_disabled: true } });
 }
 
 // ---------- кнопки ----------
