@@ -389,6 +389,8 @@ async function onPaid(ctx, row, yk) {
 
   await enqueueSheet(ctx, row, u);
   await say(ctx, id, 'payThanks', { тариф: TARIFFS[row.tariff].title, сумма: rub(row.amount), дата_доступов: dm(c.inviteAt), дата_старта: dm(c.start), имя: nm(u) });
+  // сразу после поздравления — пост с полезными ссылками, если он назначен (панель → Тексты бота → «Полезные ссылки»)
+  if (await postOf(ctx, 'linksMsg')) await say(ctx, id, 'linksMsg').catch(() => {});
   await toAdmins(ctx, `💸 ${who(u)} — тариф ${TARIFFS[row.tariff].title}: ${rub(row.amount)}`);
 }
 

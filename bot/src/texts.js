@@ -69,6 +69,7 @@ export const USER_COMMANDS = [
   { command: 'level', description: 'Сменить уровень' },
   { command: 'pay', description: 'Оплатить обучение' },
   { command: 'stop', description: 'Отписаться от рассылки' },
+  { command: 'links', description: 'Полезные ссылки' },
   { command: 'policy', description: 'Документы' },
   { command: 'delete', description: 'Удалить мои данные' },
 ];

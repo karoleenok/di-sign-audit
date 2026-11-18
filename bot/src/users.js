@@ -776,6 +776,7 @@ export async function onUserCommand(ctx, msg, cmd) {
     return say(ctx, id, 'stopped');
   }
   if (cmd === 'level') return u ? askLevel(ctx, id) : say(ctx, id, 'needStart');
+  if (cmd === 'links') return say(ctx, id, 'linksMsg');
   if (cmd === 'policy') return say(ctx, id, 'policy', await docVars(ctx), { link_preview_options: { is_disabled: true } });
   if (cmd === 'delete') {
     return tech(ctx, id, say(ctx, id, 'deleteAsk', {}, { reply_markup: kb([[{ text: await btn(ctx, 'deleteYes'), callback_data: 'del:yes' }, { text: await btn(ctx, 'deleteNo'), callback_data: 'del:no' }]]) }));
