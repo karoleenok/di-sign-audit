@@ -547,11 +547,12 @@ function render() {
       : tab === 'game' ? '<h1>Игра <i>прогрева</i></h1><p class="lead">Когда открыть уроки и показывать ли игру всем. Время по Москве.</p>'
       : tab === 'tasks' ? '<h1>Задачи таксиков</h1><p class="lead">Кто что делает до 25 ноября. Отметь своё, шкала заполнится сама.</p>'
       : tab === 'lib' ? '<h1>Все <i>посты</i></h1><p class="lead">Всё, что написано в боте через /new и в панели: найти, открыть, посмотреть, где стоит.</p>'
+      : tab === 'pay' ? '<h1>Оплата: <i>путь</i></h1><p class="lead">Время зачисления → факультет → оплата → поздравление. Здесь видно, где связь не собрана, и можно починить одной кнопкой.</p>'
       : tab === 'texts' ? '<h1>Настройки</h1><p class="lead">Документы, команды ученика, профиль бота и остальные тексты.</p>'
       : '<h1>Весь путь <i>ученика</i></h1><p class="lead">Вход, лента, даты и бонус — в одном месте.</p>') +
     '<div class="tabs' + (view.old ? '' : ' newtabs') + '"><div class="seg" id="tabs">' +
     (view.old ? [['home','Главная'],['path','Путь · ' + (counts.feed + counts.dates + counts.gifts + counts.fb0)],['reviews','Люди · ' + (S.leadCount || 0)],['game','Игра'],['tasks','Задачи'],['texts','Настройки']]
-      : [['home','Главная'],['sched','Расписание'],['reviews','Люди · ' + (S.leadCount || 0)],['game','Игра'],['more','Ещё']]).map(([k,t]) => '<button data-t="' + k + '" class="' + ((view.old ? tab === k : (k === 'more' ? ['more', 'path', 'tasks', 'texts', 'lib'].includes(tab) : tab === k)) ? 'on' : '') + '">' + t + '</button>').join('') +
+      : [['home','Главная'],['sched','Расписание'],['pay','Оплата'],['reviews','Люди · ' + (S.leadCount || 0)],['game','Игра'],['more','Ещё']]).map(([k,t]) => '<button data-t="' + k + '" class="' + ((view.old ? tab === k : (k === 'more' ? ['more', 'path', 'tasks', 'texts', 'lib'].includes(tab) : tab === k)) ? 'on' : '') + '">' + t + '</button>').join('') +
     '</div></div><div id="body"></div>';
   $('tabs').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; tab = b.dataset.t; if (tab === 'tasks') TD = null; haptic(); render(); window.scrollTo(0, 0); };
   { const on = $('tabs').querySelector('.on'); if (on && on.scrollIntoView) on.scrollIntoView({ inline: 'nearest', block: 'nearest' }); }
@@ -560,7 +561,7 @@ function render() {
   if (view.old && tab === 'more') tab = 'path';
   if (!view.old && tab === 'old') tab = 'sched';
   if (tab !== 'path' && view.selMode) { view.selMode = false; sel.clear(); document.body.classList.remove('selmode'); }
-  ({ home: renderHome, sched: renderSched, more: renderMore, path: renderFlow, reviews: renderReviews, game: renderGame, tasks: renderTasks, texts: renderTexts, lib: renderLib })[tab]();
+  ({ home: renderHome, sched: renderSched, pay: renderPay, more: renderMore, path: renderFlow, reviews: renderReviews, game: renderGame, tasks: renderTasks, texts: renderTexts, lib: renderLib })[tab]();
   if (view.old) { $('body').insertAdjacentHTML('afterbegin', '<button type="button" class="sc-chip" id="goNew" style="margin:8px 0">Новая панель</button>'); $('goNew').onclick = () => { view.old = false; saveView(); tab = 'sched'; render(); window.scrollTo(0, 0); }; }
   if (!view.old && ['path', 'tasks', 'texts', 'lib'].includes(tab)) { $('body').insertAdjacentHTML('afterbegin', '<button type="button" class="sc-chip" id="backMore" style="margin:8px 0">' + (tab === 'lib' ? '← Расписание' : '← Ещё') + '</button>'); $('backMore').onclick = () => { tab = tab === 'lib' ? 'sched' : 'more'; render(); window.scrollTo(0, 0); }; }
   if ($('undoBtn')) $('undoBtn').onclick = doUndo;
@@ -2440,6 +2441,89 @@ function libCard(p) {
   const b = [esc(KIND_WHEN(p)), p.kind !== 'node' && p.kind !== 'fb' ? esc(trackLbl(p)) : '', p.status === 'active' ? 'включён' : p.status === 'draft' ? 'черновик' : 'выключен', p.emoji || p.rich ? '✨ премиум-эмодзи' : '', (p.media || []).length ? '🖼 ' + p.media.length : '', p.inbox ? '✉️ новый из бота' : '', libPlaced(p) ? '' : '⚠ нигде не стоит'].filter(Boolean);
   return '<button type="button" class="kind lib" data-lib="' + p.id + '"><b>' + esc(name.slice(0, 70)) + '</b>' + (rest ? '<span class="ls">' + esc(rest.slice(0, 110)) + '</span>' : '') + '<span class="lb">' + b.map((x) => '<i' + (x.startsWith('⚠') ? ' class="w"' : '') + '>' + x + '</i>').join('') + '</span></button>';
 }
+
+// ---------- вкладка «Оплата»: путь от «времени зачисления» до поздравления ----------
+const PAY_FIND = {
+  offer: /время зачисления/i,
+  prof: /^\W*факультет с профессором/i,
+  rector: /^\W*факультет с ректором/i,
+  thanks: /^\W*congratulations/i,
+};
+function payPost(k) {
+  const ps = (S.posts || []).filter((p) => p.status !== 'archived' && PAY_FIND[k].test(String(p.text || '').replace(/\s+/g, ' ').slice(0, 120)));
+  return ps.sort((a, b) => b.id - a.id)[0] || null;
+}
+const payRows = (p) => ((p && p.rows) || []).flat();
+function payMsg(k) { return (S.msgs || []).find((m) => m.key === k) || null; }
+function payChain() {
+  const offer = payPost('offer'), prof = payPost('prof'), rector = payPost('rector'), thanks = payPost('thanks');
+  const mOffer = payMsg('payOffer'), mThanks = payMsg('payThanks'), mLink = payMsg('payLink');
+  const checks = (list) => list.map(([ok, t]) => '<div class="sumln" style="margin:3px 0;font-size:13.5px">' + (ok ? '✅ ' : '⚠️ ') + esc(t) + '</div>').join('');
+  const goTo = (p, t) => !!(p && t && payRows(p).some((b) => +b.go === t.id));
+  const steps = [
+    { n: 1, title: 'Время зачисления', sub: 'Пост для тех, кто в предзаписи. Приходит один раз, дальше по /pay.', post: offer, miss: 'Не нашёл пост со словами «время зачисления»',
+      list: offer ? [
+        [goTo(offer, rector), 'Кнопка «С ректором» ведёт на факультет с ректором'],
+        [goTo(offer, prof), 'Кнопка «С профессором» ведёт на факультет с профессором'],
+        [!!(mOffer && mOffer.post === offer.id), 'По /pay показывается этот пост (а не шаблон бота)'],
+      ] : [] },
+    { n: 2, title: 'Факультет с профессором', sub: 'Картинка и описание, кнопка идёт сразу к оплате.', post: prof, miss: 'Не нашёл пост «Факультет с профессором»',
+      list: prof ? [[payRows(prof).some((b) => b.pay === 'prof'), 'Есть кнопка оплаты тарифа «профессор»']] : [] },
+    { n: 3, title: 'Факультет с ректором', sub: 'То же для тарифа с ректором.', post: rector, miss: 'Не нашёл пост «Факультет с ректором»',
+      list: rector ? [[payRows(rector).some((b) => b.pay === 'rector'), 'Есть кнопка оплаты тарифа «ректор»']] : [] },
+    { n: 4, title: 'К оплате', sub: 'Сообщение со ссылкой ЮKassa и кнопкой «Оферта». Ссылка создаётся на человека, поэтому это шаблон бота.', msg: mLink, miss: 'Шаблон не найден',
+      list: mLink ? [[true, 'Кнопки «Оплатить» и «Оферта» собирает бот сам']] : [] },
+    { n: 5, title: 'Поздравление', sub: 'Приходит после оплаты.', post: thanks, msg: mThanks, miss: 'Не нашёл пост CONGRATULATIONS',
+      list: thanks ? [[!!(mThanks && mThanks.post === thanks.id), 'Привязан к сообщению «Оплата прошла»']] : [] },
+  ];
+  return { offer, prof, rector, thanks, mOffer, mThanks, steps, bad: steps.reduce((n, s) => n + s.list.filter((x) => !x[0]).length + (s.post || s.msg ? 0 : 1), 0) };
+}
+function renderPay() {
+  const c = payChain();
+  $('body').innerHTML =
+    (c.bad ? '<div class="attn"><b>Связей не хватает: ' + c.bad + '</b><div class="small" style="margin-top:4px">Нажми «Собрать связи»: кнопки и привязки встанут так, как в схеме. Сами посты и тексты я не меняю.</div></div>' : '<div class="note" style="background:#eaf4e2;color:#3f7d2e">Все связи собраны ✅</div>') +
+    '<div class="steps" style="gap:10px;margin-top:10px">' + c.steps.map((s) =>
+      '<div class="box" style="margin:0"><div class="row" style="align-items:flex-start"><b style="flex:none;width:26px;height:26px;border-radius:50%;background:var(--pill);display:grid;place-items:center;font-size:13px">' + s.n + '</b><div style="flex:1;min-width:0"><div style="font-weight:600">' + esc(s.title) +
+      (s.post ? ' <span class="muted small">#' + s.post.id + (s.post.sent ? ' · получили ' + s.post.sent : '') + '</span>' : '') + '</div><div class="small muted" style="margin:2px 0 8px">' + esc(s.sub) + '</div>' +
+      ((s.post || s.msg) ? '' : '<div class="sumln" style="margin:3px 0;font-size:13.5px">⚠️ ' + esc(s.miss) + '</div>') +
+      s.list.map(([ok, t]) => '<div class="sumln" style="margin:3px 0;font-size:13.5px">' + (ok ? '✅ ' : '⚠️ ') + esc(t) + '</div>').join('') +
+      ((s.post || s.msg) ? '<div class="btns two" style="margin-top:10px">' + (s.post ? '<button type="button" class="btn ghost" data-pp="' + s.post.id + '">Открыть пост</button><button type="button" class="btn ghost" data-pv="' + s.post.id + '">Как увидит</button>' : '<button type="button" class="btn ghost" data-pm="' + s.msg.key + '">Открыть текст</button>') + '</div>' : '') +
+      '</div></div></div>').join('') + '</div>' +
+    '<div class="btns" style="margin-top:14px"><button type="button" class="btn" id="payFix"' + (c.bad ? '' : ' disabled style="opacity:.5"') + '>Собрать связи</button></div>' +
+    '<p class="small muted" style="margin:10px 2px">Цены в названиях кнопок и в текстах постов вписаны руками: после 23:59 18 ноября их нужно поменять. Сумму на экране оплаты бот пересчитывает сам.</p>';
+  document.querySelectorAll('[data-pp]').forEach((el) => el.onclick = () => { haptic(); openPost(+el.dataset.pp); });
+  document.querySelectorAll('[data-pv]').forEach((el) => el.onclick = () => { haptic(); try { previewPost(+el.dataset.pv); } catch (e) { toast('Не открылось: ' + e.message); } });
+  document.querySelectorAll('[data-pm]').forEach((el) => el.onclick = () => { haptic(); openMsg(el.dataset.pm); });
+  if ($('payFix')) $('payFix').onclick = payFix;
+}
+async function payFix() {
+  const b = $('payFix'); b.disabled = true; b.textContent = 'Собираю…';
+  try {
+    const c = payChain(), done = [];
+    // 1. «время зачисления»: две кнопки на факультеты, остальные ряды остаются
+    if (c.offer && c.rector && c.prof) {
+      const rows = (c.offer.rows || []).map((r) => r.slice());
+      const has = (t) => rows.flat().some((x) => +x.go === t.id);
+      if (!has(c.rector)) rows.push([{ text: 'С ректором', go: c.rector.id }]);
+      if (!has(c.prof)) rows.push([{ text: 'С профессором', go: c.prof.id }]);
+      if (JSON.stringify(rows) !== JSON.stringify(c.offer.rows || [])) { await api('/post/' + c.offer.id, { rows }); done.push('кнопки в посте про зачисление'); }
+    }
+    // 2. факультеты: кнопка «Выбираю…» ведёт сразу на оплату
+    for (const [p, tariff] of [[c.prof, 'prof'], [c.rector, 'rector']]) {
+      if (!p || payRows(p).some((x) => x.pay === tariff)) continue;
+      let swapped = false;
+      const rows = (p.rows || []).map((r) => r.map((x) => { if (!swapped && x.go && !x.pay) { swapped = true; return { text: x.text, pay: tariff }; } return x; }));
+      if (!swapped) rows.unshift([{ text: tariff === 'prof' ? 'Выбираю профессора' : 'Выбираю ректора', pay: tariff }]);
+      await api('/post/' + p.id, { rows }); done.push('оплата на «' + (tariff === 'prof' ? 'профессоре' : 'ректоре') + '»');
+    }
+    // 3. тексты бота: /pay показывает пост, «Оплата прошла» — поздравление
+    if (c.offer && c.mOffer && c.mOffer.post !== c.offer.id) { const r = await api('/msg/payOffer', { post: c.offer.id }); S.msgs = r.msgs || S.msgs; done.push('/pay'); }
+    if (c.thanks && c.mThanks && c.mThanks.post !== c.thanks.id) { const r = await api('/msg/payThanks', { post: c.thanks.id }); S.msgs = r.msgs || S.msgs; done.push('поздравление'); }
+    haptic('medium'); toast(done.length ? 'Готово: ' + done.join(', ') : 'Всё уже собрано');
+    await reload();
+  } catch (e) { toast('Не вышло: ' + e.message); b.disabled = false; b.textContent = 'Собрать связи'; }
+}
+
 function renderLib() {
   const f = view.libF || 'all';
   $('body').innerHTML = '<input id="libQ" type="search" placeholder="Найти пост по названию или тексту" value="' + esc(view.libQ || '') + '" style="margin:0 0 10px;min-height:48px;width:100%;box-sizing:border-box;font-size:16px">' +
