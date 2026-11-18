@@ -91,11 +91,11 @@ const bnplLine = (ctx) => (ctx.env.PAY_BNPL === '1' ? 'Оплатить можн
 // сроки цены и способы оплаты одной строкой для сообщений
 const terms = (ctx, pre, c) => (pre ? `Цена предзаписи действует до ${dm(c.preUntil)} включительно.\n\n` : '') + bnplLine(ctx);
 async function offerKb(ctx) {
-  const row = async (t, icon, name) => {
+  const row = async (t, name) => {
     const left = await seatsLeft(ctx, t);
-    return [{ text: left ? `${icon} ${name} · ${rub(priceNow(t, ctx.now, ctx.env))}` : `${icon} ${name} · мест нет`, callback_data: left ? `pay:t:${t}` : `pay:w:${t}` }];
+    return [{ text: left ? `${name} · ${rub(priceNow(t, ctx.now, ctx.env))}` : `${name} · мест нет`, callback_data: left ? `pay:t:${t}` : `pay:w:${t}` }];
   };
-  return { inline_keyboard: [await row('rector', '🎓', 'С ректором'), await row('prof', '📐', 'С профессором')] };
+  return { inline_keyboard: [await row('rector', 'С ректором'), await row('prof', 'С профессором')] };
 }
 const ofertaUrl = (ctx) => (ctx.publicUrl || '') + '/oferta';
 const cap = (t) => (t ? t.charAt(0).toUpperCase() + t.slice(1) : t);
