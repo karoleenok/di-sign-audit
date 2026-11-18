@@ -202,10 +202,10 @@ async function showTariff(ctx, u, id, t) {
 }
 
 // Сразу к оплате, без экрана тарифа: контакты (если их ещё нет), потом кнопка со ссылкой на ЮKassa
-async function goPay(ctx, id, t, mid = null) {
+async function goPay(ctx, id, t) {
   if ((await seatsLeft(ctx, t, id)) < 1) return soldOut(ctx, id, t);
   await ctx.db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, ['payintent:' + id, JSON.stringify({ t, at: ctx.now })]);
-  return payContinue(ctx, id, true, mid);
+  return payContinue(ctx, id, true);
 }
 
 // Кнопка оплаты в посте или в сообщении бота: prof / rector — сразу к оплате, all — предложение с двумя тарифами
@@ -218,12 +218,12 @@ export async function payFromButton(ctx, cq, tariff) {
   }
   await ctx.tg.call('answerCallbackQuery', { callback_query_id: cq.id }).catch(() => {});
   const t = TARIFFS[tariff] && tariff !== 'check' ? tariff : '';
-  if (!(await payEntry(ctx, { from: cq.from }, t, cq.message && cq.message.message_id))) await say(ctx, id, 'needStart');
+  if (!(await payEntry(ctx, { from: cq.from }, t))) await say(ctx, id, 'needStart');
 }
 
 // Вход по ссылке t.me/бот?start=pay, pay_prof или pay_rector (с сайта, из постов, из кнопок).
 // Новичку сначала нужен обычный вход (согласие на данные), предложение придёт сразу после него.
-export async function payEntry(ctx, msg, tariff, mid = null) {
+export async function payEntry(ctx, msg, tariff) {
   ctx = await withPay(ctx);
   const id = msg.from.id;
   const u = await ctx.db.first(`SELECT * FROM users WHERE tg_id = ?`, [id]);
@@ -232,7 +232,7 @@ export async function payEntry(ctx, msg, tariff, mid = null) {
     return false;
   }
   if (u.paid_full_at) { await say(ctx, id, 'payAlready', { имя: nm(u) }); return true; }
-  if (tariff && TARIFFS[tariff]) await goPay(ctx, id, tariff, mid); else await sendOffer(ctx, id);
+  if (tariff && TARIFFS[tariff]) await goPay(ctx, id, tariff); else await sendOffer(ctx, id);
   return true;
 }
 
